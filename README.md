@@ -10,15 +10,24 @@ nano-js is the basis for the programming assignments in
 Dependencies
 ------------
 
+* cabal update
+* cabal install language-ecmascript 
 * git clone git@github.com:ucsd-progsys/liquid-fixpoint.git 
-* git clone git@github.com:UCSD-PL/language-ecmascript.git
-* nano-js
+* git clone git@github.com:ucsd-pl/nano-js.git 
+* cd nano-js
+* make
 
+* git clone git@github.com:UCSD-PL/language-ecmascript.git
 HW 2 Release Checklist
 ----------------------
 
 * dumpInferredTypes
 
+* Update GOTO haddocks
+    
+    - liquid-fixpoint
+    - nano-js [generate from algo-verif-repo]
+ 
 * Copy over to algo-verif repo
     
     - ADD README with hints
@@ -80,15 +89,6 @@ HW 2 Release Checklist
                 the assignment. Or not. When in doubt, put in EXPLICIT 
                 refinement type signatures, corresponding to how you think
                 each function should behave...
-
-            
-
-
-* Update GOTO haddocks
-    
-    - liquid-fixpoint
-    - nano-js [generate from algo-verif-repo]
-    
 
 * RELEASE
 
