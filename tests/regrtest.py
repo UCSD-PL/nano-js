@@ -87,9 +87,9 @@ parser.disable_interspersed_args()
 options, args = parser.parse_args()
 
 # esc Tests
-testdirs  = [ ("esc/pos", 0), ("esc/neg", 1)]
-runner    = rtest.TestRunner (Config ("nanojs esc", options.opts, testdirs, logfile, options.threadcount))
-runner.run ()
+# testdirs  = [ ("esc/pos", 0), ("esc/neg", 1)]
+# runner    = rtest.TestRunner (Config ("nanojs esc", options.opts, testdirs, logfile, options.threadcount))
+# runner.run ()
 
 
 ## # tc Tests

@@ -1,5 +1,4 @@
 
-import qualified Language.Nano.ESC.ESC              as ESC
 import qualified Language.Nano.Typecheck.Typecheck  as TC 
 import qualified Language.Nano.Liquid.Liquid        as Liquid 
 import           Language.Nano.CmdLine              (getOpts)
@@ -16,9 +15,9 @@ import           Language.ECMAScript3.PrettyPrint
 main = do cfg  <- getOpts
           run (verifier cfg) cfg
       
-verifier (Esc {})    = ESC.verifyFile
 verifier (TC {})     = TC.verifyFile
 verifier (Liquid {}) = Liquid.verifyFile
+verifier (Esc {})    = errorstar "No `esc` support in this branch"
 
 run verifyFile cfg 
   = do rs   <- mapM verifyFile $ files cfg
