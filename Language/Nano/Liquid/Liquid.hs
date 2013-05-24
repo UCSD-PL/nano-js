@@ -71,16 +71,24 @@ consFun :: CGEnv -> FunctionStatement AnnType -> CGM CGEnv
 --------------------------------------------------------------------------------
 
 -- | see "ANF Typing Function Calls": from lecture notes
+-- `ft` is THE TYPE of the function. That is, it is the 
+--  explicit refinement type if one was provided, and 
+--  otherwise it is a "fresh template" with unknown 
+--  refinements K.
 
 consFun g (FunctionStmt l f xs body) 
-  = do ft             <- freshTyFun g l =<< getDefType f
+  = do ft             <- freshTyFun g l =<< getDefType f 
        g'             <- envAdds [(f, ft)] g 
        let (αs, ts, t) = fromJust $ bkFun ft
-       g''            <- envAddFun l g' f αs xs ts t
+       g''            <- envAddFun l g' f xs (αs, ts, t)
        gm             <- consStmts g'' body
        maybe (return ()) (\g -> subType l g tVoid t) gm
        return g'
 
+-- | This function adds the relevant bindings; tyVars, arguments 
+--   after renaming the names in the types to the function's formals.
+
+envAddFun :: AnnType -> CGEnv -> Id AnnType -> [TVar] -> [Id AnnType] -> 
 envAddFun l g f αs xs yts t = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
   where  
     tyBinds                 = [(Loc (srcPos l) α, tVar α) | α <- αs]
@@ -249,17 +257,20 @@ consCall :: (PP a)
 --   0. See the rule "Typing ANF + Polymorphic Function Calls" in lecture notes
 --   1. Fill in @instantiate@ to get a monomorphic instance of @ft@ 
 --      i.e. the callee's RefType, at this call-site (You may want to use @freshTyInst@)
---   2. Use @consExpr@, perhaps with @consScan@ to determine types for arguments @es@
---   3. Use @renameBinds@ to get the variable substitution θ (from lecture rule) and also
---      the substituted input types.
---   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
---   4. Use the θ returned in step 3 to substitute formals with actuals in output type...
+--   2. Use @consExpr@, perhaps with @consScan@, to determine types 
+--      for arguments @es@
+--   3. Use @renameBinds@ to get the variable substitution θ (from lecture rule) 
+--      and also the substituted input types.
+--   3. Use @subTypes@ to add constraints between the types from (step 2) 
+--      and (step 1)
+--   4. Use the θ returned in step 3 to substitute formals with actuals 
+--      in output type...
 
 consCall g l _ es ft 
   = do (_,its,ot)   <- fromJust . bkFun <$> instantiate l g ft
        error "TO BE DONE"
 
-instantiate :: SourcePos -> CGEnv -> RefType -> CGM RefType
+instantiate :: AnnType -> CGEnv -> RefType -> CGM RefType
 instantiate l g t = error "TO BE DONE"
   where 
     (αs, tbody)   = bkAll t
