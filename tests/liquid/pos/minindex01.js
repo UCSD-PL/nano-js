@@ -1,5 +1,3 @@
-/*@ qualif UBound(v:int, x:a) : v < (len x) */
-
 /*@ forloop :: forall A. (int, int, (int, A) => A, A) => A */
 function forloop(lo, hi, body, accum){
   if (lo < hi) {

@@ -1,7 +1,3 @@
-/*@ qualif Locked(v:int): v != 0   */    
-/*@ qualif Unlocked(v:int): v = 0  */    
-/*@ qualif CondLock2(v:int,x:int,y:int): ((x != y) <=> (v = 0))  */    
-
 // HINT: Recall the `invariant` for the corresponding test in tests/esc/pos
 //       Find a way to represent that invariant as a qualifier (or a conjunction of qualifiers.)
 //       You can use operators like <=>, =>, &&, || in the qualifiers.

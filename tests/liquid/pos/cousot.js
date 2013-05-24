@@ -1,6 +1,6 @@
 // DEMO EXAMPLE. Crucially requires:
 
-/*@ qualif Equal(v:int, x:int) : v = x */
+/*@ qualif Equal(v:int, x:int) : v = x */ // DEMO 
 
 // Note that the example works even "without" the above, 
 // as this qualifier is in include/prelude.js

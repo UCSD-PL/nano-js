@@ -69,33 +69,35 @@ initCGEnv pgm = CGE (specs pgm) F.emptyIBindEnv []
 --------------------------------------------------------------------------------
 consFun :: CGEnv -> FunctionStatement AnnType -> CGM CGEnv  
 --------------------------------------------------------------------------------
-
 -- | see "ANF Typing Function Calls": from lecture notes
 -- `ft` is THE TYPE of the function. That is, it is the 
 --  explicit refinement type if one was provided, and 
 --  otherwise it is a "fresh template" with unknown 
---  refinements K.
+--  refinements K. Use @envAddFun@ to add the bindings 
+--  for the function into the environment before checking
+--  the function body.
 
 consFun g (FunctionStmt l f xs body) 
-  = do ft             <- freshTyFun g l =<< getDefType f 
-       g'             <- envAdds [(f, ft)] g 
-       let (αs, ts, t) = fromJust $ bkFun ft
-       g''            <- envAddFun l g' f xs (αs, ts, t)
-       gm             <- consStmts g'' body
-       maybe (return ()) (\g -> subType l g tVoid t) gm
-       return g'
+  = do ft <- freshTyFun g l =<< getDefType f
+       error "TO BE DONE"
 
+-----------------------------------------------------------------------------------
+envAddFun :: AnnType -> CGEnv -> Id AnnType -> [Id AnnType] -> RefType -> CGM CGEnv
+-----------------------------------------------------------------------------------
 -- | This function adds the relevant bindings; tyVars, arguments 
 --   after renaming the names in the types to the function's formals.
 
-envAddFun :: AnnType -> CGEnv -> Id AnnType -> [TVar] -> [Id AnnType] -> 
-envAddFun l g f αs xs yts t = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
+envAddFun l g f xs ft = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
   where  
-    tyBinds                 = [(Loc (srcPos l) α, tVar α) | α <- αs]
-    varBinds                = safeZip "envAddFun"
-    (su, ts')               = renameBinds yts xs 
-    t'                      = F.subst su t
+    (αs, yts, t)      = fromJust $ bkFun ft
+    tyBinds           = [(Loc (srcPos l) α, tVar α) | α <- αs]
+    varBinds          = safeZip "envAddFun"
+    (su, ts')         = renameBinds yts xs 
+    t'                = F.subst su t
 
+-----------------------------------------------------------------------------------
+renameBinds          :: [Bind F.Reft] -> [Id AnnType] -> (F.Subst, [RefType]) 
+-----------------------------------------------------------------------------------
 renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
   where 
     su               = F.mkSubst $ safeZipWith "renameArgs" fSub yts xs 

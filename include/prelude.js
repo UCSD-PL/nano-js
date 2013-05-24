@@ -118,4 +118,7 @@ function pos(){
 /*@ qualif Add(v:int,x:int,y:int): v = x + y    */    
 /*@ qualif Sub(v:int,x:int,y:int): v = x - y    */    
 
+/*@ qualif Len(v:a)               : 0 <= (len xs)                 */
+/*@ qualif EqLen(v:a, xs:b)       : (len v) = (len xs)            */
+
 

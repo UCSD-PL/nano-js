@@ -1,11 +1,3 @@
-/*@ qualif Locked(v:int): v != 0   */    
-/*@ qualif Unlocked(v:int): v = 0  */    
-
-// Only one of the two below is needed...
-
-/*@ qualif CondLock1(v:int,x:int): v = ((0 < x) ? 1 : 0)  */    
-/*@ qualif CondLock2(v:int,x:int): ((0 < x) <=> (v = 0))  */    
-
 /*@ create :: () => int */
 function create(){
   return 0;

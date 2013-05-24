@@ -1,8 +1,3 @@
-/*@ qualif Len(v:a)               : 0 <= (len xs)                 */
-/*@ qualif EqLen(v:a, xs:b)       : (len v) = (len xs)            */
-/*@ qualif SumLen(v:a, xs:b, ys:c): (len v) = (len xs) + (len ys) */
-
-
 /*@ map :: forall A B. ((A) => B, list [A]) => list [B] */
 function map(f, xs){
   if (empty(xs)) {

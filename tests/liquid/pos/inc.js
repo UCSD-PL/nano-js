@@ -1,7 +1,4 @@
-/*@ qualif PlusOne(v:int,x:int)   : v = x + 1    */    
-
-/* IGNORED inc :: ({x:int|true}) => {v:int | v = x+1} */
-/* IGNORED inc :: (x:int) => {v:int | v = x+1} */
+/*@ qualif PlusOne(v:int,x:int)   : v = x + 1    */    // DEMO
 
 /*@ inc :: (int) => int */
 function inc(x){

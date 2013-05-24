@@ -1,4 +1,3 @@
-/*@ qualif UBound(v:int, x:a) : v < (len x) */
 
 /*@ loop :: (list [int], int, int) => int */ 
 function loop(b, min, i){

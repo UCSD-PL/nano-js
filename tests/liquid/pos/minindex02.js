@@ -1,5 +1,3 @@
-/*@ qualif UBound(v:int, x:a) : v < (len x) */
-
 /*@ range :: (int, int) => list [int] */
 function range(lo, hi) {
   if (lo < hi) { 

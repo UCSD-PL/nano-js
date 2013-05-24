@@ -19,16 +19,11 @@ HW 2 Release Checklist
 
 * dumpInferredTypes
 
-* Make hw-liquid branch 
-    
-    - EDIT Liquid.hs
-    - EDIT tests (remove quals/spec)
-
 * Copy over to algo-verif repo
     
     - ADD README with hints
         
-        > use "tracePP"
+        use `tracePP`
         
         See lecture notes: https://github.com/UCSD-PL/algorithmic-software-verification/blob/master/web/slides/lec-refinement-types-3.markdown
         
@@ -64,6 +59,29 @@ HW 2 Release Checklist
             5. the recorded templates and constraints for each binder will be saved 
                in `foo.js.annot`. look at it to make sure the right templates/types 
                are being inferred.
+            
+            6. for several benchmarks, you will need to write EXTRA
+               QUALIFIERS (predicates) from which the right types can be
+               inferred.
+
+               see:
+                    tests/liquid/pos/inc.js
+                    tests/liquid/pos/cousot.js
+               
+               for examples. And see:
+
+                    include/prelude.js
+
+               for a list of "default library" qualifiers. You can DELETE
+               all the qualifiers (or just remove the "@") to see the exact
+               set needed for each program.
+
+             7. Figuring out the extra qualifiers may be the hardest part of
+                the assignment. Or not. When in doubt, put in EXPLICIT 
+                refinement type signatures, corresponding to how you think
+                each function should behave...
+
+            
 
 
 * Update GOTO haddocks

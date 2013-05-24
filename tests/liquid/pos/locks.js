@@ -1,6 +1,3 @@
-/*@ qualif Locked(v:int): v != 0    */    
-/*@ qualif Unlocked(v:int): v = 0  */    
-
 /*@ create :: () => int */
 function create(){
   return 0;
