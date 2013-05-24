@@ -62,14 +62,16 @@ generateConstraints pgm = getFInfo pgm $ consNano pgm
 consNano     :: NanoRefType -> CGM ()
 --------------------------------------------------------------------------------
 consNano pgm@(Nano {code = Src fs}) 
-  = consStmts (initCGEnv pgm) fs >> return ()
+  = error "TO BE DONE" 
 
-  -- = forM_ fs . consFun =<< initCGEnv pgm
 initCGEnv pgm = CGE (specs pgm) F.emptyIBindEnv []
 
 --------------------------------------------------------------------------------
 consFun :: CGEnv -> FunctionStatement AnnType -> CGM CGEnv  
 --------------------------------------------------------------------------------
+
+-- | see "ANF Typing Function Calls": from lecture notes
+
 consFun g (FunctionStmt l f xs body) 
   = do ft             <- freshTyFun g l =<< getDefType f
        g'             <- envAdds [(f, ft)] g 
@@ -90,14 +92,6 @@ renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
   where 
     su               = F.mkSubst $ safeZipWith "renameArgs" fSub yts xs 
     fSub yt x        = (b_sym yt, F.eVar x)
-    
-
--- checkFormal x t 
---   | xsym == tsym = (x, t)
---   | otherwise    = errorstar $ errorArgName (srcPos x) xsym tsym
---   where 
---     xsym         = F.symbol x
---     tsym         = F.symbol t
 
 --------------------------------------------------------------------------------
 consStmts :: CGEnv -> [Statement AnnType]  -> CGM (Maybe CGEnv) 
@@ -122,38 +116,36 @@ consStmt g (ExprStmt _ (AssignExpr _ OpAssign (LVar lx x) e))
 
 -- e
 consStmt g (ExprStmt _ e)   
-  = consExpr g e >> return (Just g) 
+  = error "TO BE DONE" 
 
 -- s1;s2;...;sn
 consStmt g (BlockStmt _ stmts) 
-  = consStmts g stmts 
+  = error "TO BE DONE"
 
 -- if b { s1 }
 consStmt g (IfSingleStmt l b s)
   = consStmt g (IfStmt l b s (EmptyStmt l))
 
--- HINT: 1. Use @envAddGuard True@ and @envAddGuard False@ to add the binder 
---          from the condition expression @e@ into @g@ to obtain the @CGEnv@ 
---          for the "then" and "else" statements @s1@ and @s2 respectively. 
---       2. Recursively constrain @s1@ and @s2@ under the respective environments.
---       3. Combine the resulting environments with @envJoin@ 
+-- HINT: 
+-- 0. See "Statement Typing: branch" in lecture notes
+--    https://github.com/UCSD-PL/algorithmic-software-verification/blob/master/web/slides/lec-refinement-types-3.markdown
+-- 1. Use @envAddGuard True@ and @envAddGuard False@ to add the binder 
+--    from the condition expression @e@ into @g@ to obtain the @CGEnv@ 
+--    for the "then" and "else" statements @s1@ and @s2 respectively. 
+-- 2. Recursively constrain @s1@ and @s2@ under the respective environments.
+-- 3. Combine the resulting environments with @envJoin@ 
 
 -- if e { s1 } else { s2 }
 consStmt g (IfStmt l e s1 s2)
-  = do (xe, ge) <- consExpr g e
-       g1'      <- (`consStmt` s1) $ envAddGuard xe True  ge 
-       g2'      <- (`consStmt` s2) $ envAddGuard xe False ge 
-       envJoin l g g1' g2'
-
+  = error "TO BE DONE"
+   
 -- var x1 [ = e1 ]; ... ; var xn [= en];
 consStmt g (VarDeclStmt _ ds)
-  = consSeq consVarDecl g ds
+  = error "TO BE DONE"
 
 -- return e 
 consStmt g (ReturnStmt l (Just e))
-  = do (xe, g') <- consExpr g e 
-       subType l g' (envFindTy xe g') $ envFindReturn g' 
-       return Nothing
+  = error "TO BE DONE"
 
 -- return
 consStmt _ (ReturnStmt _ Nothing)
@@ -178,27 +170,22 @@ envJoin l g (Just g1) (Just g2) = Just <$> envJoin' l g g1 g2
 envJoin' :: AnnType -> CGEnv -> CGEnv -> CGEnv -> CGM CGEnv
 ----------------------------------------------------------------------------------
 
--- HINT: 1. use @envFindTy@ to get types for the phi-var x in environments g1 AND g2
---       2. use @freshTyPhis@ to generate fresh types (and an extended environment with 
---          the fresh-type bindings) for all the phi-vars using the unrefined types 
---          from step 1.
---       3. generate subtyping constraints between the types from step 1 and the fresh types
---       4. return the extended environment.
+-- HINT: (see Statement Typing: branch from lecture notes)
+-- 1. use @envFindTy@ to get types for each phi-var x in xs in the respective 
+--    environments g1 AND g2
+-- 2. use @freshTyPhis@ to generate fresh types (and an extended environment with 
+--    the fresh-type bindings) for all the phi-vars using the unrefined types 
+--    from step 1.
+-- 3. generate subtyping constraints between the types from step 1 and the fresh types
+-- 4. return the extended environment.
 
 envJoin' l g g1 g2
   = do let xs   = [x | PhiVar x <- ann_fact l] 
-       let t1s  = (`envFindTy` g1) <$> xs 
-       let t2s  = (`envFindTy` g2) <$> xs
-       -- when (length t1s /= length t2s) $ cgError (bugBadPhi l t1s t2s)
-       (g',ts) <- freshTyPhis (srcPos l) g xs $ map toType t1s -- SHOULD BE SAME as t2s 
-       subTypes l g1 xs ts
-       subTypes l g2 xs ts
-       return g'
+       error "TO BE DONE"
 
-
-------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------
 consVarDecl :: CGEnv -> VarDecl AnnType -> CGM (Maybe CGEnv) 
-------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------
 
 consVarDecl g (VarDecl _ x (Just e)) 
   = consAsgn g x e  
@@ -206,12 +193,11 @@ consVarDecl g (VarDecl _ x (Just e))
 consVarDecl g (VarDecl _ _ Nothing)  
   = return $ Just g
 
-------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------
 consAsgn :: CGEnv -> Id AnnType -> Expression AnnType -> CGM (Maybe CGEnv) 
-------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------
 consAsgn g x e 
-  = do (x', g') <- consExpr g e
-       Just <$> envAdds [(x, envFindTy x' g')] g'
+  = error "TO BE DONE"
 
 ------------------------------------------------------------------------------------
 consExpr :: CGEnv -> Expression AnnType -> CGM (Id AnnType, CGEnv) 
@@ -221,26 +207,31 @@ consExpr :: CGEnv -> Expression AnnType -> CGM (Id AnnType, CGEnv)
 --   x' is a fresh, temporary (A-Normalized) holding the value of `e`,
 --   g' is g extended with a binding for x' (and other temps required for `e`)
 
+-- n
 consExpr g (IntLit l i)               
   = envAddFresh l (eSingleton tInt i) g
 
+-- b
 consExpr g (BoolLit l b)
   = envAddFresh l (pSingleton tBool b) g 
 
+-- x
 consExpr g (VarRef _ x)
-  = return (x, g) 
+  = error "TO BE DONE"
 
+-- op e
 consExpr g (PrefixExpr l o e)
   = do (x', g') <- consCall g l o [e] (prefixOpTy o $ renv g)
        return (x', g')
 
+-- e1 op e2
 consExpr g (InfixExpr l o e1 e2)        
   = do (x', g') <- consCall g l o [e1, e2] (infixOpTy o $ renv g)
        return (x', g')
 
+-- e(e1,...,en)
 consExpr g (CallExpr l e es)
-  = do (x, g') <- consExpr g e 
-       consCall g' l e es $ envFindTy x g'
+  = error "TO BE DONE"
 
 consExpr _ e 
   = errorstar "consExpr: not handled" (pp e)
@@ -254,7 +245,8 @@ consCall :: (PP a)
 -- HINT: This code is almost isomorphic to the version in 
 --   @Liquid.Nano.Typecheck.Typecheck@ except we use subtyping
 --   instead of unification.
---
+--   
+--   0. See the rule "Typing ANF + Polymorphic Function Calls" in lecture notes
 --   1. Fill in @instantiate@ to get a monomorphic instance of @ft@ 
 --      i.e. the callee's RefType, at this call-site (You may want 
 --      to use @freshTyInst@)
@@ -271,11 +263,10 @@ consCall g l _ es ft
     -- where 
     --   msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)
 
-instantiate l g t = {- tracePP msg  <$> -} freshTyInst l g αs τs tbody 
+instantiate l g t = error "TO BE DONE"
   where 
     (αs, tbody)   = bkAll t
     τs            = getTypArgs l αs 
-    -- msg           = printf "instantiate %s %s" (ppshow αs) (ppshow tbody)
 
 
 getTypArgs :: AnnType -> [TVar] -> [Type] 

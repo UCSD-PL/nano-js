@@ -21,7 +21,6 @@ HW 2 Release Checklist
 
 * Make hw-liquid branch 
     
-    - NUKE ESC
     - EDIT Liquid.hs
     - EDIT tests (remove quals/spec)
 
@@ -31,7 +30,9 @@ HW 2 Release Checklist
         
         > use "tracePP"
         
-        (See lecture notes: https://github.com/UCSD-PL/algorithmic-software-verification/blob/master/web/slides/lec-refinement-types-3.markdown)
+        See lecture notes: https://github.com/UCSD-PL/algorithmic-software-verification/blob/master/web/slides/lec-refinement-types-3.markdown
+        
+        You are essentially implementing the typing rules shown there.
 
         step 1. fresh* return types with templates
         step 2. "typechecking" as in Liquid/Liquid.hs will generate constraints over templates
