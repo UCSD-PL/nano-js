@@ -248,26 +248,22 @@ consCall :: (PP a)
 --   
 --   0. See the rule "Typing ANF + Polymorphic Function Calls" in lecture notes
 --   1. Fill in @instantiate@ to get a monomorphic instance of @ft@ 
---      i.e. the callee's RefType, at this call-site (You may want 
---      to use @freshTyInst@)
---   2. Use @consExpr@ to determine types for arguments @es@
+--      i.e. the callee's RefType, at this call-site (You may want to use @freshTyInst@)
+--   2. Use @consExpr@, perhaps with @consScan@ to determine types for arguments @es@
+--   3. Use @renameBinds@ to get the variable substitution θ (from lecture rule) and also
+--      the substituted input types.
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
---   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
+--   4. Use the θ returned in step 3 to substitute formals with actuals in output type...
 
 consCall g l _ es ft 
   = do (_,its,ot)   <- fromJust . bkFun <$> instantiate l g ft
-       (xes, g')    <- consScan consExpr g es 
-       let (su, ts') = renameBinds its xes   
-       subTypes l g' xes ts' 
-       envAddFresh l (F.subst ({- F.traceFix msg -} su) ot) g'
-    -- where 
-    --   msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)
+       error "TO BE DONE"
 
+instantiate :: SourcePos -> CGEnv -> RefType -> CGM RefType
 instantiate l g t = error "TO BE DONE"
   where 
     (αs, tbody)   = bkAll t
     τs            = getTypArgs l αs 
-
 
 getTypArgs :: AnnType -> [TVar] -> [Type] 
 getTypArgs l αs
