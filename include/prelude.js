@@ -48,6 +48,15 @@ function pos(){
 
 /*@ cons  :: forall A. (x:A, xs:list [A]) => {v: list [A] | (len v) = 1 + (len xs)}            */
 /*@ nil   :: forall A. () => {v: list [A] | (len v) = 0}                                       */
+
+/*@ push  :: forall A. (x:A, xs:list [A]) => list [A] */
+/*@ pop   :: forall A. (xs:list [A]) => list [A]      */
+/*@ top   :: forall A. (xs:list [A]) => A             */
+/*@ empty :: forall A. () => list [A]                 */
+
+
+
+
 /*@ head  :: forall A. (xs:list [A]) => A        */
 /*@ tail  :: forall A. (xs:list [A]) => list [A] */
 /*@ nth   :: forall A. (xs:list [A], {i:int| ((0 <= i) && i < (len xs))}) => A                 */
