@@ -182,6 +182,9 @@ ssaExpr (InfixExpr l o e1 e2)
 ssaExpr (CallExpr l e es)
   = CallExpr l <$> ssaExpr e <*> mapM ssaExpr es
 
+ssaExpr (BracketRef l e1 e2)
+  = BracketRef l <$> ssaExpr e1 <*> ssaExpr e2
+
 ssaExpr e 
   = convertError "ssaExpr" e
 

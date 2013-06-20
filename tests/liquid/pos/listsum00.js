@@ -1,6 +1,6 @@
 /*@ sum :: (list [{v:int| 0 <= v}]) => int */
 function sum(xs){
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return 0;
   }
   var h = head(xs);

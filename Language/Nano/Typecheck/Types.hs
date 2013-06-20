@@ -46,7 +46,8 @@ module Language.Nano.Typecheck.Types (
   -- * Operator Types
   , infixOpTy
   , prefixOpTy 
-  
+  , hwOpTy
+
   -- * Annotations
   , Annot (..)
   , Fact (..)
@@ -320,12 +321,21 @@ tErr   = tVoid
 
 
 -----------------------------------------------------------------------
+hwOpTy :: HwOp -> Env t -> t
+-----------------------------------------------------------------------
+hwOpTy = getOpTy "hwOpTy" hwOpId
+
+hwOpId BracketRead = builtinId "OpNth"
+
+-----------------------------------------------------------------------
 infixOpTy :: InfixOp -> Env t -> t 
 -----------------------------------------------------------------------
-infixOpTy o g = fromMaybe err $ envFindTy ox g
-  where 
-    err       = errorstar $ printf "Cannot find infixOpTy %s" (ppshow ox) -- (ppshow g)
-    ox        = infixOpId o
+infixOpTy = getOpTy "infixOpTy" infixOpId 
+
+-- infixOpTy o g = fromMaybe err $ envFindTy ox g
+--   where 
+--     err       = errorstar $ printf "Cannot find infixOpTy %s" (ppshow ox) -- (ppshow g)
+--     ox        = infixOpId o
 
 infixOpId OpLT  = builtinId "OpLT"         
 infixOpId OpLEq = builtinId "OpLEq"      
@@ -354,4 +364,14 @@ prefixOpId PrefixLNot  = builtinId "PrefixLNot"
 prefixOpId o           = errorstar $ "Cannot handle: prefixOpId " ++ ppshow o
 
 builtinId       = mkId . ("builtin_" ++)
+
+
+-----------------------------------------------------------------------
+-- getOpTy :: String -> (a -> Id SourcePos) -> a -> Env t -> t
+-----------------------------------------------------------------------
+getOpTy msg f o g = fromMaybe err $ envFindTy ox g
+  where 
+    err           = errorstar $ printf "Cannot find %s %s" msg (ppshow ox)
+    ox            = f o
+
 

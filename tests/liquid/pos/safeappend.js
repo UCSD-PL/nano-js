@@ -1,7 +1,7 @@
 
 /*@ append :: forall A. (xs:list [A], ys:list [A]) => {v:list [A] | (len v) = (len xs) + (len ys) } */
 function append(xs, ys){
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return ys;
   } else {
     var x   = safehead(xs);

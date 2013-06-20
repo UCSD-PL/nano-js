@@ -45,6 +45,8 @@ module Language.Nano.Types (
   , srcSpanStartCol
   , srcSpanEndCol
 
+  -- * Hardwired Operators
+  , HwOp (..)
   ) where
 
 import           Control.Applicative          ((<$>))
@@ -87,6 +89,14 @@ data Config
            }
   deriving (Data, Typeable, Show, Eq)
 
+---------------------------------------------------------------------
+-- | Hardwired Operations ------------------------------------------- 
+---------------------------------------------------------------------
+
+data HwOp = BracketRead deriving (Eq, Ord, Show)
+
+instance PP HwOp where 
+  pp BracketRead = text "BracketRead" 
 
 ---------------------------------------------------------------------
 -- | Tracking Source Code Locations --------------------------------- 
@@ -167,8 +177,9 @@ instance IsNano (Expression a) where
   isNano (BoolLit _ _)         = True
   isNano (IntLit _ _)          = True
   isNano (VarRef _ _)          = True
-  isNano (InfixExpr _ o e1 e2) = isNano o && isNano e1 && isNano e2
-  isNano (PrefixExpr _ o e)    = isNano o && isNano e
+  isNano (BracketRef _ e1 e2)  = isNano e1 && isNano e2 
+  isNano (InfixExpr _ o e1 e2) = isNano o  && isNano e1 && isNano e2
+  isNano (PrefixExpr _ o e)    = isNano o  && isNano e
   isNano (CallExpr _ e es)     = all isNano (e:es)
   isNano e                     = errortext (text "Not Nano Expression!" <+> pp e) 
   -- isNano _                     = False

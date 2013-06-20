@@ -257,6 +257,10 @@ consExpr g (VarRef i x)
        msg = printf "consExpr x = %s at %s" (ppshow x) (ppshow l)
        l   = srcPos i
 
+consExpr g (BracketRef l e1 e2)
+  = do (x', g') <- consCall g l BracketRead [e1, e2] (hwOpTy BracketRead $ renv g)
+       return (x', g')
+
 consExpr g (PrefixExpr l o e)
   = do (x', g') <- consCall g l o [e] (prefixOpTy o $ renv g)
        return (x', g')

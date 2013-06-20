@@ -238,6 +238,9 @@ tcExpr γ (InfixExpr l o e1 e2)
 tcExpr γ (CallExpr l e es)
   = tcCall γ l e es =<< tcExpr γ e 
 
+tcExpr γ (BracketRef l e1 e2)
+  = tcCall γ l BracketRead [e1, e2] (hwOpTy BracketRead γ) 
+
 tcExpr _ e 
   = convertError "tcExpr" e
 

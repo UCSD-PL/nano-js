@@ -11,7 +11,7 @@ function range(lo, hi) {
 
 /*@ foldl :: forall A B. ((A, B) => A, A, list[B]) => A */
 function foldl(f, acc, xs){ 
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return acc;
   } else {
     var acc_ = f(acc, head(xs)); 

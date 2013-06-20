@@ -1,6 +1,6 @@
 /*@ map :: forall A B. ((A) => B, list [A]) => list [B] */
 function map(f, xs){
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return nil();
   }
   // return cons(f(head(xs)), map(f, tail(xs)));

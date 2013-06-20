@@ -1,10 +1,8 @@
-
-
 /////////////////////////////////////////////////////////////////
 // Paste Demo 2//////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 
-/*@ loop :: forall A. (int, int, A, (int, A) => A) => A */
+/*@ loop :: (int, int, int, (int, int) => int) => int */
 function loop(lo, hi, acc, body){
   if (lo < hi) {
     acc = body(lo, acc);
@@ -13,8 +11,7 @@ function loop(lo, hi, acc, body){
   return acc;
 }
 
-/* minIndex :: ({a:list [int] | true}) => int */            // BAD SPEC 
-/*@ minIndex :: ({a:list [int] | 0 < (len a)}) => int */    // GOOD SPEC
+/*@ minIndex :: (list[int]) => {v:int | true} */ 
 function minIndex(a){
   /*@ step :: (int, int) => int */
   function step(i, min){
@@ -22,7 +19,7 @@ function minIndex(a){
       min = i;
     return min;
   }
-  return loop(0, length(a), 0, step);
+  return loop(0, 1 + length(a), 0, step);
 }
 
 

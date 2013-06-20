@@ -59,8 +59,8 @@ function pos(){
 
 /*@ head  :: forall A. (xs:list [A]) => A        */
 /*@ tail  :: forall A. (xs:list [A]) => list [A] */
-/*@ nth   :: forall A. (xs:list [A], {i:int| ((0 <= i) && i < (len xs))}) => A                 */
-/*@ empty :: forall A. (xs:list [A]) => {v:boolean | (if (Prop v) then ((len xs) = 0) else ((len xs) > 0))} */
+/*@ nth   :: forall A. (xs:list [A], {i:int| ((0 <= i) && i < (len xs))}) => A */
+/*@ isEmpty :: forall A. (xs:list [A]) => {v:boolean | (if (Prop v) then ((len xs) = 0) else ((len xs) > 0))} */
 /*@ length   :: forall A. (xs:list [A]) => {v:int | ((v >= 0) && v = (len xs))}                */
 /*@ safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
 /*@ safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
@@ -74,6 +74,7 @@ function pos(){
 /************** Types for Builtin Operators ******************************/
 /*************************************************************************/
 
+/*@ builtin_OpNth       :: forall A. (xs:list [A], {i:int| ((0 <= i) && i < (len xs))}) => A */
 /*@ builtin_OpLT        :: ({x:int|true}, {y:int|true}) => {v:boolean | ((Prop v) <=> (x <  y)) }*/
 /*@ builtin_OpLEq       :: ({x:int|true}, {y:int|true}) => {v:boolean | ((Prop v) <=> (x <= y)) }*/
 /*@ builtin_OpGT        :: ({x:int|true}, {y:int|true}) => {v:boolean | ((Prop v) <=> (x >  y)) }*/
@@ -119,12 +120,9 @@ function pos(){
 /*@ qualif True1(v:Bool)  : (Prop v)         */                                   
 /*@ qualif False1(v:Bool) : not (Prop v)     */
 
-
-
-
 // Somewhat more controversial qualifiers (i.e. "expensive"...)
 
 /*@ qualif Add(v:int,x:int,y:int): v = x + y    */    
 /*@ qualif Sub(v:int,x:int,y:int): v = x - y    */    
-
+/*@ qualif UBound(v:int, x:a) : v < (len x) */
 

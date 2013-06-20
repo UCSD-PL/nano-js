@@ -4,27 +4,32 @@
 
 /*@ range :: (int, int) => list[int] */
 function range(lo, hi) {
-  var res = empty();
   if (lo < hi) {
     res = range(lo + 1, hi);
     res = push(lo, res);
+    return res;
   }
-  return res;
+  return empty();
 }
 
 /*@ reduce :: forall A B. (list[B], A, (A, B) => A) => A */
 function reduce(xs, acc, f){
-  if (!empty(xs)) {
+  if (!isEmpty(xs)) {
     acc = f(acc, top(xs));
     acc = reduce(pop(xs), acc, f);
   }
   return acc;
 }
 
-/*@ minIndex :: (list[int]) => int */ 
+/* minIndex :: ({a:list [int] | true}) => int */            // BAD SPEC 
+/*@ minIndex :: ({a:list [int] | 0 < (len a)}) => int */    // GOOD SPEC
+
 function minIndex(a){
-  function step(i, min){
-    return a[i] < a[min] ? i : min;
+  /*@ step :: (int, int) => int */
+  function step(min, i){
+    if (a[i] < a[min]) 
+      min = i;
+    return min;
   }
   var is = range(0, length(a));
   return reduce(is,0,step);
