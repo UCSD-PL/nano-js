@@ -5,7 +5,7 @@
 
 /*@ map :: forall A B. ((A) => B, list [A]) => list [B] */
 function map(f, xs){
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return nil();
   }
   return cons(f(safehead(xs)), map(f, safetail(xs)));
@@ -13,7 +13,7 @@ function map(f, xs){
 
 /*@ append :: forall A. (list [A], list [A]) => list [A] */
 function append(xs, ys){
-  if (empty(xs)) {
+  if (isEmpty(xs)) {
     return ys;
   } else {
     var x   = safehead(xs);
@@ -27,7 +27,7 @@ function reverse(xs){
 
   /*@ go :: (list [A], list[A]) => list [A] */ 
   function go(acc, ys){
-    if (empty(ys)){
+    if (isEmpty(ys)){
       return acc;
     }
     var y    = safehead(ys);

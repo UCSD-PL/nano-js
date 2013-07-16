@@ -26,11 +26,12 @@ import           Language.Fixpoint.Misc
 -- import           System.Exit                        (exitWith)
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.PrettyPrint
+import           Language.ECMAScript3.Parser        (SourceSpan (..))
 
 --------------------------------------------------------------------------------
 -- | Top-level Verifier 
 --------------------------------------------------------------------------------
-verifyFile :: FilePath -> IO (F.FixResult SourcePos)
+verifyFile :: FilePath -> IO (F.FixResult SourceSpan)
 --------------------------------------------------------------------------------
 verifyFile f = tc =<< parseNanoFromFile f
   where 
@@ -236,6 +237,9 @@ tcExpr γ (InfixExpr l o e1 e2)
 
 tcExpr γ (CallExpr l e es)
   = tcCall γ l e es =<< tcExpr γ e 
+
+tcExpr γ (BracketRef l e1 e2)
+  = tcCall γ l BracketRead [e1, e2] (hwOpTy BracketRead γ) 
 
 tcExpr _ e 
   = convertError "tcExpr" e

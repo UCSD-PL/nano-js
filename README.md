@@ -11,11 +11,32 @@ Dependencies
 ------------
 
 * git clone git@github.com:ucsd-progsys/liquid-fixpoint.git 
-* nano-js
-   
+* git clone git@github.com:UCSD-PL/language-ecmascript.git
 
-MAJOR REMAINING FEATURES
-------------------------
+Homework Plan
+-------------
+
+HW 1
+1a. VCG 
+1b. Use ESC/J
+
+HW 2
+2a. ConsGen = VCG+K for LoopInv via FIXPOINT    [Easy]
+2b. Implement FIXPOINT (over liquid-fixpoint)   [Hard]
+
+HW 3
+3a. VCG for Refinement Type Checking            [Hard]
+3b. Consgen = VCG+K for Liquid Inference via FIXPOINT
+
+Todo List
+---------
+
+- Scrape Qualifiers
+- unions
+- Records
+- Objects
+- Heap
+- etc.
 
     + HTML annot
     - Scrape Qualifiers
@@ -33,30 +54,18 @@ Tests
     mapreduce?
     kmeans?
 
-Include
--------
+PASTE Demo
+----------
 
-/*@ include "path/to/foo.js" */
-  >> add to "Spec"
-  >> update parser
-  >> recursively traverse all files
-          traverseFiles :: (FilePath -> IO [FilePath]) -> FilePath -> IO [FilePath]
++ Substitute and drop trivial preds
+    * x: v = x, v >= x  etc.
 
-HashMap.Strict Container MADNESS
---------------------------------
++ Drop the VV#...
 
-    tests/liquid/pos/minindex01.js
++ PP for function types super wide and gross
+    * cf. `forloop` in `minindex`
 
-grumble about "unbound variable" (due to missing key in envFindTy)
++ Unify function template names with formal names
+    * cf. `forloop` in `minindex`
 
-    sometimes it works with "forloop" sometimes doesn't!
-    when it doesn't if you change the name to "forLoop" or
-    "humphreyAppleby" it works fine!
-
-    using: 
-        ~/research/liquid/hsenv
-        hashable-1.2.0.7
-
-    you get the error in:
-        tests/liquid/pos/locks-cond.js
-
++ SSA variables? hmm. Perhaps leave

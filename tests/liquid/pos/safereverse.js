@@ -7,7 +7,7 @@ function reverse(xs){
 
   /*@ go :: (list [A], list[A]) => list [A] */ 
   function go(acc, ys){
-    if (empty(ys)){
+    if (isEmpty(ys)){
       return acc;
     }
     
