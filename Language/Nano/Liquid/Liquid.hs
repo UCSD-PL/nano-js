@@ -293,6 +293,9 @@ consCast g x a e =
 castSubM g x l t1 t2 = 
   do  (g', t1', t2') <- fixBase g x (t1, t2) 
       let (tt1', tt2') = mapPair addTag (t1', t2')
+      -- THIS BREAKS
+      -- subType l g' tt1' tt2'
+      -- BUT THIS WORKS (WTF?) should be identical except for `bkTypesM` business in subType. YUCK. 
       modify $ \st -> st {cs = Sub g' (ci l) (T.trace (printf "Adding cast Sub: %s\n<:\n%s" (ppshow tt1') (ppshow tt2')) tt1') tt2' : (cs st)}
 
 
