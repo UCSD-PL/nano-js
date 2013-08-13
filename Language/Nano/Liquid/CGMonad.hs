@@ -8,7 +8,6 @@ module Language.Nano.Liquid.CGMonad (
     
   -- * Constraint Generation Monad
     CGM
-  , CGState (..)
 
   -- * Constraint Information
   , CGInfo (..)
@@ -18,6 +17,12 @@ module Language.Nano.Liquid.CGMonad (
 
   -- * Get Defined Function Type Signature
   , getDefType
+
+  -- * Get Defined Types
+  , getTDefs
+
+  -- * Get binding
+  , getBindingM
 
   -- * Throw Errors
   , cgError      
@@ -43,21 +48,19 @@ module Language.Nano.Liquid.CGMonad (
   , subTypes
   , subType
 
-  -- FIX: eliminate from interface
-  , bkTypesM
   , addInvariant
-
-  -- * Match same sort types
-  , matchTypes
   
   -- * Add Type Annotations
   , addAnnot
+
+  -- * Unfolding
+  , unfoldSafeCG, unfoldFirstCG
   ) where
 
-import           Data.Maybe             (fromMaybe)
-import           Data.Monoid            (mempty) -- hiding ((<>))            
-import qualified Data.List               as L
-import qualified Data.HashMap.Strict     as M
+import           Data.Maybe                     (fromMaybe)
+import qualified Data.List                      as L
+import           Data.Monoid                    (mempty)
+import qualified Data.HashMap.Strict            as M
 
 -- import           Language.Fixpoint.PrettyPrint
 import           Text.PrettyPrint.HughesPJ
@@ -66,9 +69,10 @@ import           Language.Nano.Types
 import           Language.Nano.Errors
 import qualified Language.Nano.Annots           as A
 import qualified Language.Nano.Env              as E
+import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Types 
-import           Language.Nano.Typecheck.STMonad (unfoldTDefSafe, isSubType)
 import           Language.Nano.Typecheck.Subst
+import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
 
 
@@ -85,7 +89,7 @@ import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Parser        (SourceSpan (..))
 import           Language.ECMAScript3.PrettyPrint
 
-import qualified Debug.Trace                    as T
+-- import           Debug.Trace                        (trace)
 
 -------------------------------------------------------------------------------
 -- | Top level type returned after Constraint Generation ----------------------
@@ -120,7 +124,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnType RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv (defs pgm) (tDefs pgm) [] [] 0 mempty pgm invs c 
+initState c pgm = CGS F.emptyBindEnv (defs pgm) (tDefs pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -130,7 +134,6 @@ getDefType f
     where 
        err = cgError l $ errorMissingSpec l f
        l   = srcPos f
-
 
 -- cgStateFInfo :: Nano a1 (RType F.Reft)-> (([F.SubC Cinfo], [F.WfC Cinfo]), CGState) -> CGInfo
 cgStateCInfo pgm ((fcs, fws), cg) = CGI fi (cg_ann cg)
@@ -144,7 +147,35 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI fi (cg_ann cg)
                 , F.quals = quals pgm 
                 }
 
+---------------------------------------------------------------------------------------
+getTDefs :: CGM (E.Env RefType)
+---------------------------------------------------------------------------------------
+getTDefs  = cg_tdefs <$> get
+
+getBindingM i t 
+  = do  td <- cg_tdefs <$> get
+        return $ getBinding td i t 
+
+
+-- | Get binding from object type
+---------------------------------------------------------------------------------
+getBinding :: (PP r, F.Reftable r) => E.Env (RType r) -> Id a -> RType r -> Either String (RType r)
+---------------------------------------------------------------------------------
+getBinding _ i (TObj bs _ ) = 
+  case L.find (\s -> F.symbol i == b_sym s) bs of
+    Just b      -> Right $ b_type b
+    _           -> Left  $ errorObjectBinding
+getBinding defs i t@(TApp (TDef _) _ _) = 
+  case unfoldMaybe defs t of
+    Right t'    -> getBinding defs i t'
+    Left  s     -> Left $ s ++ "\nand\n" ++ errorObjectTAccess t
+getBinding _ _ t = Left $ errorObjectTAccess t
+
+
+
+---------------------------------------------------------------------------------------
 measureEnv   ::  Nano a (RType F.Reft) -> F.SEnv F.SortedReft
+---------------------------------------------------------------------------------------
 measureEnv   = fmap rTypeSortedReft . E.envSEnv . consts 
 
 ---------------------------------------------------------------------------------------
@@ -159,7 +190,6 @@ data CGState
         , ws       :: ![WfC]               -- ^ well-formedness constraints
         , count    :: !Integer             -- ^ freshness counter
         , cg_ann   :: A.AnnInfo RefType    -- ^ recorded annotations
-        , pgm      :: Nano AnnType RefType -- ^ the program
         , invs     :: TConInv              -- ^ type constructor invariants
         , cg_opts  :: Config               -- ^ configuration options
         }
@@ -233,7 +263,22 @@ envAddGuard x b g = g { guards = guard b x : guards g }
   where 
     guard True    = F.eProp 
     guard False   = F.PNot . F.eProp
+    -- Falsy values:
+    -- ∙ false
+    -- ∙ 0 (zero)
+    -- ∙ "" (empty string)
+    -- ∙ null
+    -- ∙ undefined
+    -- ∙ NaN (Not a number)
 
+    -- guard True  v = F.eProp v
+    -- guard False v = F.pOr [ F.PNot (F.eProp v) 
+    --                         
+    --                      ] 
+    --   where
+    --     vEqX x    = F.PAtom F.Eq (F.eVar v) x
+                           
+                    
 ---------------------------------------------------------------------------------------
 envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
 ---------------------------------------------------------------------------------------
@@ -272,18 +317,21 @@ envJoin' :: AnnType -> CGEnv -> CGEnv -> CGEnv -> CGM CGEnv
 envJoin' l g g1 g2
   = do  {- td      <- E.envMap toType <$> cg_tdefs <$> get -}
         let xs   = [x | PhiVar x <- ann_fact l] 
-        let t1s  = (`envFindTy` g1) <$> xs 
-        let t2s  = (`envFindTy` g2) <$> xs
+            t1s  = (`envFindTy` g1) <$> xs 
+            t2s  = (`envFindTy` g2) <$> xs
         when (length t1s /= length t2s) $ cgError l (bugBadPhi l t1s t2s)
-        -- joinTypes triplets
-        let ttt  = joinTypes (\a b -> toType a == toType b) <$> zip t1s t2s
-        (g',ts) <- freshTyPhis (srcPos l) g xs $ toType <$> fst3 <$> ttt
+
+        γ       <- getTDefs
+        let t4   = zipWith (compareTs γ) t1s t2s
+
+
+        (g',ts) <- freshTyPhis (srcPos l) g xs $ toType <$> fst4 <$> t4
         -- To facilitate the sort check t1s and t2s need to change to their
         -- equivalents that have the same sort with the joined types (ts) (with
         -- the added False's to make the types equivalent
-        envAdds (zip xs $ snd3 <$> ttt) g1 
-        envAdds (zip xs $ thd3 <$> ttt) g2
-        subTypes l g1 xs (tracePP "After JOIN" ts)
+        envAdds (zip xs $ snd4 <$> t4) g1 
+        envAdds (zip xs $ thd4 <$> t4) g2
+        subTypes l g1 xs ts
         subTypes l g2 xs ts
         return g'
 
@@ -325,6 +373,7 @@ freshTyPhis l g xs τs
        _  <- mapM    (wellFormed l g') ts
        return (g', ts)
 
+
 ---------------------------------------------------------------------------------------
 -- | Adding Subtyping Constraints -----------------------------------------------------
 ---------------------------------------------------------------------------------------
@@ -339,115 +388,36 @@ subTypes l g xs ts = zipWithM_ (subType l g) [envFindTy x g | x <- xs] ts
 ---------------------------------------------------------------------------------------
 subType :: AnnType -> CGEnv -> RefType -> RefType -> CGM ()
 ---------------------------------------------------------------------------------------
--- subType l g t1 t2 = modify $ \st -> st {cs =  c : cs st}
---   where 
---     c             = {- tracePP ("subType at" ++ ppshow (srcPos l)) $ -} Sub g (ci l) t1 t2
-
-subType l g t1 t2 = 
-  do tt1 <- addInvariant t1
-     tt2 <- addInvariant t2 
-     s   <- bkTypesM ({-T.trace (printf "Adding Sub: %s\n<:\n%s" (ppshow t1) (ppshow t2))-} tt1, tt2)
-     modify $ \st -> st {cs = c s ++ (cs st)}
-  where 
-     -- (tt1, tt2) = mapPair addTag (t1, t2)
-     c s        = map (uncurry $ Sub g (ci l)) s 
-
-
----------------------------------------------------------------------------------------
--- | Breaking Types              ------------------------------------------------------
----------------------------------------------------------------------------------------
-
--- | The output of this function should be of the same sort
----------------------------------------------------------------------------------------
-bkTypesM :: (RefType, RefType) -> CGM [(RefType, RefType)]
----------------------------------------------------------------------------------------
-
--- | Top-level Unions:                                                      
---
--- S1 ∪ ... ∪ Sn <: T1 ∪ ... ∪ Tn --->                                      
--- Si <: Tj forall matching i,j ∧ Sj <: { Sj | false } for the remaining j's
--- Should use the joinType trick (adding false and matching that are missing
--- from each side) to keep the refinements for the union                    
---
--- Adds the normalized top-level union, not in recursion to avoid infinite 
--- loop.
-
-bkTypesM (t1, t2) | union t1 || union t2 = 
-  liftM2 (:) (return (t1',t2')) (concatMapM bkTypesM $ matchTypes t1' t2')
-  where 
-    eq a b        = toType a == toType b
-    (_, t1', t2') = joinTypes eq (t1, t2) -- make compatible
-
-
--- | Top-level Objects:                                                     
---
--- TODO: Add toplevel refinement constraint on r1 - r2                      
-
-bkTypesM (TObj xt1s r1, TObj xt2s r2) | L.sort s1s == L.sort s2s =
-  concatMapM bkTypesM $ zip t1s t2s 
+subType l g t1 t2 =
+  do tt1   <- addInvariant ({-tracePP "Liquid:subtype t1" -}t1)
+     tt2   <- addInvariant ({-tracePP "Liquid:subtype t2" -}t2)
+     tdefs <- getTDefs
+     let s  = checkTypes tdefs 
+              ({-trace ("Liquid subTypes checktypes: " ++ ppshow tt1 ++ " - " ++ ppshow tt2)-} tt1) tt2
+     modify $ \st -> st {cs = c s : (cs st)}
   where
-    split l    = (b_sym l, b_type l)
-    ord a b    = compare (b_sym a) (b_sym b)
-    (s1s, t1s) = unzip $ split <$> L.sortBy ord xt1s
-    (s2s, t2s) = unzip $ split <$> L.sortBy ord xt2s
-
-    
-bkTypesM (TObj xt1s r1, TObj xt2s r2) | otherwise =
-  errorstar "UNIMPLEMENTED - bkObjects: breaking objects with different keys"
-
-bkTypesM (t1@(TObj _ _), t2) = 
-  cg_tdefs <$> get >>= \env -> bkTypesM (t1, {-tracePP ("Unfolded " ++ (ppshow t2)) $-} unfoldTDefSafe t2 env)
-
-bkTypesM (t1, t2@(TObj _ _)) = 
-  cg_tdefs <$> get >>= \env -> bkTypesM ({-tracePP ("Unfolded " ++ (ppshow t1)) $-} unfoldTDefSafe t1 env, t2)
-
--- | Default case: Just return the types
-bkTypesM tt = return {- $ tracePP "bkTypes default" -} [tt]
+    c      = uncurry $ Sub g (ci l)
+    -- Sort check 
+    checkTypes tdefs t1 t2 | equivWUnions tdefs t1 t2 = (t1,t2)
+    checkTypes  _ t1 t2 | otherwise                   = 
+      errorstar (printf "[%s]\nCGMonad: checkTypes not aligned: \n%s\nwith\n%s"
+                (ppshow $ ann l) (ppshow t1) (ppshow t2))
+    equivWUnions γ (TApp TUn ts _) (TApp TUn ts' _) = 
+      and $ safeZipWith "equivWUnions" (equivWUnions γ) (L.sort ts) (L.sort ts')
+    equivWUnions γ t t' = equiv γ t t'
 
 
+-- | Monadic unfolding
+-------------------------------------------------------------------------------
+unfoldFirstCG :: RefType -> CGM RefType
+-------------------------------------------------------------------------------
+unfoldFirstCG t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 
 
--- | Check for top-level union
----------------------------------------------------------------------------------------
-union :: RType r -> Bool
----------------------------------------------------------------------------------------
-union (TApp TUn _ _) = True
-union _              = False
-        
----------------------------------------------------------------------------------------
-noUnion :: (F.Reftable r) => RType r -> Bool
----------------------------------------------------------------------------------------
-noUnion (TApp TUn _ _)  = False
-noUnion (TApp _  rs _)  = and $ map noUnion rs
-noUnion (TFun bs rt _)  = and $ map noUnion $ rt : (map b_type bs)
-noUnion (TObj bs    _)  = and $ map noUnion $ map b_type bs
-noUnion (TBd  _      )  = error "noUnion: cannot have TBodies here"
-noUnion (TAll _ t    )  = noUnion t
-noUnion _               = True
-
-unionCheck t | noUnion t = t 
-unionCheck t | otherwise = error $ printf "%s found. Cannot have unions." $ ppshow t
-
-
--- | XXX: Does not add top-level constraint
----------------------------------------------------------------------------------------
-matchTypes :: RefType -> RefType -> [(RefType, RefType)]
----------------------------------------------------------------------------------------
-matchTypes t1 t2 | and $ zipWith req t1s t2s = 
-  zipWith sanity t1s t2s
-  where
-    t1s = L.sortBy ord $ bkUnion t1
-    t2s = L.sortBy ord $ bkUnion t2
-    -- sorting t1s and t2s by raw-type should align them !
-    -- by using sanity check anyway to make sure
-    ord a b = compare (toType a) (toType b) 
-    req a b = (toType a) == (toType b) 
-    sanity a b | toType a == toType b = (a,b)
-    sanity _ _ | otherwise            = errorstar "matchTypes"
-
-matchTypes t1 t2 | otherwise =
-  errorstar $ printf "matchTypes not aligned: %s - %s" (ppshow t1) (ppshow t2) 
-
+-------------------------------------------------------------------------------
+unfoldSafeCG :: RefType -> CGM RefType
+-------------------------------------------------------------------------------
+unfoldSafeCG   t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 
 ---------------------------------------------------------------------------------------
@@ -526,14 +496,6 @@ splitC' :: SubC -> CGM [FixSubC]
 ---------------------------------------------------------------------------------------
 splitC = splitC'
 
--- RJ splitC c = bkTypesC c >>= concatMapM splitC'
--- RJ 
--- RJ bkTypesC c@(Sub g i t1 t2)
--- RJ   = do t1'   <- addInvariant t1
--- RJ        t2'   <- addInvariant t2
--- RJ        s     <- bkTypesM (t1, t2)
--- RJ        return   [Sub g i t1' t2' | (t1', t2') <- s] 
-
 ---------------------------------------------------------------------------------------
 -- | Function types
 ---------------------------------------------------------------------------------------
@@ -597,13 +559,11 @@ splitC' (Sub g i t1@(TApp d1@(TDef _) t1s _) t2@(TApp d2@(TDef _) t2s _)) | d1 =
 splitC' (Sub _ _ (TApp (TDef _) _ _) (TApp (TDef _) _ _))
   = errorstar "Unimplemented: Check type definition cycles"
   
-splitC' (Sub g i t1@(TApp (TDef _) _ _ ) t2)  
-  = errorstar $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
-            (ppshow t1) (ppshow t2)
+splitC' (Sub g i t1@(TApp (TDef _) _ _ ) t2) = 
+  unfoldSafeCG t1 >>= \t1' -> splitC' $ Sub g i t1' t2
 
-splitC' (Sub g i t1 t2@(TApp (TDef _) _ _ ))
-  = errorstar $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
-            (ppshow t1) (ppshow t2)
+splitC' (Sub g i  t1 t2@(TApp (TDef _) _ _)) = 
+  unfoldSafeCG t2 >>= \t2' -> splitC' $ Sub g i t1 t2'
 
 ---------------------------------------------------------------------------------------
 -- | Rest of TApp
@@ -617,16 +577,22 @@ splitC' (Sub g i t1@(TApp _ t1s _) t2@(TApp _ t2s _))
 
 ---------------------------------------------------------------------------------------
 -- | Objects
--- Only empty objects (top-level) should reach this far                               
+-- Just the top-level constraint will be included here
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i tf1@(TObj [] _ ) tf2@(TObj [] _ ))
-  = return $ bsplitC g i tf1 tf2
+splitC' (Sub g i t1@(TObj xt1s _ ) t2@(TObj xt2s _ ))
+  = do let bcs     = bsplitC g i t1 t2
+       cs         <- concatMapM splitC $ map (uncurry $ Sub g i) ts 
+       return      $ bcs ++ cs
+    where 
+       ts          = safeZipWith "splitC:obj" checkB xt1s xt2s
+       checkB b b' | b_sym b == b_sym b' = (b_type b, b_type b')
+       checkB _ _  = errorstar "unimplemented: splitC: cannot split these objects"
 
-splitC' (Sub g i t1 t2@(TObj _ _ ))
+splitC' (Sub _ _ t1 t2@(TObj _ _ ))
   = error $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
             (ppshow t1) (ppshow t2)
 
-splitC' (Sub g i t1@(TObj _ _ ) t2)
+splitC' (Sub _ _ t1@(TObj _ _ ) t2)
   = error $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
             (ppshow t1) (ppshow t2)
 

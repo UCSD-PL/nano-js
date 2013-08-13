@@ -9,7 +9,6 @@ module Language.Nano.Liquid.Liquid (verifyFile) where
 import           Text.Printf                        (printf)
 -- import           Text.PrettyPrint.HughesPJ          (Doc, text, render, ($+$), (<+>))
 import           Control.Monad
-import           Control.Monad.State
 import           Control.Applicative                ((<$>))
 
 import qualified Data.ByteString.Lazy               as B
@@ -19,33 +18,39 @@ import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
 import           Language.ECMAScript3.PrettyPrint
 import           Language.ECMAScript3.Parser        (SourceSpan (..))
+
 import qualified Language.Fixpoint.Types            as F
 import           Language.Fixpoint.Misc
 import           Language.Fixpoint.Files
 import           Language.Fixpoint.Interface        (solve)
+
 import           Language.Nano.CmdLine              (getOpts)
 import           Language.Nano.Errors
+import           Language.Nano.Misc
 import           Language.Nano.Types
 import qualified Language.Nano.Annots               as A
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Parse
 import           Language.Nano.Typecheck.Typecheck  (typeCheck) 
+import           Language.Nano.Typecheck.Compare
 import           Language.Nano.SSA.SSA
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.CGMonad
 
 import           System.Console.CmdArgs.Default
 
-import           Debug.Trace                        as T
+-- import           Debug.Trace                        (trace)
+
+import qualified System.Console.CmdArgs.Verbosity as V
 
 --------------------------------------------------------------------------------
 verifyFile       :: FilePath -> IO (F.FixResult (SourceSpan, String))
 --------------------------------------------------------------------------------
 verifyFile f =   
   do  p   <- parseNanoFromFile f
-      -- Liquid { kVarInst = kv } <- getOpts
       cfg <- getOpts 
-      fmap (, "") <$> reftypeCheck cfg f (typeCheck (ssaTransform p))
+      verb    <- V.getVerbosity
+      fmap (, "") <$> reftypeCheck cfg f (typeCheck verb (ssaTransform p))
 
 -- DEBUG VERSION 
 -- ssaTransform' x = tracePP "SSATX" $ ssaTransform x 
@@ -102,14 +107,14 @@ initCGEnv pgm = CGE (specs pgm) F.emptyIBindEnv []
 consFun :: CGEnv -> FunctionStatement AnnType -> CGM CGEnv  
 --------------------------------------------------------------------------------
 consFun g (FunctionStmt l f xs body) 
-  = do ft             <- tracePP msg <$> (freshTyFun g l f =<< getDefType f)
+  = do ft             <- {- tracePP msg <$> -} (freshTyFun g l f =<< getDefType f)
        g'             <- envAdds [(f, ft)] g 
        g''            <- envAddFun l g' f xs ft
        gm             <- consStmts g'' body
        maybe (return ()) (\g -> subType l g tVoid (envFindReturn g'')) gm
        return g'
-    where 
-       msg = printf "freshTyFun f = %s" (ppshow f)
+    {-where -}
+    {-   msg = printf "freshTyFun f = %s" (ppshow f)-}
 
 consFun _ _ = error "consFun called not with FunctionStmt"
 
@@ -230,9 +235,13 @@ consExpr :: CGEnv -> Expression AnnType -> CGM (Id AnnType, CGEnv)
 --   x' is a fresh, temporary (A-Normalized) variable holding the value of `e`,
 --   g' is g extended with a binding for x' (and other temps required for `e`)
 
-consExpr g (Cast a e) 
+consExpr g (DownCast a e) 
   = do  (x, g') <- consExpr g e
-        consCast g' x a e 
+        consDownCast g' x a e 
+
+consExpr g (UpCast a e)
+  = do  (x, g') <- consExpr g e
+        consUpCast g' x a e
 
 consExpr g (DeadCast a e)
   = consDeadCast g a e
@@ -245,6 +254,9 @@ consExpr g (BoolLit l b)
 
 consExpr g (StringLit l s)
   = envAddFresh l (eSingleton tString s) g
+
+consExpr g (NullLit l)
+  = envAddFresh l tNull g
 
 consExpr g (VarRef i x)
   = do addAnnot l x' $ envFindTy x g
@@ -266,9 +278,10 @@ consExpr g (CallExpr l e es)
 
 consExpr  g (DotRef l e i)
   = do  (x, g') <- consExpr g e
-        case getBinding i $ envFindTy x g' of 
-          Left  s -> errorstar s
-          Right t -> envAddFresh l t g'
+        t       <- getBindingM i $ envFindTy x g'
+        case t of
+          Left  s  -> errorstar s
+          Right t' -> envAddFresh l t' g'
        
 consExpr g (ObjectLit l ps) 
   = do  (x, g') <- consObj l g ps
@@ -277,34 +290,46 @@ consExpr g (ObjectLit l ps)
 consExpr _ e 
   = error $ (printf "consExpr: not handled %s" (ppshow e))
 
+
+
 ---------------------------------------------------------------------------------------------
-consCast :: CGEnv -> Id AnnType -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
+consUpCast :: CGEnv -> Id AnnType -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
 ---------------------------------------------------------------------------------------------
-consCast g x a e 
-  = do ps       <- bkTypesM (tE, tC)
-       forM_ ps  $ castSubM g x l
-       (x', g') <- envAddFresh l tC g
-       return (x', g')
+consUpCast g x a e 
+  = do  γ         <- getTDefs
+        let tE'    = thd4 $ compareTs γ tE tU 
+        (x',g')   <- envAddFresh l tE' g 
+        return     $ (x', g')
+  where tE         = envFindTy x g 
+        tU         = rType $ head [ t | Assume t <- ann_fact a]
+        l          = getAnnotation e
+      
+
+---------------------------------------------------------------------------------------------
+consDownCast :: CGEnv -> Id AnnType -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
+---------------------------------------------------------------------------------------------
+consDownCast g x a e 
+  = do  tdefs              <- getTDefs
+        let (_, tE', tC',_) = compareTs tdefs tE tC
+        let ts              = bkPaddedUnion tdefs tE' tC'
+        forM_ ts            $ castSubM g x l      -- Parts 
+        castSubM            g x l (tE', tC')      -- Top-level
+        (x', g')           <- envAddFresh l tC g
+        return              $ (x', g')
     where 
-      tE        = tracePP ("CAST FROM " ++ ppshow x) $ envFindTy x g
-      tC        = tracePP "CAST TO"                  $ rType $ head [ t | Assume t <- ann_fact a]
-      l         = getAnnotation e
+      tE              = envFindTy x g
+      tC              = rType $ head [ t | Assume t <- ann_fact a]
+      l               = getAnnotation e
 
 
-castSubM g x l (t1, t2)
-  = do (g', t1', t2') <- fixBase g x (t1, t2) 
-       t1'' <- addInvariant t1'
-       t2'' <- addInvariant t2' 
-       -- FIX: At this point you should JUST call subType
-       -- subType l g' t1'' t2''
-       modify $ \st -> st {cs = Sub g' (ci l) (T.trace (printf "Adding cast Sub: %s\n<:\n%s" (ppshow t1'') (ppshow t2'')) t1'') t2'' : (cs st)}
-
--- RJ: castSubM g x l (t1, t2) 
--- RJ:   = do (g', t1', t2') <- fixBase g x (t1, t2)
--- RJ:        let msg         = printf "Adding cast Sub: %s\n<:\n%s" (ppshow t1') (ppshow t2')
--- RJ:        tracePP msg   <$> subType l g' t1' t2'
-
---  g, x :: U t1 ... tn |- x <: {v:T | q}
+---------------------------------------------------------------------------------------------
+castSubM :: CGEnv -> Id AnnType -> AnnType -> (RefType, RefType) -> CGM () 
+---------------------------------------------------------------------------------------------
+castSubM g x l (t1, t2) 
+  = do (g', t1', t2') <- fixBase g x $ {- tracePP "Calling fixbase on" -} (t1, t2)
+       {-let msg         = printf "Adding cast Sub: %s\n<:\n%s" (ppshow t1') (ppshow t2')-}
+       -- subType can be called directly at this point
+       subType l g' ({-trace msg -} t1') t2'
 
 
 -- | fixBase converts:                                                  
@@ -327,23 +352,6 @@ fixBase g x (tE, tC) =
      g'      <- envAdds [(x, rX')] g
      let ttE' = eSingleton ttE x 
      return (g', ttE', tC)
-   
--- OLD fixBase g x (tE,tC) =
--- OLD   do ttE     <- true tE
--- OLD      -- { v: B | r } = { v: B | _ } `strengthen` r
--- OLD      let rX'  = ttE `strengthen` rTypeReft (envFindTy x g)
--- OLD      g'      <- envAdds [(x, rX')] g
--- OLD      -- v
--- OLD      let v    = rTypeValueVar {-$ tracePP "fixbase tE (before)" -} ttE
--- OLD      -- (v = x)
--- OLD      let vEqX = F.Reft (v, [F.RConc (F.PAtom F.Eq (F.EVar v) (F.EVar $ F.symbol x))])
--- OLD      -- { v: B | p ∧ (v = x)} = { v: B | p } `strengthen` (v = x)
--- OLD      let ttE' = ttE `strengthen` vEqX
--- OLD      return (g', ttE', tC)
-
-
-    {- msg =  printf "fixbase %s -> (%s::%s) \n|- tE: %s <: tC: %s\n" 
-    (ppshow $ envFindTy x g) (ppshow x) (ppshow rX') (ppshow tE') (ppshow tC) -} 
 
 
 ---------------------------------------------------------------------------------------------
@@ -376,12 +384,12 @@ consCall g l _ es ft
        (xes, g')    <- consScan consExpr g es
        let (su, ts') = renameBinds its xes
        subTypes l g' xes ts'
-       envAddFresh l (F.subst ({- F.traceFix msg -} su) ot) g'
-    -- where 
-    --   msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)
+       envAddFresh l (F.subst su ot) g'
+     {-where -}
+     {-  msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
 instantiate :: AnnType -> CGEnv -> RefType -> CGM RefType
-instantiate l g t =  {- tracePP msg  <$>  -} freshTyInst l g αs τs tbody 
+instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs tbody 
   where 
     (αs, tbody)   = bkAll t
     τs            = getTypArgs l αs 

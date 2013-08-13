@@ -62,20 +62,14 @@ function pos(){
 //
 // For Null
 // typeof null === 'object'; // This stands since the beginning of JavaScript
-//
-
-
-// 0 -> Number
-// 1 -> Boolean
-// 2 -> Null              -- this does not follow the above very closely
-// 3 -> Undefined  
-
 
 
 
 /*************************************************************************/
 /************** Types for list Operators ******************************/
 /*************************************************************************/
+
+/*@ type list[A]  {  data : A, next : list[A] + null } */
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
@@ -85,7 +79,7 @@ function pos(){
 /*@ tail  :: forall A. (xs:list [A]) => list [A]                                                  */
 /*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
 /*@ empty :: forall A. (xango: list[A] + null ) => 
-                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}                             */
+                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}                      */
 /*@ emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
 
 
@@ -117,6 +111,11 @@ function pos(){
 
 /*@ builtin_OpLOr       :: ({x:boolean|true}, {y:boolean|true}) =>
                             {v:boolean | ((Prop v) <=> ((Prop x) || (Prop y)))}                           */
+
+// XXX: Will eventually switch to truthy and falsy:
+/*  builtin_OpLOr       :: (x:top, y:top) => 
+                             {v:top | ((Prop v) <=> (if (falsy x) then (v = y) else (v = x) ))}           */
+
 /*@ builtin_OpAdd       :: ({x:number | true}, {y:number | true})  => {v:number | v = x + y}              */
 /*@ builtin_OpSub       :: ({x:number | true}, {y:number | true})  => {v:number | v = x - y}              */
 /*@ builtin_OpMul       :: (number,  number)  => number                                                   */
@@ -139,10 +138,11 @@ function pos(){
 /*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
 
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {v:null      | ttag(v) = "object"   } */
+/*@ invariant {v:null      | ttag(v) = "null"     } */  //TODO: this is not very precise
 /*@ invariant {v:boolean   | ttag(v) = "boolean"  } */ 
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
+/*@ invariant {v:object    | ttag(v) = "object"   } */
 
 
 /*************************************************************************/

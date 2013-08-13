@@ -17,21 +17,24 @@ module Language.Nano.Typecheck.Subst (
   -- * Type-class with operations
   , Substitutable (..)
 
+  -- * Unfolding
+  , unfoldFirst, unfoldMaybe, unfoldSafe
+  
 
   ) where 
 
 import           Text.PrettyPrint.HughesPJ
 import           Language.ECMAScript3.PrettyPrint
--- import           Language.Fixpoint.Misc
 import qualified Language.Fixpoint.Types as F
--- import           Language.Nano.Errors 
+import           Language.Nano.Errors 
+import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
 
 import           Control.Applicative ((<$>))
 import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid
--- import           Text.Printf 
+import           Text.Printf 
 -- import           Debug.Trace
 -- import           Language.Nano.Misc (mkEither)
 
@@ -117,4 +120,53 @@ appTy (Su m) (TAll α t)          = apply (Su $ M.delete α m) t
 appTy (Su m) (TBd (TD c α t s))  = TBd $ TD c α (apply (Su $ foldr M.delete m α) t) s
 
 
+
+-----------------------------------------------------------------------------
+-- Unfolding ----------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+-- | Unfold the FIRST TDef at any part of the type @t@.
+-------------------------------------------------------------------------------
+unfoldFirst :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
+-------------------------------------------------------------------------------
+unfoldFirst env t = go t
+  where 
+    go (TFun its ot r)         = TFun (appTBi go <$> its) (go ot) r
+    go (TObj bs r)             = TObj (appTBi go <$> bs) r
+    go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
+    go (TAll v t)              = TAll v $ go t
+    go (TApp (TDef id) acts _) = 
+      case envFindTy (F.symbol id) env of
+        Just (TBd (TD _ vs bd _ )) -> apply (fromList $ zip vs acts) bd
+        _                          -> error $ errorUnboundId id
+    go (TApp c a r)            = TApp c (go <$> a) r
+    go t@(TVar _ _ )           = t
+    appTBi f (B s t)           = B s $ f t
+
+
+-- | Unfold a top-level type definition once. 
+-- Return @Right t@, where @t@ is the unfolded type if the unfolding is succesful.
+-- This includes the case where the input type @t@ is not a type definition in
+-- which case the same type is returned.
+-- If it is a type literal for which no definition exists return 
+-- @Left "<Error message>".
+--
+-- TODO: Make sure toplevel refinements are the same.
+-------------------------------------------------------------------------------
+unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RType r)
+-------------------------------------------------------------------------------
+unfoldMaybe env t@(TApp (TDef id) acts _) =
+      case envFindTy (F.symbol id) env of
+        Just (TBd (TD _ vs bd _ )) -> Right $ apply (fromList $ zip vs acts) bd
+        _                          -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
+-- The only thing that is unfoldable is a TDef.
+-- The rest are just returned as they are.
+unfoldMaybe _ t                           = Right t
+
+
+-- | Force a successful unfolding
+-------------------------------------------------------------------------------
+unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
+-------------------------------------------------------------------------------
+unfoldSafe env = either error id . unfoldMaybe env
 
