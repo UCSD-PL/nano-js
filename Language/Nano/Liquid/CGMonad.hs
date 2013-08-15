@@ -499,7 +499,7 @@ splitC = splitC'
 ---------------------------------------------------------------------------------------
 -- | Function types
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i tf1@(TFun xt1s t1 _) tf2@(TFun xt2s t2 _))
+splitC' (Sub g i tf1@(TFun xt1s t1 _ _ _) tf2@(TFun xt2s t2 _ _ _))
   = do let bcs    = bsplitC g i tf1 tf2
        g'        <- envTyAdds i xt2s g 
        cs        <- concatMapM splitC $ safeZipWith "splitC1" (Sub g' i) t2s t1s' 
@@ -622,7 +622,7 @@ bsplitC g ci t1 t2
 ---------------------------------------------------------------------------------------
 splitW :: WfC -> CGM [FixWfC]
 ---------------------------------------------------------------------------------------
-splitW (W g i (TFun ts t _)) 
+splitW (W g i (TFun ts t _ _ _)) 
   = do let bws = bsplitW g t i
        g'     <- envTyAdds i ts g 
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]

@@ -23,6 +23,7 @@ module Language.Nano.Typecheck.Types (
   -- , sigsNano
 
   -- * (Refinement) Types
+  , RHeap
   , RType (..)
   , Bind (..)
   , toType
@@ -89,6 +90,7 @@ import           Language.ECMAScript3.Parser    (SourceSpan (..))
 import           Language.Nano.Types
 import           Language.Nano.Errors
 import           Language.Nano.Env
+import           Language.Nano.Typecheck.Heaps
 
 -- import           Language.Fixpoint.Names (propConName)
 import qualified Language.Fixpoint.Types        as F
@@ -146,12 +148,14 @@ data TCon
   | TUndef
     deriving (Ord, Show, Data, Typeable)
 
+type RHeap r = Heap (RType r)    
+
 -- | (Raw) Refined Types 
 data RType r  
-  = TApp TCon [RType r]     r
-  | TVar TVar               r 
-  | TFun [Bind r] (RType r) r
-  | TObj [Bind r]           r
+  = TApp TCon [RType r]                         r
+  | TVar TVar                                   r 
+  | TFun [Bind r] (RType r) (RHeap r) (RHeap r) r
+  | TObj [Bind r]                               r
   | TBd  (TBody r)
   | TAll TVar (RType r)
     deriving (Ord, Show, Functor, Data, Typeable)
@@ -180,8 +184,8 @@ bkFun t = do let (αs, t') = bkAll t
              (xts, t'')  <- bkArr t'
              return        (αs, xts, t'')
          
-bkArr (TFun xts t _) = Just (xts, t)
-bkArr _              = Nothing
+bkArr (TFun xts t _ _ _) = Just (xts, t)
+bkArr _                  = Nothing
 
 bkAll                :: RType a -> ([TVar], RType a)
 bkAll t              = go [] t
@@ -259,13 +263,13 @@ rUnion _              = F.top
 ---------------------------------------------------------------------------------------
 noUnion :: (F.Reftable r) => RType r -> Bool
 ---------------------------------------------------------------------------------------
-noUnion (TApp TUn _ _)  = False
-noUnion (TApp _  rs _)  = and $ map noUnion rs
-noUnion (TFun bs rt _)  = and $ map noUnion $ rt : (map b_type bs)
-noUnion (TObj bs    _)  = and $ map noUnion $ map b_type bs
-noUnion (TBd  _      )  = error "noUnion: cannot have TBodies here"
-noUnion (TAll _ t    )  = noUnion t
-noUnion _               = True
+noUnion (TApp TUn _ _)      = False
+noUnion (TApp _  rs _)      = and $ map noUnion rs
+noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ htypes h ++ htypes h')
+noUnion (TObj bs    _)      = and $ map noUnion $ map b_type bs 
+noUnion (TBd  _      )      = error "noUnion: cannot have TBodies here"
+noUnion (TAll _ t    )      = noUnion t
+noUnion _                   = True
 
 unionCheck t | noUnion t = t 
 unionCheck t | otherwise = error $ printf "%s found. Cannot have unions." $ ppshow t
@@ -284,15 +288,15 @@ instance Eq TCon where
   _       == _       = False
  
 instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
-  TApp TUn t1 _       == TApp TUn t2 _       = (null $ t1 L.\\ t2) && (null $ t2 L.\\ t1)
+  TApp TUn t1 _          == TApp TUn t2 _         = (null $ t1 L.\\ t2) && (null $ t2 L.\\ t1)
     {-tracePP (printf "Diff: %s \\ %s" (ppshow $ L.nub t1) (ppshow $ L.nub t2)) $-}
-  TApp c1 t1s r1      == TApp c2 t2s r2      = (c1, t1s, r1)  == (c2, t2s, r2)
-  TVar v1 r1          == TVar v2 r2          = (v1, r1)       == (v2, r2)
-  TFun b1 t1 r1       == TFun b2 t2 r2       = (b1, t1, r1)   == (b2, t2, r2)
-  TObj b1 r1          == TObj b2 r2          = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
-  TBd (TD c1 a1 b1 _) == TBd (TD c2 a2 b2 _) = (c1, a1, b1)   == (c2, a2, b2)
-  TAll _ _            == TAll _ _            = undefined -- TODO
-  _                   == _                   = False
+  TApp c1 t1s r1         == TApp c2 t2s r2        = (c1, t1s, r1)  == (c2, t2s, r2)
+  TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
+  TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
+  TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
+  TBd (TD c1 a1 b1 _)    == TBd (TD c2 a2 b2 _)   = (c1, a1, b1)   == (c2, a2, b2)
+  TAll _ _               == TAll _ _              = undefined -- TODO
+  _                      == _                     = False
 
 
 
@@ -377,9 +381,18 @@ instance PP a => PP [a] where
 instance PP a => PP (Maybe a) where 
   pp = maybe (text "Nothing") pp 
 
+instance PP Int where
+  pp = text . show
+
+instance (PP t) => PP (Heap t) where
+  pp h = text "H" <+> pp (hbinds h)
+
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
-  pp (TFun xts t _)             = ppArgs parens comma xts <+> text "=>" <+> pp t 
+  pp (TFun xts t h h' _)        = ppArgs parens comma xts
+                              <+> text "/" <+> pp h
+                              <+> text "=>"
+                              <+> pp t <+> text "/" <+> pp h'
   pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." 
                                    <+> pp t' where (αs, t') = bkAll t
   pp (TApp TUn ts r)            = F.ppTy r $ ppArgs id (text "+") ts 

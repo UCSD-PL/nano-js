@@ -40,6 +40,7 @@ import           Language.Nano.Errors
 import           Language.Nano.Env
 import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
 
 import qualified Language.Fixpoint.Types            as F
@@ -77,8 +78,9 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   equiv _ (TVar v _  )         (TVar v' _  )          = v == v'
 
   -- Functions need to be exactly the same - no padding can happen here
-  equiv γ (TFun b o _)         (TFun b' o' _)         = 
-    equiv γ (b_type <$> b) (b_type <$> b') && equiv γ o o' 
+  equiv γ (TFun b o h h' _)    (TFun b' o' g g' _)    = 
+    equiv γ (b_type <$> b) (b_type <$> b') && equiv γ o o' &&
+    equiv γ h g && equiv γ h' g'
 
   -- Any two objects can be combined - so they should be equivalent
   equiv _ (TObj _ _  )         (TObj _ _   )          = True
@@ -88,6 +90,13 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   equiv _ (TAll _ _   )        (TAll _ _ )            = error "equiv-tall"
     -- t `equiv` apply (fromList [(v',tVar v)]) t'
   equiv _ _                    _                      = False
+
+instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RHeap r) where
+  equiv γ h1 h2 = equiv γ (hbinds h1) (hbinds h2)
+
+instance (PP r, F.Reftable r) =>
+           Equivalent (Env (RType r)) (Location, RType r) where
+  equiv γ (l1, t1) (l2, t2) = l1 == l2 && equiv γ t1 t2
 
 instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (Bind r) where 
   equiv γ (B s t) (B s' t') = s == s' && equiv γ t t' 
@@ -261,9 +270,9 @@ compareTs' _ t1@(TApp _ _ _) t2@(TApp _ _ _) = padSimple t1 t2
 compareTs' _ t1@(TVar _ _)   t2@(TVar _ _)   = padVar t1 t2
 
 -- | Function Types
-compareTs' γ t1@(TFun _ _ _) t2@(TFun _ _ _) = padFun γ t1 t2
-compareTs' _ (TFun _ _ _)    _               = error "Unimplemented compareTs-1"
-compareTs' _ _               (TFun _ _ _)    = error "Unimplemented compareTs-2"
+compareTs' γ t1@(TFun _ _ _ _ _) t2@(TFun _ _ _ _ _) = padFun γ t1 t2
+compareTs' _ (TFun _ _ _ _ _) _              = error "Unimplemented compareTs-1"
+compareTs' _ _           (TFun _ _ _ _ _)    = error "Unimplemented compareTs-2"
 
 -- | TAll
 compareTs' _ (TAll _ _  ) _                  = error "Unimplemented: compareTs-3"
@@ -482,7 +491,7 @@ padObject _ _ _ = error "padObject: Cannot pad non-objects"
 
 -- | `padFun`
 
-padFun γ (TFun b1s o1 r1) (TFun b2s o2 r2) 
+padFun γ (TFun b1s o1 h1 h1' r1) (TFun b2s o2 h2 h2' r2) 
   | length b1s == length b2s && sameTypes = (joinT, t1', t2', EqT)
   | otherwise                             = 
       error "Unimplemented: padFun - combining functions with different types"
@@ -490,9 +499,9 @@ padFun γ (TFun b1s o1 r1) (TFun b2s o2 r2)
       sameTypes              = all (== EqT) $ od:bds
       (tjs, t1s', t2s', bds) = unzip4 $ zipWith (compareTs γ) (b_type <$> b1s) (b_type <$> b2s)
       (oj , o1' , o2' , od ) = compareTs γ o1 o2
-      t1'                    = TFun (updTs b1s t1s') o1' r1
-      t2'                    = TFun (updTs b2s t2s') o2' r2
-      joinT                  = TFun (updTs b1s tjs) oj F.top 
+      t1'                    = TFun (updTs b1s t1s') o1' h1 h1' r1
+      t2'                    = TFun (updTs b2s t2s') o2' h2 h2' r2
+      joinT                  = TFun (updTs b1s tjs) oj h1 h1' F.top 
       updTs                  = zipWith (\b t -> b { b_type = t })
 
 padFun _ _ _ = error "padFun: no other cases supported"

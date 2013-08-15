@@ -29,6 +29,7 @@ import           Language.Nano.Errors
 import           Language.Nano.Files
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Env
 
@@ -100,7 +101,7 @@ bareFunP
        reserved "=>" 
        ret    <- bareTypeP 
        r      <- topP
-       return $ TFun args ret r
+       return $ TFun args ret emp emp r
 
 bareArgP 
   =   (try boundTypeP)

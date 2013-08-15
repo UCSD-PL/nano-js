@@ -45,7 +45,7 @@ unify :: Env Type -> Subst -> Type -> Type -> Either String Subst
 unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _) 
   | any isTop [t,t']                    = Right $ θ
 
-unify env θ (TFun xts t _) (TFun xts' t' _) = 
+unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) = 
   unifys env θ (t: (b_type <$> xts)) (t': (b_type <$> xts'))
 
 -- TODO: Cycles

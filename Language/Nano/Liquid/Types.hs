@@ -61,6 +61,7 @@ import           Language.Nano.Errors
 import           Language.Nano.Types
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import qualified Language.Fixpoint.Types as F
 import           Language.Fixpoint.PrettyPrint
 import           Text.PrettyPrint.HughesPJ
@@ -193,13 +194,13 @@ rTypeValueVar t   = vv where F.Reft (vv,_) =  rTypeReft t
 rTypeSort :: (F.Reftable r) => RType r -> F.Sort
 ------------------------------------------------------------------------------------------
 
-rTypeSort (TApp TInt [] _) = F.FInt
-rTypeSort (TVar α _)       = F.FObj $ F.symbol α 
-rTypeSort t@(TAll _ _)     = rTypeSortForAll t 
-rTypeSort (TFun xts t _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> xts) ++ [t]
-rTypeSort (TApp c ts _)    = rTypeSortApp c ts 
-rTypeSort (TObj _ _)       = F.FApp (F.stringFTycon "object") []
-rTypeSort t                = error ("Type: " ++ ppshow t ++ 
+rTypeSort (TApp TInt [] _)     = F.FInt
+rTypeSort (TVar α _)           = F.FObj $ F.symbol α 
+rTypeSort t@(TAll _ _)         = rTypeSortForAll t 
+rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> xts) ++ [t]
+rTypeSort (TApp c ts _)        = rTypeSortApp c ts 
+rTypeSort (TObj _ _)           = F.FApp (F.stringFTycon "object") []
+rTypeSort t                    = error ("Type: " ++ ppshow t ++ 
                                     " is not supported in rTypeSort")
 
 
@@ -231,7 +232,7 @@ stripRTypeBase :: RType r -> Maybe r
 ------------------------------------------------------------------------------------------
 stripRTypeBase (TApp _ _ r) = Just r
 stripRTypeBase (TVar _ r)   = Just r
-stripRTypeBase (TFun _ _ r) = Just r
+stripRTypeBase (TFun _ _ _ _ r) = Just r
 stripRTypeBase _            = Nothing
  
 ------------------------------------------------------------------------------------------
@@ -252,31 +253,43 @@ instance (F.Reftable r, F.Subable r) => F.Subable (RType r) where
 ------------------------------------------------------------------------------------------
 emapReft  :: (F.Reftable a) => ([F.Symbol] -> a -> b) -> [F.Symbol] -> RType a -> RType b
 ------------------------------------------------------------------------------------------
-emapReft f γ (TVar α r)     = TVar α (f γ r)
-emapReft f γ (TApp c ts r)  = TApp c (emapReft f γ <$> ts) (f γ r)
-emapReft f γ (TAll α t)     = TAll α (emapReft f γ t)
-emapReft f γ (TFun xts t r) = TFun (emapReftBind f γ' <$> xts) (emapReft f γ' t) (f γ r) 
+emapReft f γ (TVar α r)          = TVar α (f γ r)
+emapReft f γ (TApp c ts r)       = TApp c (emapReft f γ <$> ts) (f γ r)
+emapReft f γ (TAll α t)          = TAll α (emapReft f γ t)
+emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts) (emapReft f γ' t) hi' ho' (f γ r) 
   where 
-    γ'                      = (b_sym <$> xts) ++ γ 
-    -- ts                      = b_type <$> xts 
-emapReft f γ (TObj bs r)    = TObj (emapReftBind f γ' <$> bs) (f γ r)
+    γ'                           = (b_sym <$> xts) ++ γ 
+    hi'                          = fmap (emapReft f γ) hi
+    ho'                          = fmap (emapReft f γ) ho
+    -- ts                           = b_type <$> xts 
+emapReft f γ (TObj bs r)         = TObj (emapReftBind f γ' <$> bs) (f γ r)
   where 
-    γ'                      = (b_sym <$> bs) ++ γ 
-emapReft _ _ _              = error "Not supported in emapReft"
+    γ'                           = (b_sym <$> bs) ++ γ 
+emapReft _ _ _                   = error "Not supported in emapReft"
 
-emapReftBind f γ (B x t)    = B x $ emapReft f γ t
+emapReftBind f γ (B x t)         = B x $ emapReft f γ t
 
 ------------------------------------------------------------------------------------------
 mapReftM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RType a -> m (RType b)
 ------------------------------------------------------------------------------------------
-mapReftM f (TVar α r)      = TVar α <$> f r
-mapReftM f (TApp c ts r)   = TApp c <$> mapM (mapReftM f) ts <*> f r
-mapReftM f (TFun xts t _)  = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t <*> (return F.top) --f r 
-mapReftM f (TAll α t)      = TAll α <$> mapReftM f t
-mapReftM f (TObj bs r)     = TObj   <$> mapM (mapReftBindM f) bs <*> f r
-mapReftM _ _               = error "Not supported in mapReftM"
+mapReftM f (TVar α r)          = TVar α <$> f r
+mapReftM f (TApp c ts r)       = TApp c <$> mapM (mapReftM f) ts <*> f r
+mapReftM f (TFun xts t h h' _) = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t
+                                        <*> mapReftHeapM f h
+                                        <*> mapReftHeapM f h'
+                                        <*> (return F.top) --f r 
+mapReftM f (TAll α t)          = TAll α <$> mapReftM f t
+mapReftM f (TObj bs r)         = TObj   <$> mapM (mapReftBindM f) bs <*> f r
+mapReftM _ _                   = error "Not supported in mapReftM"
 
-mapReftBindM f (B x t)     = B x <$> mapReftM f t
+mapReftBindM f (B x t)         = B x <$> mapReftM f t
+
+mapReftHeapM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RHeap a -> m (RHeap b)
+mapReftHeapM f h               =
+    mapM mapBindM (hbinds h) >>= (return . hFromBindings)
+        where mapBindM (l, t) = do t' <- mapReftM f t
+                                   return (l, t')
+
 
 ------------------------------------------------------------------------------------------
 -- | fold over @RType@ -------------------------------------------------------------------
@@ -290,20 +303,20 @@ foldReft  f = efoldReft (\_ -> ()) (\_ -> f) F.emptySEnv
 ------------------------------------------------------------------------------------------
 efoldReft :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> r -> a -> a) -> F.SEnv b -> a -> RType r -> a
 ------------------------------------------------------------------------------------------
-efoldReft _ f γ z (TVar _ r)       = f γ r z
-efoldReft g f γ z t@(TApp _ ts r)  = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
-efoldReft g f γ z (TAll _ t)       = efoldReft g f γ z t
-efoldReft g f γ z (TFun xts t r)   = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z (b_type <$> xts)) t  
+efoldReft _ f γ z (TVar _ r)          = f γ r z
+efoldReft g f γ z t@(TApp _ ts r)     = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
+efoldReft g f γ z (TAll _ t)          = efoldReft g f γ z t
+efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z (b_type <$> xts)) t  
   where 
-    γ'                             = foldr (efoldExt g) γ xts
-efoldReft g f γ z (TObj xts r)     = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
+    γ'                                = foldr (efoldExt g) γ xts
+efoldReft g f γ z (TObj xts r)        = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
   where 
-    γ'                             = foldr (efoldExt g) γ xts
-efoldReft _ _ _ _ _                = error "Not supported in efoldReft"
+    γ'                                = foldr (efoldExt g) γ xts
+efoldReft _ _ _ _ _                   = error "Not supported in efoldReft"
 
-efoldRefts g f γ z ts              = L.foldl' (efoldReft g f γ) z ts
+efoldRefts g f γ z ts                 = L.foldl' (efoldReft g f γ) z ts
 
-efoldExt g xt γ                    = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
+efoldExt g xt γ                       = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
 
 ------------------------------------------------------------------------------------------
 isBaseRType :: RType r -> Bool

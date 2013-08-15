@@ -236,7 +236,7 @@ dotAccess f t@(TApp c ts _ ) = go c
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
 
-dotAccess _   (TFun _ _ _ ) = return $ Just tUndef
+dotAccess _   (TFun _ _ _ _ _ ) = return $ Just tUndef
 dotAccess _ t               = error $ "dotAccess " ++ (ppshow t) 
 
 

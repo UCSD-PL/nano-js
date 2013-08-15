@@ -29,6 +29,7 @@ import qualified Language.Fixpoint.Types as F
 import           Language.Nano.Errors 
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 
 import           Control.Applicative ((<$>))
 import qualified Data.HashSet as S
@@ -94,7 +95,7 @@ instance (PP r, F.Reftable r) => Substitutable r (Bind r) where
 instance Free (RType r) where
   free (TApp _ ts _)        = S.unions   $ free <$> ts
   free (TVar α _)           = S.singleton α 
-  free (TFun xts t _)       = S.unions   $ free <$> t:ts where ts = b_type <$> xts
+  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ htypes h ++ htypes h'
   free (TAll α t)           = S.delete α $ free t 
   free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ α t _ ))  = foldr S.delete (free t) α
@@ -115,15 +116,13 @@ instance Free Fact where
 appTy θ (TApp c ts z)            = TApp c (apply θ ts) z 
 appTy θ (TObj bs z)              = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
 appTy (Su m) t@(TVar α r)        = (M.lookupDefault t α m) `strengthen` r
-appTy θ (TFun ts t r)            = TFun  (apply θ ts) (apply θ t) r
+appTy θ (TFun ts t h h' r)       = appTyFun θ ts t h h' r
 appTy (Su m) (TAll α t)          = apply (Su $ M.delete α m) t 
 appTy (Su m) (TBd (TD c α t s))  = TBd $ TD c α (apply (Su $ foldr M.delete m α) t) s
 
-
-
------------------------------------------------------------------------------
--- Unfolding ----------------------------------------------------------------
------------------------------------------------------------------------------
+appTyFun θ ts t h h' r =
+  TFun (apply θ ts) (apply θ t) (fmap go h) (fmap go h') r
+      where go = appTy θ
 
 -- | Unfold the FIRST TDef at any part of the type @t@.
 -------------------------------------------------------------------------------
@@ -131,7 +130,7 @@ unfoldFirst :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
 -------------------------------------------------------------------------------
 unfoldFirst env t = go t
   where 
-    go (TFun its ot r)         = TFun (appTBi go <$> its) (go ot) r
+    go (TFun its ot h h' r)         = TFun (appTBi go <$> its) (go ot) (fmap go h) (fmap go h') r
     go (TObj bs r)             = TObj (appTBi go <$> bs) r
     go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
     go (TAll v t)              = TAll v $ go t
