@@ -98,10 +98,28 @@ bareTypeNoUnionP
 bareFunP
   -- = do args   <- parens $ sepBy bareTypeP comma
   = do args   <- parens $ sepBy bareArgP comma
+       h <- (reserved "/" >> heapP) <|> return emp
        reserved "=>" 
-       ret    <- bareTypeP 
+       ret    <- bareTypeP
+       h' <- do reserved "/"
+                try heapP <|> (reserved "same" >> return h)
+            <|> return emp
        r      <- topP
-       return $ TFun args ret emp emp r
+       return $ TFun args ret h h' r
+
+heapP
+  =  (try (reserved "emp") >> return emp)
+ <|> do (l,t) <- heapBindP
+        h     <- (try (reserved "*") >> heapP) <|> return emp
+        return (addLocation l t h)
+
+heapBindP
+  = do l <- letter
+       spaces
+       reserved "|->"
+       spaces
+       t <- bareTypeP
+       return (l, t)
 
 bareArgP 
   =   (try boundTypeP)

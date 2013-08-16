@@ -381,11 +381,9 @@ instance PP a => PP [a] where
 instance PP a => PP (Maybe a) where 
   pp = maybe (text "Nothing") pp 
 
-instance PP Int where
-  pp = text . show
-
 instance (PP t) => PP (Heap t) where
-  pp h = text "H" <+> pp (hbinds h)
+  pp h = brackets $ intersperse (text " *") (map ppBind (hbinds h))
+      where ppBind (l, t) = char l <+> text "|->" <+> pp t
 
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
