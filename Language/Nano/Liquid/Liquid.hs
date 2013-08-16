@@ -123,11 +123,11 @@ envAddFun :: AnnType -> CGEnv -> Id AnnType -> [Id AnnType] -> RefType -> CGM CG
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
   where  
-    (αs, yts, t)      = mfromJust "envAddFun" $ bkFun ft
-    tyBinds           = [(Loc (srcPos l) α, tVar α) | α <- αs]
-    varBinds          = safeZip "envAddFun"
-    (su, ts')         = renameBinds yts xs 
-    t'                = F.subst su t
+    (αs, yts, h, h', t) = mfromJust "envAddFun" $ bkFun ft
+    tyBinds             = [(Loc (srcPos l) α, tVar α) | α <- αs]
+    varBinds            = safeZip "envAddFun"
+    (su, ts')           = renameBinds yts xs 
+    t'                  = F.subst su t
 
 renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
   where 
@@ -380,7 +380,7 @@ consCall :: (PP a)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
 consCall g l _ es ft 
-  = do (_,its,ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+  = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')    <- consScan consExpr g es
        let (su, ts') = renameBinds its xes
        subTypes l g' xes ts'

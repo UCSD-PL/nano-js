@@ -26,6 +26,7 @@ import           Language.Nano.Env
 import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Parse 
 import           Language.Nano.Typecheck.TCMonad
 import           Language.Nano.Typecheck.Subst
@@ -177,7 +178,7 @@ tcNano p@(Nano {code = Src fs})
 tcNano' :: Nano AnnSSA Type -> TCM AnnInfo  
 -------------------------------------------------------------------------------
 tcNano' pgm@(Nano {code = Src fs}) 
-  = do tcStmts (specs pgm) fs
+  = do tcStmts (specs pgm,emp) fs
        M.unions <$> getAllAnns
 
 patchAnn              :: AnnInfo -> AnnSSA -> AnnType
@@ -192,21 +193,21 @@ patchAnn m (Ann l fs) = Ann l $ sortNub $ (M.lookupDefault [] l m) ++ fs
 --   @Nothing@ means if we definitely hit a "return" 
 --   @Just γ'@ means environment extended with statement binders
 
-type TCEnv = Maybe (Env Type)
+type TCEnv = Maybe (Env Type, BHeap)
 
 -------------------------------------------------------------------------------
 -- | TypeCheck Function -------------------------------------------------------
 -------------------------------------------------------------------------------
 
-tcFun    :: Env Type -> FunctionStatement AnnSSA -> TCM TCEnv 
-tcFun γ (FunctionStmt l f xs body) 
-  = do (ft, (αs, ts, t)) <- funTy l f xs
+tcFun    :: (Env Type, BHeap) -> FunctionStatement AnnSSA -> TCM TCEnv 
+tcFun (γ,σ) (FunctionStmt l f xs body) 
+  = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
-         do q              <- tcStmts γ'' body
+         do q              <- tcStmts (γ'', σ) body
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
-       return $ Just γ' 
+       return $ Just (γ', σ)
 
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
 
@@ -214,8 +215,8 @@ funTy l f xs
   = do ft <- getDefType f 
        case bkFun ft of
          Nothing        -> logError (ann l) (errorUnboundId f) (tErr, tFunErr)
-         Just (αs,ts,t) -> do when (length xs /= length ts) $ logError (ann l) errorArgMismatch ()
-                              return (ft, (αs, b_type <$> ts, t))
+         Just (αs,ts,σ,σ',t) -> do when (length xs /= length ts) $ logError (ann l) errorArgMismatch ()
+                                   return (ft, (αs, b_type <$> ts, σ, σ', t))
 
 envAddFun _ f αs xs ts t = envAdds tyBinds . envAdds (varBinds xs ts) . envAddReturn f t 
   where  
@@ -233,59 +234,59 @@ validInst γ (l, ts)
 tVarId (TV a l) = Id l $ "TVAR$$" ++ F.symbolString a   
 
 --------------------------------------------------------------------------------
-tcSeq :: (Env Type -> a -> TCM TCEnv) -> Env Type -> [a] -> TCM TCEnv
+tcSeq :: ((Env Type, BHeap) -> a -> TCM TCEnv) -> (Env Type, BHeap) -> [a] -> TCM TCEnv
 --------------------------------------------------------------------------------
 
 tcSeq f             = foldM step . Just 
   where 
     step Nothing _  = return Nothing
-    step (Just γ) x = f γ x
+    step (Just (γ,σ)) x = f (γ,σ) x
 
 --------------------------------------------------------------------------------
-tcStmts :: Env Type -> [Statement AnnSSA] -> TCM TCEnv
+tcStmts :: (Env Type, BHeap) -> [Statement AnnSSA] -> TCM TCEnv
 --------------------------------------------------------------------------------
 tcStmts = tcSeq tcStmt
 
 -------------------------------------------------------------------------------
-tcStmt :: Env Type -> Statement AnnSSA -> TCM TCEnv  
+tcStmt :: (Env Type, BHeap) -> Statement AnnSSA -> TCM TCEnv  
 -------------------------------------------------------------------------------
 -- skip
-tcStmt' γ (EmptyStmt _) 
-  = return $ Just γ
+tcStmt' (γ,σ) (EmptyStmt _) 
+  = return $ Just (γ,σ)
 
 -- x = e
-tcStmt' γ (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))   
-  = tcAsgn γ l (Id lx x) e
+tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))   
+  = tcAsgn (γ,σ)  l (Id lx x) e
 
 -- e
-tcStmt' γ (ExprStmt _ e)   
-  = tcExpr γ e >> return (Just γ) 
+tcStmt' (γ,σ) (ExprStmt _ e)   
+  = tcExpr (γ,σ) e >> return (Just (γ,σ)) 
 
 -- s1;s2;...;sn
-tcStmt' γ (BlockStmt _ stmts) 
-  = tcStmts γ stmts 
+tcStmt' (γ,σ) (BlockStmt _ stmts) 
+  = tcStmts (γ,σ) stmts 
 
 -- if b { s1 }
-tcStmt' γ (IfSingleStmt l b s)
-  = tcStmt' γ (IfStmt l b s (EmptyStmt l))
+tcStmt' (γ,σ) (IfSingleStmt l b s)
+  = tcStmt' (γ,σ) (IfStmt l b s (EmptyStmt l))
 
 -- if b { s1 } else { s2 }
-tcStmt' γ (IfStmt l e s1 s2)
-  = do  t <- tcExpr γ e 
+tcStmt' (γ,σ) (IfStmt l e s1 s2)
+  = do  t <- tcExpr (γ,σ) e 
     -- Doing check for boolean for the conditional for now
     -- TODO: Will have to suppert truthy/falsy later.
         unifyTypeM l "If condition" e t tBool
-        γ1      <- tcStmt' γ s1
-        γ2      <- tcStmt' γ s2
-        envJoin l γ γ1 γ2
+        e1 <- tcStmt' (γ,σ) s1
+        e2 <- tcStmt' (γ,σ) s2
+        envJoin l (γ,σ) e1 e2
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
-tcStmt' γ (VarDeclStmt _ ds)
-  = tcSeq tcVarDecl γ ds
+tcStmt' (γ,σ) (VarDeclStmt _ ds)
+  = tcSeq tcVarDecl (γ,σ) ds
 
 -- return e 
-tcStmt' γ (ReturnStmt l eo) 
-  = do  t           <- maybe (return tVoid) (tcExpr γ) eo
+tcStmt' (γ,σ) (ReturnStmt l eo) 
+  = do  t           <- maybe (return tVoid) (tcExpr (γ,σ)) eo
         let rt       = envFindReturn γ 
         θ           <- unifyTypeM l "Return" eo t rt
         -- Apply the substitution
@@ -295,43 +296,43 @@ tcStmt' γ (ReturnStmt l eo)
         maybeM_ (\e -> castM e t' rt') eo
         return Nothing
 
-tcStmt' γ s@(FunctionStmt _ _ _ _)
-  = tcFun γ s
+tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
+  = tcFun (γ,σ) s
 
 -- OTHER (Not handled)
 tcStmt' _ s 
   = convertError "TC Cannot Handle: tcStmt'" s
 
-tcStmt γ s = tcStmt' γ s
+tcStmt (γ,σ) s = tcStmt' (γ,σ) s
 
 -------------------------------------------------------------------------------
-tcVarDecl :: Env Type -> VarDecl AnnSSA -> TCM TCEnv  
+tcVarDecl :: (Env Type, BHeap) -> VarDecl AnnSSA -> TCM TCEnv  
 -------------------------------------------------------------------------------
 
-tcVarDecl γ (VarDecl l x (Just e)) 
-  = tcAsgn γ l x e  
+tcVarDecl (γ,σ) (VarDecl l x (Just e)) 
+  = tcAsgn (γ,σ) l x e  
 tcVarDecl γ (VarDecl _ _ Nothing)  
 -- TODO: add binding from the declared variable to undefined
   = return $ Just γ
 
 ------------------------------------------------------------------------------------
-tcAsgn :: Env Type -> AnnSSA -> Id AnnSSA -> Expression AnnSSA -> TCM TCEnv
+tcAsgn :: (Env Type, BHeap) -> AnnSSA -> Id AnnSSA -> Expression AnnSSA -> TCM TCEnv
 ------------------------------------------------------------------------------------
 
-tcAsgn γ _ x e 
-  = do t <- tcExpr γ e
-       return $ Just $ envAdds [(x, t)] γ
+tcAsgn (γ,σ) _ x e 
+  = do t <- tcExpr (γ,σ) e
+       return $ Just (envAdds [(x, t)] γ, σ)
 
 
 
 -------------------------------------------------------------------------------
-tcExpr :: Env Type -> Expression AnnSSA -> TCM Type
+tcExpr :: (Env Type, BHeap) -> Expression AnnSSA -> TCM Type
 -------------------------------------------------------------------------------
-tcExpr γ e = setExpr (Just e) >> (tcExpr' γ e)
+tcExpr (γ,σ) e = setExpr (Just e) >> (tcExpr' (γ,σ) e)
 
 
 -------------------------------------------------------------------------------
-tcExpr' :: Env Type -> Expression AnnSSA -> TCM Type
+tcExpr' :: (Env Type, BHeap) -> Expression AnnSSA -> TCM Type
 -------------------------------------------------------------------------------
 
 tcExpr' _ (IntLit _ _)
@@ -346,37 +347,37 @@ tcExpr' _ (StringLit _ _)
 tcExpr' _ (NullLit _)
   = return tNull
 
-tcExpr' γ (VarRef l x)
+tcExpr' (γ,σ) (VarRef l x)
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
 
-tcExpr' γ (PrefixExpr l o e)
-  = tcCall γ l o [e] (prefixOpTy o γ)
+tcExpr' (γ,σ) (PrefixExpr l o e)
+  = tcCall (γ,σ) l o [e] (prefixOpTy o γ)
 
-tcExpr' γ (InfixExpr l o e1 e2)        
-  = tcCall γ l o [e1, e2] (infixOpTy o γ)
+tcExpr' (γ,σ) (InfixExpr l o e1 e2)        
+  = tcCall (γ,σ) l o [e1, e2] (infixOpTy o γ)
 
-tcExpr' γ (CallExpr l e es)
-  = tcExpr γ e >>= tcCall γ l e es
+tcExpr' (γ,σ) (CallExpr l e es)
+  = tcExpr (γ,σ) e >>= tcCall (γ,σ) l e es
 
-tcExpr' γ (ObjectLit _ ps) 
-  = tcObject γ ps
+tcExpr' (γ,σ) (ObjectLit _ ps) 
+  = tcObject (γ,σ) ps
 
-tcExpr' γ (DotRef l e i) 
-  = tcAccess γ l e i
+tcExpr' (γ,σ) (DotRef l e i) 
+  = tcAccess (γ,σ) l e i
 
 tcExpr' _ e 
   = convertError "tcExpr" e
 
 ----------------------------------------------------------------------------------
-tcCall :: (PP fn) => Env Type -> AnnSSA -> fn -> [Expression AnnSSA]-> Type -> TCM Type
+tcCall :: (PP fn) => (Env Type, BHeap) -> AnnSSA -> fn -> [Expression AnnSSA]-> Type -> TCM Type
 ----------------------------------------------------------------------------------
-tcCall γ l fn es ft 
-  = do  (_,ibs,ot)    <- instantiate l fn ft
+tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
+  = do  (_,ibs,σ',σ'',ot)    <- instantiate l fn ft
         let its        = b_type <$> ibs
         -- Typecheck arguments
-        ts            <- mapM (tcExpr γ) es
+        ts            <- mapM (tcExpr (γ,σ)) es
         -- Unify with formal parameter types
         θ             <- unifyTypesM l "tcCall" ts its
         -- Apply the substitution
@@ -386,6 +387,7 @@ tcCall γ l fn es ft
         castsM es ts' its'
         return         $ apply θ ot
 
+-- TODO: Need to generate fresh location names here
 instantiate l fn ft 
   = do t' <-  {- tracePP "new Ty Args" <$> -} freshTyArgs (srcPos l) (bkAll ft)
        maybe err return   $ bkFun t'
@@ -395,53 +397,53 @@ instantiate l fn ft
 
 
 ----------------------------------------------------------------------------------
-tcObject :: Env Type -> [(Prop AnnSSA, Expression AnnSSA)] -> TCM Type
+tcObject :: (Env Type, BHeap) -> [(Prop AnnSSA, Expression AnnSSA)] -> TCM Type
 ----------------------------------------------------------------------------------
-tcObject γ bs 
+tcObject (γ,σ) bs 
   = do 
       let (ps, es) = unzip bs
-      bts <- zipWith B (map F.symbol ps) <$> mapM (tcExpr γ) es
+      bts <- zipWith B (map F.symbol ps) <$> mapM (tcExpr (γ,σ)) es
       return $ TObj bts ()
 
 
 ----------------------------------------------------------------------------------
-tcAccess :: Env Type -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM Type
+tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM Type
 ----------------------------------------------------------------------------------
-tcAccess γ _ e f = 
-  do  t     <- tcExpr γ e
+tcAccess (γ,σ) _ e f = 
+  do  t     <- tcExpr (γ,σ) e
       t'    <- dotAccess f t
       return $ fromJust t'
 
 
 ----------------------------------------------------------------------------------
-envJoin :: AnnSSA -> Env Type -> TCEnv -> TCEnv -> TCM TCEnv 
+envJoin :: AnnSSA -> (Env Type, BHeap) -> TCEnv -> TCEnv -> TCM TCEnv 
 ----------------------------------------------------------------------------------
 envJoin _ _ Nothing x           = return x
 envJoin _ _ x Nothing           = return x
-envJoin l γ (Just γ1) (Just γ2) = envJoin' l γ γ1 γ2 
+envJoin l (γ,σ) (Just (γ1,σ1)) (Just (γ2,σ2)) = envJoin' l (γ,σ) (γ1,σ1) (γ2,σ2) 
 
-envJoin' l γ γ1 γ2
+envJoin' l (γ,σ) (γ1,σ1) (γ2,σ2)
   = do let xs = [x | PhiVar x <- ann_fact l]
-       ts    <- mapM (getPhiType l γ1 γ2) xs
-       return $ Just $ envAdds (zip xs ts) γ 
+       ts    <- mapM (getPhiType l (γ1,σ1) (γ2,σ2)) xs
+       return $ Just $ (envAdds (zip xs ts) γ, σ)
   
 
 ----------------------------------------------------------------------------------
-getPhiType :: Annot b SourceSpan -> Env Type -> Env Type -> Id SourceSpan-> TCM Type
+getPhiType :: Annot b SourceSpan -> (Env Type, BHeap) -> (Env Type, BHeap) -> Id SourceSpan-> TCM Type
 ----------------------------------------------------------------------------------
-getPhiType l γ1 γ2 x =
+getPhiType l (γ1,σ1) (γ2,σ2) x =
   case (envFindTy x γ1, envFindTy x γ2) of
     (Just t1, Just t2) -> do  env <- getTDefs
                               return $ fst4 $ compareTs env t1 t2
                           {-if t1 == t2-}
                           {-  then return t1 -}
                           {-  else tcError l $ errorJoin x t1 t2-}
-    (_      , _      ) -> if forceCheck x γ1 && forceCheck x γ2 
+    (_      , _      ) -> if forceCheck x (γ1,σ1) && forceCheck x (γ2,σ2) 
                             then tcError (ann l) "Oh no, the HashMap GREMLIN is back...1"
                             else tcError (ann l) (bugUnboundPhiVar x)
 
 
 
-forceCheck x γ 
+forceCheck x (γ,σ) 
   = elem x $ fst <$> envToList γ
 

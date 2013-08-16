@@ -44,6 +44,7 @@ module Language.Nano.Typecheck.Types (
 
   -- * Regular Types
   , Type
+  , BHeap
   , TBody (..)
   , TVar (..)
   , TCon (..)
@@ -171,6 +172,7 @@ data Bind r
 
 -- | Standard Types
 type Type    = RType ()
+type BHeap   = RHeap ()
 
 -- | Stripping out Refinements 
 toType :: RType a -> Type
@@ -180,13 +182,13 @@ toType = fmap (const ())
 ofType :: (F.Reftable r) => Type -> RType r
 ofType = fmap (const F.top)
 
-bkFun :: RType r -> Maybe ([TVar], [Bind r], RType r)
+bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 bkFun t = do let (αs, t') = bkAll t
-             (xts, t'')  <- bkArr t'
-             return        (αs, xts, t'')
+             (xts, t'', h, h')  <- bkArr t'
+             return        (αs, xts, h, h', t'')
          
-bkArr (TFun xts t _ _ _) = Just (xts, t)
-bkArr _                  = Nothing
+bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
+bkArr _                   = Nothing
 
 bkAll                :: RType a -> ([TVar], RType a)
 bkAll t              = go [] t
@@ -510,7 +512,7 @@ tVoid   = TApp TVoid    [] F.top
 tUndef  = TApp TUndef   [] F.top
 tNull   = TApp TNull    [] F.top
 tErr    = tVoid
-tFunErr = ([],[],tErr)
+tFunErr = ([],[],emp,emp,tErr)
 
 -- tProp :: (F.Reftable r) => RType r
 -- tProp  = TApp tcProp [] F.top 
