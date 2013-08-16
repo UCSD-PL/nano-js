@@ -38,7 +38,7 @@ import           Language.Fixpoint.PrettyPrint
 import           Language.Fixpoint.Misc
 
 
-type Location = Char
+type Location = String
 
 -- | Heaps binding locations to types
 newtype Heap t = H (M.HashMap Location t)

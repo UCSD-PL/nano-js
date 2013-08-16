@@ -142,6 +142,7 @@ data TCon
   | TString
   | TVoid              
   | TTop
+  | TRef Location
   | TDef  (Id SourceSpan)
   | TUn
   | TNull
@@ -282,6 +283,7 @@ instance Eq TCon where
   TVoid   == TVoid   = True         
   TTop    == TTop    = True
   TDef i1 == TDef i2 = F.symbol i1 == F.symbol i2
+  TRef l1 == TRef l2 = l1 == l2
   TUn     == TUn     = True
   TNull   == TNull   = True
   TUndef  == TUndef  = True
@@ -383,7 +385,7 @@ instance PP a => PP (Maybe a) where
 
 instance (PP t) => PP (Heap t) where
   pp h = brackets $ intersperse (text " *") (map ppBind (hbinds h))
-      where ppBind (l, t) = char l <+> text "|->" <+> pp t
+      where ppBind (l, t) = text l <+> text "|->" <+> pp t
 
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
@@ -410,6 +412,7 @@ instance PP TCon where
   pp TTop             = text "Top"
   pp TUn              = text "Union:"
   pp (TDef x)         = pprint (F.symbol x)
+  pp (TRef l)         = text ("<" ++ l ++ ">")
   pp TNull            = text "Null"
   pp TUndef           = text "Undefined"
 
@@ -423,6 +426,7 @@ instance Hashable TCon where
   hashWithSalt s TNull       = hashWithSalt s (6 :: Int)
   hashWithSalt s TUndef      = hashWithSalt s (7 :: Int)
   hashWithSalt s (TDef z)    = hashWithSalt s (8 :: Int) + hashWithSalt s z
+  hashWithSalt s (TRef l)    = hashWithSalt s (9 :: Int) + hashWithSalt s l
 
 instance F.Reftable r => PP (Bind r) where 
   pp (B x t)        = pp x <> colon <> pp t 
@@ -434,6 +438,7 @@ ppTC TString          = text "String"
 ppTC TVoid            = text "Void"
 ppTC TTop             = text "Top"
 ppTC TUn              = text "Union:"
+ppTC (TRef l)         = text ("<" ++ l ++ ">")
 ppTC (TDef x)         = pprint (F.symbol x)
 ppTC TNull            = text "Null"
 ppTC TUndef           = text "Undefined"

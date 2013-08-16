@@ -114,7 +114,7 @@ heapP
         return (addLocation l t h)
 
 heapBindP
-  = do l <- letter
+  = do l <- locationP
        spaces
        reserved "|->"
        spaces
@@ -163,7 +163,16 @@ tconP =  try (reserved "number"    >> return TInt)
      <|> try (reserved "top"       >> return TTop)
      <|> try (reserved "string"    >> return TString)
      <|> try (reserved "null"      >> return TNull)
+     <|> try tRefP
      <|> tDefP
+
+tRefP
+  = do  char '<'
+        l <- locationP
+        char '>'
+        return (TRef l)
+
+locationP = lowerIdP
 
 tDefP 
   = do  s <- identifierP 
