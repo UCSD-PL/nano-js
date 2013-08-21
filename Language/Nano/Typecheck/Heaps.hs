@@ -15,8 +15,11 @@ module Language.Nano.Typecheck.Heaps (
   , Location
   , emp
   , hFromBindings
+
+  , rdLocation
   , addLocation
   , updLocation
+  , combineHeaps
 
   , hlocs
   , hbinds
@@ -24,9 +27,11 @@ module Language.Nano.Typecheck.Heaps (
 
   ) where
 
+import           Control.Monad
 import qualified Data.HashMap.Strict     as M
 import           Data.Generics                   
-import           Data.Typeable                  ()
+import           Data.Maybe                 (catMaybes, isJust, fromJust)
+import           Data.Typeable              ()
 
 import           Text.Printf
 import           Text.PrettyPrint.HughesPJ 
@@ -37,7 +42,7 @@ import           Language.Nano.Errors
 import           Language.Fixpoint.PrettyPrint
 import           Language.Fixpoint.Misc
 
-
+-- | Locations
 type Location = String
 
 -- | Heaps binding locations to types
@@ -60,9 +65,15 @@ addLocation :: (PP t) => Location -> t -> Heap t -> Heap t
 addLocation l t (H h) | not (M.member l h) = updLocation l t (H h)
 addLocation l _ h = error "Adding duplicate location to heap"
 
-
 updLocation :: Location -> t -> Heap t -> Heap t
 updLocation l t (H h) = H $ M.insert l t h                                      
+
+rdLocation  :: Location -> Heap t -> t
+rdLocation l (H h) = fromJust (M.lookup l h)
+
+-- | Combine a list of heaps
+combineHeaps :: (PP t) => [Heap t] -> Heap t
+combineHeaps = hFromBindings . join . map hbinds
 
 hlocs :: Heap t -> [Location]
 hlocs (H h) = M.keys h
@@ -72,6 +83,3 @@ hbinds (H h) = M.toList h
 
 htypes :: Heap t -> [t]
 htypes = map snd . hbinds          
-
-              
-       

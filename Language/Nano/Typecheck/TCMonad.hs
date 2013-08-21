@@ -20,6 +20,7 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Freshness
   , freshTyArgs
+  , freshLocation
 
   -- * Dot Access
   , dotAccess
@@ -355,7 +356,7 @@ instance Freshable a => Freshable [a] where
   fresh = mapM fresh
 
 freshTVar l _ =  ((`TV` l). F.intSymbol "T") <$> tick
-              
+freshLocation = tick >>= \n -> return ("_?L" ++ show n)
 
 
 

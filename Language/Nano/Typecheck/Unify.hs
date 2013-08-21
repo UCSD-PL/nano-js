@@ -40,8 +40,18 @@ import           Text.Printf
 -----------------------------------------------------------------------------
 unify :: Env Type -> Subst -> Type -> Type -> Either String Subst
 -----------------------------------------------------------------------------
-
+-- TODO: unify needs to take a heap as well now, UGHHGHHG
 -- TODO: is this right??
+unify _ θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
+    if l1' == l2' then
+        Right $ θ
+    else
+        Right $ θ'
+    where l1'    = apply θ l1
+          l2'    = apply θ l2
+          θ'     = θ `mappend` Su M.empty (M.singleton l1 l2)
+  
+        
 unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _) 
   | any isTop [t,t']                    = Right $ θ
 
@@ -112,15 +122,15 @@ unifys' env θ ts ts'
     go γ θ ts ts' = foldl safeJoin (Right $ θ) $ zipWith (unify γ θ) ts ts'
     -- Only allow joining unifications where the common keys map to identical
     -- types
-    safeJoin (Right θ@(Su m)) (Right θ'@(Su m'))
-      | check m m' = Right $ mappend θ θ'
+    safeJoin (Right θ) (Right θ')
+      | check θ θ' = Right $ mappend θ θ'
       | otherwise  = Left  $ printf "Cannot join substs: %s\nand\n%s"
                                (ppshow θ) (ppshow θ')
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
 
-check m m' = vs == vs'
+check (Su m _) (Su m' _) = vs == vs'
   where vs  = (`M.lookup` m ) <$> ks
         vs' = (`M.lookup` m') <$> ks
         ks  = M.keys $ M.intersection (clr m) (clr m')
@@ -149,9 +159,9 @@ varAsn θ α t
   -- unifying A with A + B will fail!
   | t == tVar α            = Right $ θ 
   | α `S.member` free t    = Left  $ errorOccursCheck α t 
-  | unassigned α θ         = Right $ θ `mappend` (Su $ M.singleton α t)
+  | unassigned α θ         = Right $ θ `mappend` (Su (M.singleton α t) (locSub θ))
   | otherwise              = Left  $ errorRigidUnify α t
   
-unassigned α (Su m) = M.lookup α m == Just (tVar α)
+unassigned α (Su m _) = M.lookup α m == Just (tVar α)
 
 

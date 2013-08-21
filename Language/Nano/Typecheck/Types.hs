@@ -60,6 +60,7 @@ module Language.Nano.Typecheck.Types (
   , tVar
   , tUndef
   , tNull
+  , tRef
 
   -- * Operator Types
   , infixOpTy
@@ -513,6 +514,9 @@ tUndef  = TApp TUndef   [] F.top
 tNull   = TApp TNull    [] F.top
 tErr    = tVoid
 tFunErr = ([],[],emp,emp,tErr)
+
+tRef :: (F.Reftable r) => Location -> RType r
+tRef l  = TApp (TRef l) [] F.top
 
 -- tProp :: (F.Reftable r) => RType r
 -- tProp  = TApp tcProp [] F.top 

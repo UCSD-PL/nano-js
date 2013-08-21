@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE OverlappingInstances #-}
 
 module Language.Nano.Typecheck.Subst ( 
   
@@ -45,23 +46,33 @@ import           Text.Printf
 
 -- | Type alias for Map from @TVar@ to @Type@. Hidden
 
-data RSubst r = Su (M.HashMap TVar (RType r))
+data RSubst r = Su { tySub  :: M.HashMap TVar (RType r)
+                   , locSub :: M.HashMap Location Location
+                   }
+
 type Subst    = RSubst ()
 
+-- TODO fix and rename
 toList        :: RSubst r -> [(TVar, RType r)]
-toList (Su m) =  M.toList m 
+toList (Su m _) =  M.toList m 
 
 fromList      :: [(TVar, RType r)] -> RSubst r
-fromList      = Su . M.fromList 
+fromList      = flip Su M.empty . M.fromList 
 
 -- | Substitutions form a monoid; not commutative
 
 instance (F.Reftable r, Substitutable r (RType r)) => Monoid (RSubst r) where 
-  mempty                    = Su M.empty
-  mappend (Su m) θ'@(Su m') = Su $ (apply θ' <$> m) `M.union` m'
+  mempty                             = Su M.empty M.empty
+  mappend (Su m1 m2) θ'@(Su m1' m2') =
+      Su ((apply θ' <$> m1) `M.union` m1')
+         ((apply θ' <$> m2) `M.union` m2')
 
 instance (F.Reftable r, PP r) => PP (RSubst r) where 
-  pp (Su m) = if M.null m then text "empty" else vcat $ (ppBind <$>) $ M.toList m 
+  pp (Su m1 m2) = if M.null m1 && M.null m2 then
+                      text "empty"
+                  else
+                      (vcat $ (ppBind <$>) $ M.toList m1)
+                      <+> (vcat $ (ppBind <$>) $ M.toList m2)
 
 ppBind (x, t) = pp x <+> text ":=" <+> pp t
 
@@ -80,6 +91,9 @@ instance Free a => Free [a] where
 
 instance Substitutable r a => Substitutable r [a] where 
   apply = map . apply 
+
+instance Substitutable r Location where
+  apply (Su _ lsub) l = M.lookupDefault l l lsub
 
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
@@ -113,12 +127,13 @@ instance Free Fact where
 ------------------------------------------------------------------------
 -- appTy :: RSubst r -> RType r -> RType r
 ------------------------------------------------------------------------
-appTy θ (TApp c ts z)            = TApp c (apply θ ts) z 
-appTy θ (TObj bs z)              = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
-appTy (Su m) t@(TVar α r)        = (M.lookupDefault t α m) `strengthen` r
-appTy θ (TFun ts t h h' r)       = appTyFun θ ts t h h' r
-appTy (Su m) (TAll α t)          = apply (Su $ M.delete α m) t 
-appTy (Su m) (TBd (TD c α t s))  = TBd $ TD c α (apply (Su $ foldr M.delete m α) t) s
+appTy (Su _ m) (TApp (TRef l) t z)  = TApp (TRef $ M.lookupDefault l l m) t z
+appTy θ (TApp c ts z)               = TApp c (apply θ ts) z 
+appTy θ (TObj bs z)                 = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
+appTy (Su m _) t@(TVar α r)         = (M.lookupDefault t α m) `strengthen` r
+appTy θ (TFun ts t h h' r)          = appTyFun θ ts t h h' r
+appTy (Su ts ls) (TAll α t)         = apply (Su (M.delete α ts) ls) t 
+appTy (Su ts ls) (TBd (TD c α t s)) = TBd $ TD c α (apply (Su (foldr M.delete ts α) ls) t) s
 
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (fmap go h) (fmap go h') r
