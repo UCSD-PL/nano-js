@@ -183,6 +183,14 @@ toType = fmap (const ())
 ofType :: (F.Reftable r) => Type -> RType r
 ofType = fmap (const F.top)
 
+locs :: RType r -> [Location]
+locs (TApp c ts _) = locs' c ++ (ts >>= locs)
+locs _             = []
+
+locs' :: TCon -> [Location]
+locs' (TRef l) = [l]
+locs' _        = []
+
 bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'

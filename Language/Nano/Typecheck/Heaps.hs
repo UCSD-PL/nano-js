@@ -18,12 +18,16 @@ module Language.Nano.Typecheck.Heaps (
 
   , rdLocation
   , addLocation
+  , addLocationWith
   , updLocation
+  , delLocation
   , combineHeaps
+  , combineHeapsWith
 
   , hlocs
   , hbinds
   , htypes
+  , hmem
 
   ) where
 
@@ -68,12 +72,24 @@ addLocation l _ h = error "Adding duplicate location to heap"
 updLocation :: Location -> t -> Heap t -> Heap t
 updLocation l t (H h) = H $ M.insert l t h                                      
 
-rdLocation  :: Location -> Heap t -> t
-rdLocation l (H h) = fromJust (M.lookup l h)
+addLocationWith :: (t -> t -> t) -> Location -> t -> Heap t -> Heap t
+addLocationWith f l t (H h) = H $ M.insertWith f l t h
+
+delLocation :: Location -> Heap t -> Heap t
+delLocation l (H h) = H $ M.delete l h
+
+rdLocation  :: (PP t) => Location -> Heap t -> t
+rdLocation l (H h) = if M.member l h then
+                         fromJust (M.lookup l h)
+                     else
+                         error $ printf "Location %s not in heap\n" l
 
 -- | Combine a list of heaps
 combineHeaps :: (PP t) => [Heap t] -> Heap t
 combineHeaps = hFromBindings . join . map hbinds
+
+combineHeapsWith :: (t -> t -> t) -> [Heap t] -> Heap t               
+combineHeapsWith f hs = foldl (\(H h1) (H h2) -> H $ M.unionWith f h1 h2 ) emp hs
 
 hlocs :: Heap t -> [Location]
 hlocs (H h) = M.keys h
@@ -83,3 +99,6 @@ hbinds (H h) = M.toList h
 
 htypes :: Heap t -> [t]
 htypes = map snd . hbinds          
+
+hmem :: Location -> Heap t -> Bool
+hmem l (H h) = M.member l h

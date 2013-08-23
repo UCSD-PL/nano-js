@@ -31,6 +31,9 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Substitutions
   , getSubst, setSubst
 
+  -- * Functions
+  , getFun, setFun
+
   -- * Annotations
   , accumAnn
   , getAllAnns
@@ -40,14 +43,14 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Subtyping
   , subTypeM  , subTypeM'
-  , subTypesM
+  , subTypesM , subHeapM
 
   -- * Unification
   , unifyTypeM, unifyTypesM
 
   -- * Casts
   , getCasts
-  , castM, castsM
+  , castM, castsM, castHeapM
   
   -- * Get Type Signature 
   , getDefType 
@@ -75,6 +78,7 @@ import           Language.Nano.Env
 import           Language.Nano.Misc             (unique, everywhereM', zipWith3M_)
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Unify
@@ -111,6 +115,7 @@ data TCState = TCS {
                    , tc_casts :: M.Map (Expression AnnSSA) (Cast Type)
                    -- Function definitions
                    , tc_defs  :: !(Env Type) 
+                   , tc_fun   :: !(Maybe F.Symbol)
                    -- Type definitions
                    , tc_tdefs :: !(Env Type)
                    -- The currently typed expression 
@@ -171,6 +176,17 @@ getCasts = do c <- tc_casts <$> get
 setSubst   :: Subst -> TCM () 
 -------------------------------------------------------------------------------
 setSubst θ = modify $ \st -> st { tc_subst = θ }
+
+
+-------------------------------------------------------------------------------
+getFun     :: TCM (Maybe F.Symbol)
+-------------------------------------------------------------------------------
+getFun   = tc_fun <$> get
+
+-------------------------------------------------------------------------------
+setFun     :: F.Symbol -> TCM ()
+-------------------------------------------------------------------------------
+setFun f = modify $ \st -> st { tc_fun = Just f }
 
 -------------------------------------------------------------------------------
 extSubst :: [TVar] -> TCM ()
@@ -236,6 +252,7 @@ dotAccess f t@(TApp c ts _ ) = go c
          go (TDef _) = unfoldSafeTC t >>= dotAccess f
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
+         go (TRef _)  = error "dotAccess ref"
 
 dotAccess _   (TFun _ _ _ _ _ ) = return $ Just tUndef
 dotAccess _ t               = error $ "dotAccess " ++ (ppshow t) 
@@ -303,7 +320,7 @@ execute verb pgm act
 
 initState :: V.Verbosity -> Nano z (RType r) -> TCState
 initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss 
-                       tc_casts tc_defs tc_tdefs tc_expr tc_verb 
+                       tc_casts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
   where
     tc_errss = []
     tc_subst = mempty 
@@ -312,6 +329,7 @@ initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss
     tc_annss = []
     tc_casts = M.empty
     tc_defs  = envMap toType $ defs pgm
+    tc_fun   = Nothing
     tc_tdefs = envMap toType $ tDefs pgm
     tc_expr  = Nothing
     tc_verb  = verb
@@ -380,24 +398,23 @@ unfoldSafeTC   t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 
 ----------------------------------------------------------------------------------
-unifyTypesM :: (IsLocated l) => l -> String -> [Type] -> [Type] -> TCM Subst
+unifyTypesM :: (IsLocated l) => l -> String -> BHeap -> [Type] -> [Type] -> TCM (Subst, BHeap)
 ----------------------------------------------------------------------------------
-unifyTypesM l msg t1s t2s
+unifyTypesM l msg σ t1s t2s
   -- TODO: This check might be done multiple times
   | length t1s /= length t2s = tcError l errorArgMismatch 
   | otherwise                = do θ <- getSubst 
                                   γ <- getTDefs
-                                  case unifys γ θ t1s t2s of
+                                  case unifys (γ,σ) θ t1s t2s of
                                     Left msg' -> tcError l $ msg ++ "\n" ++ msg'
-                                    Right θ'  -> setSubst θ' >> return θ' 
+                                    Right (θ',σ')  -> setSubst θ' >> return (θ',σ')
 
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
 ----------------------------------------------------------------------------------
-unifyTypeM l m e t t' = unifyTypesM l msg [t] [t']
+unifyTypeM l m σ e t t' = unifyTypesM l msg σ [t] [t']
   where 
     msg              = errorWrongType m e t t'
-
 
 ----------------------------------------------------------------------------------
 subTypeM :: Type -> Type -> TCM SubDirection
@@ -417,7 +434,18 @@ subTypesM :: [Type] -> [Type] -> TCM [SubDirection]
 ----------------------------------------------------------------------------------
 subTypesM ts ts' = zipWithM subTypeM ts ts'
 
-
+subHeapM :: BHeap -> BHeap -> TCM SubDirection                   
+subHeapM σ σ' =
+    do γ <- getTDefs
+       let ls  = filter (flip hmem σ') $ hlocs σ
+       let ls' = hlocs σ'
+       let ts  = map (flip rdLocation σ) ls
+       let ts' = map (flip rdLocation σ') ls
+       ds <- subTypesM ts ts'
+       return $ case compare (length ls) (length ls') of
+                  Prelude.EQ -> foldl (&*&) EqT  ds
+                  Prelude.LT -> foldl (&*&) SubT ds
+                  Prelude.GT -> foldl (&*&) SupT ds
 --------------------------------------------------------------------------------
 --  Cast Helpers ---------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -443,6 +471,16 @@ castM e t t'    = subTypeM t t' >>= go
         go SubT = addUpCast e t'
         go EqT  = return ()
         go Nth  = addDeadCast e t'
+
+--------------------------------------------------------------------------------
+castHeapM :: Expression AnnSSA -> BHeap -> BHeap -> TCM ()
+--------------------------------------------------------------------------------
+castHeapM e t t'= subHeapM t t' >>= go
+  where go SupT = error "TODO: Supertype heap"
+        go Rel  = error "TODO: Rel Heap"
+        go SubT = error "TODO: Subtype heap" >> return () -- addUpCast e t'
+        go EqT  = return () -- 
+        go Nth  = error "TODO: Nth heap" --addDeadCast e t'
 
 
 --------------------------------------------------------------------------------

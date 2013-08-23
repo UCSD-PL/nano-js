@@ -17,6 +17,7 @@ import           Language.Fixpoint.Misc
 import           Language.Nano.Errors 
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 
@@ -38,22 +39,24 @@ import           Text.Printf
 -- | Unify types @t@ and @t'@, using @θ@ as the current substitution and @env@
 -- as the current type definition environment.
 -----------------------------------------------------------------------------
-unify :: Env Type -> Subst -> Type -> Type -> Either String Subst
+unify :: (Env Type, BHeap) -> Subst -> Type -> Type -> Either String (Subst, BHeap)
 -----------------------------------------------------------------------------
 -- TODO: unify needs to take a heap as well now, UGHHGHHG
 -- TODO: is this right??
-unify _ θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
+unify (γ,σ) θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
     if l1' == l2' then
-        Right $ θ
+        Right $ (θ,σ)
+    else if hmem (tracePP "l1'" l1') σ && hmem (tracePP "l2'" l2') σ then
+        r
     else
-        Right $ θ'
-    where l1'    = apply θ l1
-          l2'    = apply θ l2
-          θ'     = θ `mappend` Su M.empty (M.singleton l1 l2)
-  
+        Right $ (θ', tracePP "unified to heap: " $ apply θ' σ)
+    where l1'      = apply θ l1
+          l2'      = apply θ l2
+          θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
+          r        = unifyHeapLocations (γ, σ) θ' l1 l2
         
-unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _) 
-  | any isTop [t,t']                    = Right $ θ
+unify (γ,σ) θ t@(TApp _ _ _) t'@(TApp _ _ _) 
+  | any isTop [t,t']                    = Right $ (θ,σ)
 
 unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) = 
   unifys env θ (t: (b_type <$> xts)) (t': (b_type <$> xts'))
@@ -62,30 +65,36 @@ unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) =
 unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)
   | d == d'                             = unifys env θ ts ts'
 
-unify env θ t@(TApp (TDef _) _ _) t'    = unify env θ (unfoldSafe env t) t'
+unify (γ,σ) θ t@(TApp (TDef _) _ _) t'  = unify (γ,σ) θ (unfoldSafe γ t) t'
 
-unify env θ t t'@(TApp (TDef _) _ _)    = unify env θ t (unfoldSafe env t')
-
-unify _  θ (TVar α _)     (TVar β _)    = varEql θ α β 
-unify _  θ (TVar α _)     t             = varAsn θ α t 
-unify _  θ t              (TVar α _)    = varAsn θ α t
+unify (γ,σ) θ t t'@(TApp (TDef _) _ _)  = unify (γ,σ) θ t (unfoldSafe γ t')
+-- TODO: fix                                          
+unify (γ,σ) θ (TVar α _)     (TVar β _) = case varEql θ α β of
+                                            Right θ -> Right (θ,σ)
+                                            Left m  -> Left m
+unify (γ,σ) θ (TVar α _)     t          = case varAsn θ α t of
+                                            Right θ -> Right (θ,σ)
+                                            Left m  -> Left m
+unify (γ,σ) θ t              (TVar α _) = case varAsn θ α t of
+                                            Right θ -> Right (θ,σ)
+                                            Left m  -> Left m
 
 -- List[A] + Null `unif` List[T0] + Null => A `unif` T0
 -- TODO: make sure other nothing weird is going on with TVars,
 -- e.g.  List[A] + B `unif` ... => this should not even be allowed!!!
-unify γ θ t t' | any isUnion [t,t']     = 
-  (uncurry $ unifys γ θ) $ unzip $ fst3 {- $ tracePP "unify union" -} 
-    $ unionPartsWithEq (unifEq γ) t t'
+unify env θ t t' | any isUnion [t,t']     = 
+  (uncurry $ unifys env θ) $ unzip $ fst3 -- $ tracePP "unify union"
+    $ unionPartsWithEq (unifEq env) t t'
 
 unify _ _ (TBd _) _   = error $ bugTBodiesOccur "unify"
 unify _ _ _ (TBd _)   = error $ bugTBodiesOccur "unify"
 
 -- only unify if the objects align perfectly
-unify γ θ (TObj bs1 _) (TObj bs2 _) 
+unify env@(γ,σ) θ (TObj bs1 _) (TObj bs2 _) 
   | s1s == s2s 
-  = unifys γ θ (b_type <$> L.sortBy ord bs1) (b_type <$> L.sortBy ord bs2)
+  = unifys env θ (b_type <$> L.sortBy ord bs1) (b_type <$> L.sortBy ord bs2)
   | otherwise 
-  = return θ
+  = return (θ,σ)
     where
       s1s = L.sort $ b_sym <$> bs1 
       s2s = L.sort $ b_sym <$> bs2
@@ -93,43 +102,66 @@ unify γ θ (TObj bs1 _) (TObj bs2 _)
 
 -- For the rest of the cases, blindly return the subst
 -- Defer all other checks for later
-unify _ θ _ _         = Right $ θ  
+unify (γ,σ) θ _ _         = Right $ (θ,σ)
 
+unifyHeapLocations (γ,σ) θ l1 l2 =
+  -- Unify two locations  l1 |-> T1 and l2 |-> T2 iff
+  -- T1 and T2 unify
+  case unify (γ,σ) θ t1 t2 of
+    Left m         -> Left m
+    Right (θ', σ') -> Right (θ', delLocation l1 (apply θ' σ'))
+    where
+      t1      = rdLocation l1 σ
+      t2      = rdLocation l2 σ
 
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
 -- TODO: cycles
 unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
-unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (unfoldSafe γ t) t'
-unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (unfoldSafe γ t')
-unifEq γ t t'                     = equiv γ t t'
-  
+unifEq (γ,σ) t@(TApp (TDef _) _ _) t' = unifEq (γ,σ) (unfoldSafe γ t) t'
+unifEq (γ,σ) t t'@(TApp (TDef _) _ _) = unifEq (γ,σ) t (unfoldSafe γ t')
+unifEq (γ,σ) t t'                     = equiv γ t t'
+
+unifyHeaps γ θ σ1 σ2 = go ls
+    where ls1       = hlocs σ1
+          ls2       = hlocs σ2
+          ls        = filter (flip hmem σ2) ls1
+          go []     = Right θ
+          go (l:ls) = case unify γ t2 of
+                          Left m   -> Left m
+                          Right θ' -> go ls
 
 
 -----------------------------------------------------------------------------
-unifys ::  Env Type -> Subst -> [Type] -> [Type] -> Either String Subst
+unifys ::  (Env Type, BHeap) -> Subst -> [Type] -> [Type] -> Either String (Subst, BHeap)
 -----------------------------------------------------------------------------
-unifys env θ xs ys = {-  tracePP msg $ -} unifys' env θ xs ys 
+unifys env θ xs ys = {-  tracePP msg $ -} unifys' env θ xs ys
    {-where -}
    {-  msg      = printf "unifys: [xs = %s] [ys = %s]"  (ppshow xs) (ppshow ys)-}
 
-unifys' env θ ts ts' 
+unifys' env@(γ,σ) θ ts ts' 
   | nTs == nTs' = go env θ ts ts'
   | otherwise   = Left $ errorUnification ts ts'
   where 
     nTs                      = length ts
     nTs'                     = length ts'
-    go γ θ ts ts' = foldl safeJoin (Right $ θ) $ zipWith (unify γ θ) ts ts'
+    go (γ,σ) θ ts ts' = foldl safeJoin (Right $ (θ,σ)) $ zipWith (unify (γ,σ) θ) ts ts'
     -- Only allow joining unifications where the common keys map to identical
     -- types
-    safeJoin (Right θ) (Right θ')
-      | check θ θ' = Right $ mappend θ θ'
-      | otherwise  = Left  $ printf "Cannot join substs: %s\nand\n%s"
+    safeJoin (Right (θ,σ)) (Right (θ',σ'))
+      | check θ θ' = let θ'' = θ `mappend` θ' in
+                       if checkHeaps θ'' σ σ' then
+                           Right $ (θ'', apply θ'' σ)
+                       else
+                           Left $ printf "Cannot join heaps: %s\nand\n%s\n"
+                                    (ppshow $ apply θ'' σ) (ppshow $ apply θ'' σ') 
+      | otherwise  = Left  $ printf "Cannot join substs: %s\nand\n%s\n"
                                (ppshow θ) (ppshow θ')
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
-
+checkHeaps θ σ σ' = apply θ σ == apply θ σ' -- TODO for now...?
+    
 check (Su m _) (Su m' _) = vs == vs'
   where vs  = (`M.lookup` m ) <$> ks
         vs' = (`M.lookup` m') <$> ks

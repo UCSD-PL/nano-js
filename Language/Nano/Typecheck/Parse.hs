@@ -108,9 +108,9 @@ bareFunP
        return $ TFun args ret h h' r
 
 heapP
-  =  (try (reserved "emp") >> return emp)
+  =  (reserved "emp" >> return emp)
  <|> do (l,t) <- heapBindP
-        h     <- (try (reserved "*") >> heapP) <|> return emp
+        h     <- (try (reserved "*" >> heapP)) <|> return emp
         return (addLocation l t h)
 
 heapBindP

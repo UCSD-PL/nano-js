@@ -95,6 +95,12 @@ instance Substitutable r a => Substitutable r [a] where
 instance Substitutable r Location where
   apply (Su _ lsub) l = M.lookupDefault l l lsub
 
+--TODO fix
+instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
+    Substitutable r (Heap (RType r)) where
+  apply θ h =
+      hFromBindings $ map (apply θ) $ hbinds h
+
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
 
