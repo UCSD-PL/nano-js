@@ -417,14 +417,13 @@ unifyTypesM l msg σ t1s t2s
                                     Right (θ',σ') -> setSubst θ' >> return (θ', unifyHeapM γ θ' σ')
 
 -- Unification may have resulted in heap locations that need to be merged
-unifyHeapM γ θ σ = applyHeapSub γ θ σ
-    where
-      applyHeapSub :: (Env Type) -> Subst -> BHeap -> BHeap
-      applyHeapSub γ θ σ = foldl (\σ' (l,t) -> addLocationWith (\t1 t2 -> fst4 $ compareTs γ (tracePP "comparing t1" t1) (tracePP "comparing t2" t2)) l t σ') emp $ tracePP "the list" $ map (apply (tracePP "the sub" θ)) $ hbinds $ tracePP "the heap" σ
+unifyHeapM γ θ σ = foldl joinLoc emp . map (apply θ) . hbinds $ σ
+    where safeAdd t1 t2   = fst4 $ compareTs γ t1 t2
+          joinLoc σ (l,t) = addLocationWith safeAdd l t σ
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
 ----------------------------------------------------------------------------------
-unifyTypeM l m σ e t t' = unifyTypesM l msg (tracePP "unify under heap" σ) [t] [t']
+unifyTypeM l m σ e t t' = unifyTypesM l msg σ [t] [t']
   where 
     msg              = errorWrongType m e t t'
 
@@ -453,7 +452,7 @@ subHeapM σ σ' =
        let ls' = hlocs σ'
        let ts  = map (flip rdLocation σ) ls
        let ts' = map (flip rdLocation σ') ls
-       ds <- subTypesM (tracePP "ts:::" ts) (tracePP "ts':::" ts')
+       ds <- subTypesM ts ts'
        return $ case compare (length ls) (length ls') of
                   Prelude.EQ -> foldl (&*&) EqT  ds
                   Prelude.LT -> foldl (&*&) SubT ds
@@ -477,7 +476,7 @@ withExpr e action =
 --------------------------------------------------------------------------------
 castM     :: Expression AnnSSA -> Type -> Type -> TCM ()
 --------------------------------------------------------------------------------
-castM e t t'    = subTypeM (tracePP "castM t" t) (tracePP "castM t'" t') >>= go
+castM e t t'    = subTypeM t t' >>= go
   where go SupT = addDownCast e t'
         go Rel  = addDownCast e t'
         go SubT = addUpCast e t'

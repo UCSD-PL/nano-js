@@ -244,8 +244,8 @@ compareTs γ t1 t2 | otherwise              =
 -- | Top-level Unions
 
 -- Eliminate top-level unions
-compareTs' γ t1 t2 | any isUnion [t1,t2]     =  (\t -> tracePP ("padUnion " ++ show (isUnion (fst4 t))) t) $ padUnion γ 
-  ( tracePP ("padding union " ++ ppshow t1 ++ "\n - " ++ ppshow t2) t1)  t2
+compareTs' γ t1 t2 | any isUnion [t1,t2]     =  {- tracePP "padUnion " $ -} padUnion γ 
+  ({- tracePP ("padding union " ++ ppshow t1 ++ "\n - " ++ ppshow t2) -}t1)  t2
 
 -- | Top-level Objects
 
@@ -338,16 +338,13 @@ padUnion ::  (Eq r, Ord r, F.Reftable r, PP r) =>
                 SubDirection)   -- Subtyping relation between LHS and RHS
 --------------------------------------------------------------------------------
 padUnion env t1 t2 = 
-  (joinType', mkUnionR topR1 $ t1s, mkUnionR topR2 $ t2s, direction)
+  (joinType, mkUnionR topR1 $ t1s, mkUnionR topR2 $ t2s, direction)
   where
     -- Extract top-level refinements
     topR1       = rUnion t1 
     topR2       = rUnion t2
-    joinType'   = case tracePP "joinType" joinType of 
-                    TApp TUn ts r -> TApp TUn (tracePP "the ts" ts) r
-                    _ -> joinType
     -- No reason to add the kVars here. They will be added in the CGMonad
-    joinType   = mkUnion $ tracePP "unionParts thing" $ ((ofType . toType) <$> ((fst4 <$> commonTs) ++ d1s ++ d2s))
+    joinType   = mkUnion $ ((ofType . toType) <$> ((fst4 <$> commonTs) ++ d1s ++ d2s))
     (t1s, t2s) = unzip $ safeZip "unionParts" t1s' t2s'
 
     -- It is crucial to sort the types so that they are aligned
@@ -357,7 +354,7 @@ padUnion env t1 t2 =
     commonT1s  = snd4 <$> commonTs
     commonT2s  = thd4 <$> commonTs
 
-    commonTs = tracePP "padUnion: compaTs on common parts" $
+    commonTs = -- tracePP "padUnion: compaTs on common parts" $
       map (uncurry $ compareTs env) $ cmnPs
 
     -- To figure out the direction of the subtyping, we must take into account:
@@ -372,7 +369,7 @@ padUnion env t1 t2 =
     --   of the parts and join the subtyping relations)
     comSub     = mconcatS $ fth4 <$> commonTs
     
-    (cmnPs, d1s, d2s) = tracePP "padUnion: unionParts" $ unionParts env t1 t2
+    (cmnPs, d1s, d2s) = {- tracePP "padUnion: unionParts" $ -} unionParts env t1 t2
 
 
 --------------------------------------------------------------------------------
@@ -423,7 +420,7 @@ unionPartsWithEq eq t1 t2 = (common t1s t2s, d1s, d2s)
     -- This is why `padObject` is called on the common parts. Non-object types
     -- fall through
     -- Also `common` returns aligned types - so no need to re-align them.
-    (t1s, t2s) = sanityCheck $ mapPair bkUnion (tracePP "t1 sanity" t1, tracePP "t2 sanity" t2)
+    (t1s, t2s) = sanityCheck $ mapPair bkUnion (t1, t2)
 
     (d1s, d2s)  = distinct t1s t2s
 

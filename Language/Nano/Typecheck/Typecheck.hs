@@ -307,16 +307,13 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
                              Nothing -> error "Unknown current typed function"
                              Just z  -> return $ fromJust $ bkFun z 
         (θ_out, σ_out') <- freshHeap σ_out
-        (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [tracePP "σ" σ,tracePP "σ'" σ',tracePP "σ_out'" σ_out']) eo t (apply (tracePP "thetaout" θ_out) rt)
-        -- (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [tracePP "σ" σ,tracePP "σ'" σ']) eo t (apply (tracePP "thetaout" θ_out) rt)
+        (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [σ,σ',σ_out']) eo t (apply θ_out rt)
         -- Apply the substitution
-        let (rt',t') = tracePP "(rt', t')" $ mapPair (apply (tracePP "theta'" θ')) (rt,t)
-        -- let (_,h) = tracePP "sigma''" $ applyHeapSub envEmpty (θ', σ'')
-        let h = σ''
+        let (rt',t') = mapPair (apply θ') (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' (apply θ_out rt')) eo
-        maybeM_ (\e -> castHeapM e  h {- σ'' -} σ_out') eo
+        maybeM_ (\e -> castHeapM e  σ'' σ_out') eo
         return Nothing
     where
       applyHeapSub :: (Env Type) -> (Subst, BHeap) -> (Subst, BHeap)
@@ -348,7 +345,7 @@ tcAsgn :: (Env Type, BHeap) -> AnnSSA -> Id AnnSSA -> Expression AnnSSA -> TCM T
 
 tcAsgn (γ,σ) _ x e 
   = do (t, σ') <- tcExpr (γ,σ) e
-       return $ Just (envAdds [(x, t)] γ, combineHeaps [tracePP "one" σ, tracePP "two" σ'])
+       return $ Just (envAdds [(x, t)] γ, combineHeaps [σ, σ'])
 
 
 
@@ -461,7 +458,7 @@ envJoin l (γ,σ) (Just (γ1,σ1)) (Just (γ2,σ2)) = envJoin' l (γ,σ) (γ1,σ
 
 envJoin' l (γ,σ) (γ1,σ1) (γ2,σ2)
   = do let xs = [x | PhiVar x <- ann_fact l]
-       ts    <- mapM (getPhiType l (γ1,tracePP "envJoin1" σ1) (γ2,(tracePP "envJoin2" σ2))) xs
+       ts    <- mapM (getPhiType l (γ1,σ1) (γ2,σ2)) xs
        env   <- getTDefs
        return $ Just $ (envAdds (zip xs ts) γ, combineHeapsWith (\t1 t2 -> fst4 $ compareTs env t1 t2) [σ1,σ2])
   
@@ -472,7 +469,7 @@ getPhiType :: Annot b SourceSpan -> (Env Type, BHeap) -> (Env Type, BHeap) -> Id
 getPhiType l (γ1,σ1) (γ2,σ2) x =
   case (envFindTy x γ1, envFindTy x γ2) of
     (Just t1, Just t2) -> do  env <- getTDefs
-                              return $ tracePP "getPhiType" $ fst4 $ compareTs env t1 t2
+                              return $ fst4 $ compareTs env t1 t2
                           {-if t1 == t2-}
                           {-  then return t1 -}
                           {-  else tcError l $ errorJoin x t1 t2-}

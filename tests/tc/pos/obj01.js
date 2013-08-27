@@ -20,19 +20,16 @@
 function mk() {
     var x = 0;
     if (1) {
-        x = {c:3};
-    } else {
         x = {c:7};
+    } else {
+        x = {c:3};
     }
     return {a:3, b:x};
 }
 
-/*@ foo :: () => number */
-// function foo() {
-//     if (1) {
-//       x = 3;
-//     } else {
-//       x = 5;
-//     }
-//     return x;
-// }
+/*@ setZero :: (x:number)/l |-> {a:number} => <l>/same */
+function setZero(x) {
+    x.a = 0;
+    return x;
+}
+
