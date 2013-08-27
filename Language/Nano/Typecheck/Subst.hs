@@ -95,7 +95,7 @@ instance Substitutable r a => Substitutable r [a] where
 instance Substitutable r Location where
   apply (Su _ lsub) l = M.lookupDefault l l lsub
 
---TODO fix
+--TODO fix, this is just wrong
 instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
     Substitutable r (Heap (RType r)) where
   apply θ h =

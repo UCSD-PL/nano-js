@@ -29,7 +29,7 @@ import           Data.Monoid
 import qualified Data.List           as L
 import           Text.Printf 
 -- import           Debug.Trace
--- import           Language.Nano.Misc (mkEither)
+import           Language.Nano.Misc (fst4)
 
 
 -----------------------------------------------------------------------------
@@ -41,19 +41,15 @@ import           Text.Printf
 -----------------------------------------------------------------------------
 unify :: (Env Type, BHeap) -> Subst -> Type -> Type -> Either String (Subst, BHeap)
 -----------------------------------------------------------------------------
--- TODO: unify needs to take a heap as well now, UGHHGHHG
 -- TODO: is this right??
 unify (γ,σ) θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
     if l1' == l2' then
         Right $ (θ,σ)
-    else if hmem (tracePP "l1'" l1') σ && hmem (tracePP "l2'" l2') σ then
-        r
     else
-        Right $ (θ', tracePP "unified to heap: " $ apply θ' σ)
+        unifyHeapLocations (γ,σ) θ' l1 l2
     where l1'      = apply θ l1
           l2'      = apply θ l2
           θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
-          r        = unifyHeapLocations (γ, σ) θ' l1 l2
         
 unify (γ,σ) θ t@(TApp _ _ _) t'@(TApp _ _ _) 
   | any isTop [t,t']                    = Right $ (θ,σ)
@@ -104,16 +100,29 @@ unify env@(γ,σ) θ (TObj bs1 _) (TObj bs2 _)
 -- Defer all other checks for later
 unify (γ,σ) θ _ _         = Right $ (θ,σ)
 
-unifyHeapLocations (γ,σ) θ l1 l2 =
-  -- Unify two locations  l1 |-> T1 and l2 |-> T2 iff
-  -- T1 and T2 unify
-  case unify (γ,σ) θ t1 t2 of
-    Left m         -> Left m
-    Right (θ', σ') -> Right (θ', delLocation l1 (apply θ' σ'))
-    where
-      t1      = rdLocation l1 σ
-      t2      = rdLocation l2 σ
+unifyHeapLocations (γ,σ) θ l1 l2 = foo γ θ σ
+  -- Right (θ, applyUnifyingSub γ θ σ)
+  -- case unify (γ,σ) θ t1 t2 of
+  --   Left m         -> Left m
+  --   Right (θ', σ') -> Right (θ', applyUnifyingSub γ θ' $ delLocation l1 σ')
+  --   where
+  --     t1      = rdLocation l1 σ
+  --     t2      = rdLocation l2 σ
 
+-- applyUnifyingSub γ θ σ = foldl safeAdd emp σ'
+--     where σ'              = map (apply θ) $ hbinds σ
+--           safeAdd h (l,t) = addLocationWith (\t1 t2 -> if eqType γ t1 t2 then t1 else mkUnion [t1,t2]) l t h
+
+foo γ θ σ =  foldl (\sub (l,t) ->
+                    case sub of
+                      Right (θ,σ) ->
+                          if hmem (apply θ l) σ then
+                              unify (γ,σ) θ t (rdLocation (apply θ l) σ)
+                          else
+                              sub
+                      Left m -> Left m) (Right (θ,σ)) bs
+    where bs = hbinds σ
+          
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
 -- TODO: cycles
@@ -122,22 +131,12 @@ unifEq (γ,σ) t@(TApp (TDef _) _ _) t' = unifEq (γ,σ) (unfoldSafe γ t) t'
 unifEq (γ,σ) t t'@(TApp (TDef _) _ _) = unifEq (γ,σ) t (unfoldSafe γ t')
 unifEq (γ,σ) t t'                     = equiv γ t t'
 
-unifyHeaps γ θ σ1 σ2 = go ls
-    where ls1       = hlocs σ1
-          ls2       = hlocs σ2
-          ls        = filter (flip hmem σ2) ls1
-          go []     = Right θ
-          go (l:ls) = case unify γ t2 of
-                          Left m   -> Left m
-                          Right θ' -> go ls
-
-
 -----------------------------------------------------------------------------
 unifys ::  (Env Type, BHeap) -> Subst -> [Type] -> [Type] -> Either String (Subst, BHeap)
 -----------------------------------------------------------------------------
-unifys env θ xs ys = {-  tracePP msg $ -} unifys' env θ xs ys
-   {-where -}
-   {-  msg      = printf "unifys: [xs = %s] [ys = %s]"  (ppshow xs) (ppshow ys)-}
+unifys env θ xs ys =   tracePP msg $ unifys' env θ xs ys
+   where
+     msg      = printf "unifys: [xs = %s] [ys = %s]"  (ppshow xs) (ppshow ys)
 
 unifys' env@(γ,σ) θ ts ts' 
   | nTs == nTs' = go env θ ts ts'
@@ -145,22 +144,20 @@ unifys' env@(γ,σ) θ ts ts'
   where 
     nTs                      = length ts
     nTs'                     = length ts'
-    go (γ,σ) θ ts ts' = foldl safeJoin (Right $ (θ,σ)) $ zipWith (unify (γ,σ) θ) ts ts'
+    go (γ,σ) θ ts ts' = -- applyHeapSub γ $ 
+                        foldl safeJoin (Right $ (θ,σ)) $ zipWith (unify (γ,σ) θ) ts ts'
+    -- applyHeapSub γ (Right (θ,σ)) = Right $ 
+    --     (θ, foldl (\σ' (l,t) -> addLocationWith (\t1 t2 -> fst4 $ compareTs γ (tracePP "comparing t1" t1) (tracePP "comparing t2" t2)) l t σ') emp $ tracePP "the list" $ map (apply (tracePP "the sub" θ)) $ hbinds $ tracePP "the heap" σ)
     -- Only allow joining unifications where the common keys map to identical
     -- types
     safeJoin (Right (θ,σ)) (Right (θ',σ'))
-      | check θ θ' = let θ'' = θ `mappend` θ' in
-                       if checkHeaps θ'' σ σ' then
-                           Right $ (θ'', apply θ'' σ)
-                       else
-                           Left $ printf "Cannot join heaps: %s\nand\n%s\n"
-                                    (ppshow $ apply θ'' σ) (ppshow $ apply θ'' σ') 
+      | check θ θ' = Right $ (θ `mappend` θ', σ')
       | otherwise  = Left  $ printf "Cannot join substs: %s\nand\n%s\n"
                                (ppshow θ) (ppshow θ')
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
-checkHeaps θ σ σ' = apply θ σ == apply θ σ' -- TODO for now...?
+checkHeaps θ σ σ' = σ == σ' -- TODO for now...?
     
 check (Su m _) (Su m' _) = vs == vs'
   where vs  = (`M.lookup` m ) <$> ks

@@ -3,8 +3,36 @@
 //     return x.a;
 // }
 
-/*@ mk :: (z:<l>, m:<m>)/emp => <l>/l |-> { a:string, b:<m>} * m |-> { c:number }*/
+/*@ mk2 :: ()/emp => <l>/l |-> { b:number} */
+// function mk2()
+// {
+//     var x = {};
+//     if (1) {
+//         x = {a:"3"};
+//     } else {
+//         x = {a:"5"};
+//     }
+
+//     return x;
+// }
+
+/*@ mk :: ()/emp => <l>/l |-> { a:number, b:<m>} * m |-> {c:number} */
 function mk() {
-    x = {c:3};
-    return {a:"3", b:x};
+    var x = 0;
+    if (1) {
+        x = {c:3};
+    } else {
+        x = {c:7};
+    }
+    return {a:3, b:x};
 }
+
+/*@ foo :: () => number */
+// function foo() {
+//     if (1) {
+//       x = 3;
+//     } else {
+//       x = 5;
+//     }
+//     return x;
+// }

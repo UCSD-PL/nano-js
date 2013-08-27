@@ -300,20 +300,28 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 -- TODO: wrong. rewrite unify to unify heaps 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  (t,σ')      <- maybe (return (tVoid,emp)) (tcExpr (γ,σ)) eo
-        let rt       = envFindReturn γ 
-        Just f      <- getFun
+  = do  (t,σ')          <- maybe (return (tVoid,emp)) (tcExpr (γ,σ)) eo
+        let rt          = envFindReturn γ 
+        Just f          <- getFun
         (_,_,_,σ_out,_) <- case envFindTy f γ of 
-                         Nothing -> error "Unknown current typed function"
-                         Just z  -> return $ fromJust $ bkFun z 
-        (θ',σ'')     <- unifyTypeM l "Return" (combineHeaps [σ,σ']) eo t rt
+                             Nothing -> error "Unknown current typed function"
+                             Just z  -> return $ fromJust $ bkFun z 
+        (θ_out, σ_out') <- freshHeap σ_out
+        (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [tracePP "σ" σ,tracePP "σ'" σ',tracePP "σ_out'" σ_out']) eo t (apply (tracePP "thetaout" θ_out) rt)
+        -- (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [tracePP "σ" σ,tracePP "σ'" σ']) eo t (apply (tracePP "thetaout" θ_out) rt)
         -- Apply the substitution
-        let (rt',t') = mapPair (apply θ') (rt,t)
+        let (rt',t') = tracePP "(rt', t')" $ mapPair (apply (tracePP "theta'" θ')) (rt,t)
+        -- let (_,h) = tracePP "sigma''" $ applyHeapSub envEmpty (θ', σ'')
+        let h = σ''
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
-        maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM e σ'' σ_out) eo
+        maybeM_ (\e -> castM e t' (apply θ_out rt')) eo
+        maybeM_ (\e -> castHeapM e  h {- σ'' -} σ_out') eo
         return Nothing
+    where
+      applyHeapSub :: (Env Type) -> (Subst, BHeap) -> (Subst, BHeap)
+      applyHeapSub γ (θ,σ) = 
+                                     (θ, foldl (\σ' (l,t) -> addLocationWith (\t1 t2 -> fst4 $ compareTs γ (tracePP "comparing t1" t1) (tracePP "comparing t2" t2)) l t σ') emp $ tracePP "the list" $ map (apply (tracePP "the sub" θ)) $ hbinds $ tracePP "the heap" σ)
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
   = tcFun (γ,σ) s
