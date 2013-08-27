@@ -1,4 +1,4 @@
-/*@ abs :: ({ x:number | true }) => number */ 
+/*@ abs :: (<l>)/l |-> { x:number | true } => number/same */ 
 function abs(x){
   var y = x;
   if (x) {

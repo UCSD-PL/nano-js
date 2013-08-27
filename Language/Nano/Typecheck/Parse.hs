@@ -97,7 +97,7 @@ bareTypeNoUnionP
 -- Creating the bindings right away at bareArgP
 bareFunP
   = do args   <- parens $ sepBy bareArgP comma
-       h <- (reserved "/" >> heapP) <|> return heapEmpty 
+       h      <- (reserved "/" >> heapP) <|> return heapEmpty 
        reserved "=>" 
        ret    <- bareTypeP
        h' <- do reserved "/"

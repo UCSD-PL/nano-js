@@ -89,13 +89,15 @@ class Substitutable r a where
 instance Free a => Free [a] where 
   free = S.unions . map free
 
+instance Free a => Free (Heap a) where
+  free = S.unions . map free . heapTypes
+
 instance Substitutable r a => Substitutable r [a] where 
   apply = map . apply 
 
 instance Substitutable r Location where
   apply (Su _ lsub) l = M.lookupDefault l l lsub
 
---TODO fix, this is just wrong
 instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
     Substitutable r (Heap (RType r)) where
   apply θ h =
@@ -124,11 +126,13 @@ instance Substitutable () Fact where
   apply _ x@(PhiVar _)  = x
   apply θ (TypInst ts)  = TypInst $ apply θ ts
   apply θ (Assume  t )  = Assume  $ apply θ t
+  apply θ (AssumeH  h)  = AssumeH $ apply θ h
 
 instance Free Fact where
   free (PhiVar _)       = S.empty
   free (TypInst ts)     = free ts
   free (Assume t)       = free t
+  free (AssumeH h)      = free h
  
 ------------------------------------------------------------------------
 -- appTy :: RSubst r -> RType r -> RType r

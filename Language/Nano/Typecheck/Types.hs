@@ -469,6 +469,7 @@ data Fact
   = PhiVar  !(Id SourceSpan) 
   | TypInst ![Type]
   | Assume  ! Type
+  | AssumeH ! BHeap
     deriving (Eq, Ord, Show, Data, Typeable)
 
 data Annot b a = Ann { ann :: a, ann_fact :: [b] } deriving (Show, Data, Typeable)
@@ -494,6 +495,7 @@ instance PP Fact where
   pp (PhiVar x)   = text "phi"  <+> pp x
   pp (TypInst ts) = text "inst" <+> pp ts 
   pp (Assume t)   = text "assume" <+> pp t
+  pp (AssumeH h)  = text "assume heap" <+> pp h
 
 instance PP AnnInfo where
   pp             = vcat . (ppB <$>) . M.toList 

@@ -487,12 +487,12 @@ castM e t t'    = subTypeM t t' >>= go
 --------------------------------------------------------------------------------
 castHeapM :: Expression AnnSSA -> BHeap -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-castHeapM e t t'= subHeapM t t' >>= go
-  where go SupT = error "TODO: Supertype heap"
-        go Rel  = error "TODO: Rel Heap"
-        go SubT = error "TODO: Subtype heap" >> return () -- addUpCast e t'
-        go EqT  = return () -- 
-        go Nth  = error "TODO: Nth heap" --addDeadCast e t'
+castHeapM e σ σ' = subHeapM σ σ' >>= go
+  where go SupT = addDownCastH e σ'
+        go Rel  = addDownCastH e σ'
+        go SubT = addUpCastH e σ'
+        go EqT  = return ()
+        go Nth  = addDeadCastH e σ'
 
 
 --------------------------------------------------------------------------------
@@ -517,6 +517,20 @@ addDeadCast :: Expression AnnSSA -> Type -> TCM ()
 --------------------------------------------------------------------------------
 addDeadCast e t = modify $ \st -> st { tc_casts = M.insert e (DC t) (tc_casts st) } 
 
+--------------------------------------------------------------------------------
+addUpCastH :: Expression AnnSSA -> BHeap -> TCM ()
+--------------------------------------------------------------------------------
+addUpCastH e σ = modify $ \st -> st { tc_casts = M.insert e (UCSTH σ) (tc_casts st) }
+
+--------------------------------------------------------------------------------
+addDownCastH :: Expression AnnSSA -> BHeap -> TCM ()
+--------------------------------------------------------------------------------
+addDownCastH e σ = modify $ \st -> st { tc_casts = M.insert e (DCSTH σ) (tc_casts st) }
+
+--------------------------------------------------------------------------------
+addDeadCastH:: Expression AnnSSA -> BHeap -> TCM ()
+--------------------------------------------------------------------------------
+addDeadCastH e σ = modify $ \st -> st { tc_casts = M.insert e (DCH σ) (tc_casts st) }
 
 --------------------------------------------------------------------------------
 patchPgmM :: (Typeable r, Data r) => Nano AnnSSA (RType r) -> TCM (Nano AnnSSA (RType r))
@@ -542,9 +556,12 @@ patchExpr :: Casts -> Expression AnnSSA -> Expression AnnSSA
 --------------------------------------------------------------------------------
 patchExpr m e =
   case M.lookup e m of
-    Just (UCST t) -> UpCast   (a { ann_fact = (Assume t):fs }) e
-    Just (DCST t) -> DownCast (a { ann_fact = (Assume t):fs }) e
-    Just (DC   t) -> DeadCast (a { ann_fact = (Assume t):fs }) e
+    Just (UCST t)  -> UpCast   (a { ann_fact = (Assume t):fs }) e
+    Just (DCST t)  -> DownCast (a { ann_fact = (Assume t):fs }) e
+    Just (DC   t)  -> DeadCast (a { ann_fact = (Assume t):fs }) e
+    Just (UCSTH h) -> UpCast   (a { ann_fact = (AssumeH h):fs}) e
+    Just (DCSTH h) -> DownCast (a { ann_fact = (AssumeH h):fs}) e
+    Just (DCH   h) -> DeadCast (a { ann_fact = (AssumeH h):fs}) e
     _             -> e
   where 
     fs = ann_fact a

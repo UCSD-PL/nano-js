@@ -113,12 +113,21 @@ instance Equivalent e (Id a) where
 
 type Casts   = M.Map (Expression AnnSSA) (Cast Type)
 
-data Cast t  = UCST t | DCST t | DC t
+data Cast t  = UCST t
+             | DCST t
+             | DC t
+             | UCSTH (Heap t)
+             | DCSTH (Heap t)
+             | DCH   (Heap t)
+
 
 instance (PP a) => PP (Cast a) where
-  pp (UCST t) = text "Upcast  : " <+> pp t
-  pp (DCST t) = text "Downcast: " <+> pp t
-  pp (DC   t) = text "Deadcast: " <+> pp t
+  pp (UCST t)  = text "Upcast  : " <+> pp t
+  pp (DCST t)  = text "Downcast: " <+> pp t
+  pp (DC   t)  = text "Deadcast: " <+> pp t
+  pp (UCSTH h) = text "Upcast  : " <+> pp h
+  pp (DCSTH h) = text "Downcast: " <+> pp h
+  pp (DCH   h) = text "Deadcast: " <+> pp h
 
 
 ---------------------------------------------------------------------------------------
