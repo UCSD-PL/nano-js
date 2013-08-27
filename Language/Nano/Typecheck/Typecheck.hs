@@ -178,7 +178,7 @@ tcNano p@(Nano {code = Src fs})
 tcNano' :: Nano AnnSSA Type -> TCM AnnInfo  
 -------------------------------------------------------------------------------
 tcNano' pgm@(Nano {code = Src fs}) 
-  = do tcStmts (specs pgm,emp) fs
+  = do tcStmts (specs pgm, heapEmpty) fs
        M.unions <$> getAllAnns
 
 patchAnn              :: AnnInfo -> AnnSSA -> AnnType
@@ -215,13 +215,12 @@ tcFun (γ,σ) (FunctionStmt l f xs body)
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
 
 checkLocSubs θ σ σ' =
-    -- if unique l1s && unique l2s then
     if σ == apply θ σ && σ' == apply θ σ' then
         return ()
     else
         error "unifies thingers"
-    where l1s = apply θ <$> hlocs σ
-          l2s = apply θ <$> hlocs σ'
+    where l1s = apply θ <$> heapLocs σ
+          l2s = apply θ <$> heapLocs σ'
 
 
 funTy l f xs 
@@ -300,25 +299,21 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 -- TODO: wrong. rewrite unify to unify heaps 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  (t,σ')          <- maybe (return (tVoid,emp)) (tcExpr (γ,σ)) eo
+  = do  (t,σ')          <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,σ)) eo
         let rt          = envFindReturn γ 
         Just f          <- getFun
         (_,_,_,σ_out,_) <- case envFindTy f γ of 
                              Nothing -> error "Unknown current typed function"
                              Just z  -> return $ fromJust $ bkFun z 
-        (θ_out, σ_out') <- freshHeap σ_out
-        (θ',σ'')        <- unifyTypeM l "Return" (combineHeaps [σ,σ',σ_out']) eo t (apply θ_out rt)
+        (θr, θr', σ_out') <- freshHeap σ_out
+        (θ',σ'')        <- unifyTypeM l "Return" (heapCombine [σ,σ',σ_out']) eo t (apply θr rt)
         -- Apply the substitution
         let (rt',t') = mapPair (apply θ') (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
-        maybeM_ (\e -> castM e t' (apply θ_out rt')) eo
+        maybeM_ (\e -> castM e t' (apply θr rt')) eo
         maybeM_ (\e -> castHeapM e  σ'' σ_out') eo
         return Nothing
-    where
-      applyHeapSub :: (Env Type) -> (Subst, BHeap) -> (Subst, BHeap)
-      applyHeapSub γ (θ,σ) = 
-                                     (θ, foldl (\σ' (l,t) -> addLocationWith (\t1 t2 -> fst4 $ compareTs γ (tracePP "comparing t1" t1) (tracePP "comparing t2" t2)) l t σ') emp $ tracePP "the list" $ map (apply (tracePP "the sub" θ)) $ hbinds $ tracePP "the heap" σ)
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
   = tcFun (γ,σ) s
@@ -345,7 +340,7 @@ tcAsgn :: (Env Type, BHeap) -> AnnSSA -> Id AnnSSA -> Expression AnnSSA -> TCM T
 
 tcAsgn (γ,σ) _ x e 
   = do (t, σ') <- tcExpr (γ,σ) e
-       return $ Just (envAdds [(x, t)] γ, combineHeaps [σ, σ'])
+       return $ Just (envAdds [(x, t)] γ, heapCombine [σ, σ'])
 
 
 
@@ -360,21 +355,21 @@ tcExpr' :: (Env Type, BHeap) -> Expression AnnSSA -> TCM (Type, BHeap)
 -------------------------------------------------------------------------------
 
 tcExpr' (γ,σ) (IntLit _ _)
-  = return (tInt, emp)
+  = return (tInt, heapEmpty)
 
 tcExpr' (γ,σ) (BoolLit _ _)
-  = return (tBool, emp)
+  = return (tBool, heapEmpty)
 
 tcExpr' (γ,σ) (StringLit _ _)
-  = return (tString, emp)
+  = return (tString, heapEmpty)
 
 tcExpr' (γ,σ) (NullLit _)
-  = return (tNull, emp)
+  = return (tNull, heapEmpty)
 
 tcExpr' (γ,σ) (VarRef l x)
   = case envFindTy x γ of 
-      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) (tErr, emp)
-      Just z  -> return (z, emp)
+      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) (tErr, heapEmpty)
+      Just z  -> return (z, heapEmpty)
 
 tcExpr' (γ,σ) (PrefixExpr l o e)
   = tcCall (γ,σ) l o [e] (prefixOpTy o γ)
@@ -384,8 +379,8 @@ tcExpr' (γ,σ) (InfixExpr l o e1 e2)
 
 tcExpr' (γ,σ) (CallExpr l e es)
   = do (t, σ')  <- tcExpr (γ,σ) e
-       (t, σ'') <- tcCall (γ, combineHeaps [σ,σ']) l e es t
-       return (t, combineHeaps [σ',σ''])
+       (t, σ'') <- tcCall (γ, heapCombine [σ,σ']) l e es t
+       return (t, heapCombine [σ',σ''])
 
 tcExpr' (γ,σ) (ObjectLit _ ps) 
   = tcObject (γ,σ) ps
@@ -406,7 +401,7 @@ tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
         (ts,σs)       <- unzip <$> mapM (tcExpr (γ,σ)) es
         -- Unify with formal parameter types
         -- TODO: WRONG
-        (θ,σ')        <- unifyTypesM l "tcCall" (combineHeaps (σ'':σs)) ts its
+        (θ,σ')        <- unifyTypesM l "tcCall" (heapCombine (σ'':σs)) ts its
         -- Apply the substitution
         let (ts',its') = mapPair (apply θ) (ts,its)
         -- Subtype the arguments against the formals and cast if 
@@ -433,7 +428,7 @@ tcObject (γ,σ) bs
       (ts,σs) <- unzip <$> mapM (tcExpr (γ, σ)) es
       let bts =  zipWith B (map F.symbol ps) ts
       let t   = TObj bts ()
-      let σ'  = addLocation l t (combineHeaps σs)
+      let σ'  = heapAdd l t (heapCombine σs)
       return (tRef l, σ')
 
 
@@ -443,7 +438,7 @@ tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM
 tcAccess (γ,σ) _ e f = 
   do  (r,σ') <- tcExpr (γ,σ) e
       let l  =  location r
-      t'     <- dotAccess f (rdLocation l $ combineHeaps [σ,σ'])
+      t'     <- dotAccess f (heapRead l $ heapCombine [σ,σ'])
       return $ (fromJust t', σ')
 
 location (TApp (TRef l) [] _) = l
@@ -460,7 +455,7 @@ envJoin' l (γ,σ) (γ1,σ1) (γ2,σ2)
   = do let xs = [x | PhiVar x <- ann_fact l]
        ts    <- mapM (getPhiType l (γ1,σ1) (γ2,σ2)) xs
        env   <- getTDefs
-       return $ Just $ (envAdds (zip xs ts) γ, combineHeapsWith (\t1 t2 -> fst4 $ compareTs env t1 t2) [σ1,σ2])
+       return $ Just $ (envAdds (zip xs ts) γ, heapCombineWith (\t1 t2 -> fst4 $ compareTs env t1 t2) [σ1,σ2])
   
 
 ----------------------------------------------------------------------------------

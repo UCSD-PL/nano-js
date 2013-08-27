@@ -279,7 +279,7 @@ noUnion :: (F.Reftable r) => RType r -> Bool
 ---------------------------------------------------------------------------------------
 noUnion (TApp TUn _ _)      = False
 noUnion (TApp _  rs _)      = and $ map noUnion rs
-noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ htypes h ++ htypes h')
+noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ heapTypes h ++ heapTypes h')
 noUnion (TObj bs    _)      = and $ map noUnion $ map b_type bs 
 noUnion (TBd  _      )      = error "noUnion: cannot have TBodies here"
 noUnion (TAll _ t    )      = noUnion t
@@ -397,7 +397,7 @@ instance PP a => PP (Maybe a) where
   pp = maybe (text "Nothing") pp 
 
 instance (PP t) => PP (Heap t) where
-  pp h = brackets $ intersperse (text " *") (map ppBind (hbinds h))
+  pp h = brackets $ intersperse (text " *") (map ppBind (heapBinds h))
       where ppBind (l, t) = text l <+> text "|->" <+> pp t
 
 instance F.Reftable r => PP (RType r) where
@@ -523,7 +523,7 @@ tVoid   = TApp TVoid    [] F.top
 tUndef  = TApp TUndef   [] F.top
 tNull   = TApp TNull    [] F.top
 tErr    = tVoid
-tFunErr = ([],[],emp,emp,tErr)
+tFunErr = ([],[],heapEmpty,heapEmpty,tErr)
 
 tRef :: (F.Reftable r) => Location -> RType r
 tRef l  = TApp (TRef l) [] F.top

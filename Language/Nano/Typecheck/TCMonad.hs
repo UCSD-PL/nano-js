@@ -377,14 +377,15 @@ instance Freshable a => Freshable [a] where
 freshTVar l _ =  ((`TV` l). F.intSymbol "T") <$> tick
 freshLocation = tick >>= \n -> return ("_?L" ++ show n)
 
-freshHeap :: BHeap -> TCM (Subst,BHeap)
-freshHeap h   = do θ <- foldM freshen mempty (hlocs h)
-                   return (θ, apply θ h)
+freshHeap :: BHeap -> TCM (Subst,Subst,BHeap)
+freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
+                   return (θ, θ', apply θ h)
   where
-    freshen :: Subst -> Location -> TCM Subst
-    freshen θ l =
+    nilSub           = (mempty,mempty)
+    freshen (θ,θ') l =
           do l' <- freshLocation
-             return $ mappend θ (Su HM.empty (HM.singleton l l'))
+             return $ (mappend θ  (Su HM.empty (HM.singleton l l')),
+                       mappend θ' (Su HM.empty (HM.singleton l' l)))      
 -- | Monadic unfolding
 -------------------------------------------------------------------------------
 unfoldFirstTC :: Type -> TCM Type
@@ -417,9 +418,9 @@ unifyTypesM l msg σ t1s t2s
                                     Right (θ',σ') -> setSubst θ' >> return (θ', unifyHeapM γ θ' σ')
 
 -- Unification may have resulted in heap locations that need to be merged
-unifyHeapM γ θ σ = foldl joinLoc emp . map (apply θ) . hbinds $ σ
+unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply θ) . heapBinds $ σ
     where safeAdd t1 t2   = fst4 $ compareTs γ t1 t2
-          joinLoc σ (l,t) = addLocationWith safeAdd l t σ
+          joinLoc σ (l,t) = heapAddWith safeAdd l t σ
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
 ----------------------------------------------------------------------------------
@@ -448,10 +449,10 @@ subTypesM ts ts' = zipWithM subTypeM ts ts'
 subHeapM :: BHeap -> BHeap -> TCM SubDirection                   
 subHeapM σ σ' =
     do γ <- getTDefs
-       let ls  = filter (flip hmem σ') $ hlocs σ
-       let ls' = hlocs σ'
-       let ts  = map (flip rdLocation σ) ls
-       let ts' = map (flip rdLocation σ') ls
+       let ls  = filter (flip heapMem σ') $ heapLocs σ
+       let ls' = heapLocs σ'
+       let ts  = map (flip heapRead σ) ls
+       let ts' = map (flip heapRead σ') ls
        ds <- subTypesM ts ts'
        return $ case compare (length ls) (length ls') of
                   Prelude.EQ -> foldl (&*&) EqT  ds

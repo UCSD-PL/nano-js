@@ -99,7 +99,7 @@ instance Substitutable r Location where
 instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
     Substitutable r (Heap (RType r)) where
   apply θ h =
-      hFromBindings $ map (apply θ) $ hbinds h
+      heapFromBinds $ map (apply θ) $ heapBinds h
 
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
@@ -115,7 +115,7 @@ instance (PP r, F.Reftable r) => Substitutable r (Bind r) where
 instance Free (RType r) where
   free (TApp _ ts _)        = S.unions   $ free <$> ts
   free (TVar α _)           = S.singleton α 
-  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ htypes h ++ htypes h'
+  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes h ++ heapTypes h'
   free (TAll α t)           = S.delete α $ free t 
   free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ α t _ ))  = foldr S.delete (free t) α

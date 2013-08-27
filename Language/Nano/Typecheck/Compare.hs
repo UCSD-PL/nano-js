@@ -94,7 +94,7 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   equiv _ _                    _                      = False
 
 instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RHeap r) where
-  equiv γ h1 h2 = equiv γ (hbinds h1) (hbinds h2)
+  equiv γ h1 h2 = equiv γ (heapBinds h1) (heapBinds h2)
 
 instance (PP r, F.Reftable r) =>
            Equivalent (Env (RType r)) (Location, RType r) where

@@ -65,15 +65,9 @@ unify (γ,σ) θ t@(TApp (TDef _) _ _) t'  = unify (γ,σ) θ (unfoldSafe γ t) 
 
 unify (γ,σ) θ t t'@(TApp (TDef _) _ _)  = unify (γ,σ) θ t (unfoldSafe γ t')
 -- TODO: fix                                          
-unify (γ,σ) θ (TVar α _)     (TVar β _) = case varEql θ α β of
-                                            Right θ -> Right (θ,σ)
-                                            Left m  -> Left m
-unify (γ,σ) θ (TVar α _)     t          = case varAsn θ α t of
-                                            Right θ -> Right (θ,σ)
-                                            Left m  -> Left m
-unify (γ,σ) θ t              (TVar α _) = case varAsn θ α t of
-                                            Right θ -> Right (θ,σ)
-                                            Left m  -> Left m
+unify (γ,σ) θ (TVar α _)     (TVar β _) = liftSub σ $ varEql θ α β
+unify (γ,σ) θ (TVar α _)     t          = liftSub σ $ varAsn θ α t
+unify (γ,σ) θ t              (TVar α _) = liftSub σ $ varAsn θ α t
 
 -- List[A] + Null `unif` List[T0] + Null => A `unif` T0
 -- TODO: make sure other nothing weird is going on with TVars,
@@ -100,15 +94,14 @@ unify env@(γ,σ) θ (TObj bs1 _) (TObj bs2 _)
 -- Defer all other checks for later
 unify (γ,σ) θ _ _         = Right $ (θ,σ)
 
-unifyHeapLocations (γ,σ) θ = foo γ θ σ
-
-foo γ θ σ = foldl joinSub (Right (θ,σ)) bs
-    where bs = hbinds σ
+unifyHeapLocations (γ,σ) θ =
+  foldl joinSub (Right (θ,σ)) bs
+    where bs = heapBinds σ
           joinSub s@(Right (θ,σ)) (l,t) =
-              if hmem (apply θ l) σ then
-                  unify (γ,σ) θ t (rdLocation (apply θ l) σ)
-              else 
-                  s
+            if heapMem (apply θ l) σ then
+              unify (γ,σ) θ t (heapRead (apply θ l) σ)
+            else 
+              s
           joinSub s _ = s
                                             
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
@@ -142,8 +135,6 @@ unifys' env@(γ,σ) θ ts ts'
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
-checkHeaps θ σ σ' = σ == σ' -- TODO for now...?
-    
 check (Su m _) (Su m' _) = vs == vs'
   where vs  = (`M.lookup` m ) <$> ks
         vs' = (`M.lookup` m') <$> ks
@@ -178,4 +169,5 @@ varAsn θ α t
   
 unassigned α (Su m _) = M.lookup α m == Just (tVar α)
 
-
+liftSub σ (Right θ)  = Right (θ, σ)
+liftSub _ (Left err) = Left  err

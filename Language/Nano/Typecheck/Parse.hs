@@ -96,22 +96,21 @@ bareTypeNoUnionP
 
 -- Creating the bindings right away at bareArgP
 bareFunP
-  -- = do args   <- parens $ sepBy bareTypeP comma
   = do args   <- parens $ sepBy bareArgP comma
-       h <- (reserved "/" >> heapP) <|> return emp
+       h <- (reserved "/" >> heapP) <|> return heapEmpty 
        reserved "=>" 
        ret    <- bareTypeP
        h' <- do reserved "/"
                 try heapP <|> (reserved "same" >> return h)
-            <|> return emp
+            <|> return heapEmpty 
        r      <- topP
        return $ TFun args ret h h' r
 
 heapP
-  =  (reserved "emp" >> return emp)
+  =  (reserved "emp" >> return heapEmpty)
  <|> do (l,t) <- heapBindP
-        h     <- (try (reserved "*" >> heapP)) <|> return emp
-        return (addLocation l t h)
+        h     <- (try (reserved "*" >> heapP)) <|> return heapEmpty 
+        return (heapAdd l t h)
 
 heapBindP
   = do l <- locationP

@@ -3,7 +3,7 @@
 //     return x.a;
 // }
 
-/*@ mk2 :: ()/emp => <l>/l |-> { b:number} */
+// /*@ mk2 :: ()/emp => <l>/l |-> { a:string} */
 // function mk2()
 // {
 //     var x = {};
@@ -25,11 +25,5 @@ function mk() {
         x = {c:3};
     }
     return {a:3, b:x};
-}
-
-/*@ setZero :: (x:number)/l |-> {a:number} => <l>/same */
-function setZero(x) {
-    x.a = 0;
-    return x;
 }
 
