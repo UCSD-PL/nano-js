@@ -1,5 +1,5 @@
-/*@ foo :: ({v: number | (v > 0)}) => { a: {v: number | (v > 0)} }  */
+/*@ foo :: (number)/emp => <l>/l |-> { a: number }  */
 
 function foo (x) {
-  return { a: x };
+  return { a: 3 };
 }
