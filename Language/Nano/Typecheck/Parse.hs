@@ -56,8 +56,9 @@ identifierP = withSpan Id lowerIdP -- <$> getPosition <*> lowerIdP -- Lexer.iden
 tBodyP :: Parser (Id SourceSpan, RType Reft)
 tBodyP = do  id <- identifierP 
              tv <- option [] tParP
+             th <- option heapEmpty extHeapP
              tb <- bareTypeP
-             return $ (id, TBd $ TD (TDef id) tv tb (idLoc id))
+             return $ (id, TBd $ TD (TDef id) tv th tb (idLoc id))
 
 -- [A,B,C...]
 tParP = brackets $ sepBy tvarP comma
@@ -105,6 +106,11 @@ bareFunP
             <|> return heapEmpty 
        r      <- topP
        return $ TFun args ret h h' r
+
+extHeapP = do reserved ("exists!")
+              h <- heapP
+              dot
+              return h
 
 heapP
   =  (reserved "emp" >> return heapEmpty)

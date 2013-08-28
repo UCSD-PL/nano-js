@@ -161,5 +161,3 @@ execute act
 
 initState :: SsaState
 initState = SsaST envEmpty envEmpty 0 M.empty
-
-

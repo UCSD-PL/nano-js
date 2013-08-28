@@ -133,6 +133,7 @@ instance F.Symbolic a => F.Symbolic (Located a) where
 data TBody r 
    = TD { td_con  :: !TCon          -- TDef name ...
         , td_args :: ![TVar]        -- Type variables
+        , td_heap :: !(RHeap r)     -- An existentially quantified heap
         , td_body :: !(RType r)     -- int or bool or fun or object ...
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
@@ -155,12 +156,12 @@ type RHeap r = Heap (RType r)
 
 -- | (Raw) Refined Types 
 data RType r  
-  = TApp TCon [RType r]                         r
-  | TVar TVar                                   r 
-  | TFun [Bind r] (RType r) (RHeap r) (RHeap r) r
-  | TObj [Bind r]                               r
-  | TBd  (TBody r)
-  | TAll TVar (RType r)
+  = TApp  TCon [RType r]                         r
+  | TVar  TVar                                   r 
+  | TFun  [Bind r] (RType r) (RHeap r) (RHeap r) r
+  | TObj  [Bind r]                               r
+  | TBd   (TBody r)
+  | TAll  TVar (RType r)
     deriving (Ord, Show, Functor, Data, Typeable)
 
 
@@ -309,7 +310,7 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
   TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
   TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
   TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
-  TBd (TD c1 a1 b1 _)    == TBd (TD c2 a2 b2 _)   = (c1, a1, b1)   == (c2, a2, b2)
+  TBd (TD c1 a1 h1 b1 _) == TBd (TD c2 a2 h2 b2 _)= (c1, a1, b1)   == (c2, a2, b2)
   TAll _ _               == TAll _ _              = undefined -- TODO
   _                      == _                     = False
 
@@ -414,7 +415,11 @@ instance F.Reftable r => PP (RType r) where
   pp (TApp c [] r)              = F.ppTy r $ ppTC c 
   pp (TApp c ts r)              = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs
-  pp (TBd (TD (TDef id) v r _)) = pp (F.symbol id) <+> ppArgs brackets comma v <+> pp r
+  pp (TBd (TD (TDef id) v h r _)) = pp (F.symbol id) <+> ppArgs brackets comma v
+                                                     <+> text "∃!"
+                                                     <+> pp h
+                                                     <+> text ". "
+                                                     <+> pp r
   pp (TBd _)                    = error "This is not an acceptable form for TBody" 
 
 instance PP TCon where

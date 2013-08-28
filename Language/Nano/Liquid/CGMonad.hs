@@ -167,7 +167,7 @@ getBinding _ i (TObj bs _ ) =
     _           -> Left  $ errorObjectBinding
 getBinding defs i t@(TApp (TDef _) _ _) = 
   case unfoldMaybe defs t of
-    Right t'    -> getBinding defs i t'
+    Right (_,t')-> getBinding defs i t'
     Left  s     -> Left $ s ++ "\nand\n" ++ errorObjectTAccess t
 getBinding _ _ t = Left $ errorObjectTAccess t
 
@@ -417,7 +417,7 @@ unfoldFirstCG t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 -------------------------------------------------------------------------------
 unfoldSafeCG :: RefType -> CGM RefType
 -------------------------------------------------------------------------------
-unfoldSafeCG   t = getTDefs >>= \γ -> return $ unfoldSafe γ t
+unfoldSafeCG   t = getTDefs >>= \γ -> return $ snd $ unfoldSafe γ t
 
 
 ---------------------------------------------------------------------------------------

@@ -61,9 +61,9 @@ unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) =
 unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)
   | d == d'                             = unifys env θ ts ts'
 
-unify (γ,σ) θ t@(TApp (TDef _) _ _) t'  = unify (γ,σ) θ (unfoldSafe γ t) t'
+unify (γ,σ) θ t@(TApp (TDef _) _ _) t'  = unify (γ,σ) θ (snd $ unfoldSafe γ t) t'
 
-unify (γ,σ) θ t t'@(TApp (TDef _) _ _)  = unify (γ,σ) θ t (unfoldSafe γ t')
+unify (γ,σ) θ t t'@(TApp (TDef _) _ _)  = unify (γ,σ) θ t (snd $ unfoldSafe γ t')
 -- TODO: fix                                          
 unify (γ,σ) θ (TVar α _)     (TVar β _) = liftSub σ $ varEql θ α β
 unify (γ,σ) θ (TVar α _)     t          = liftSub σ $ varAsn θ α t
@@ -108,8 +108,8 @@ unifyHeapLocations (γ,σ) θ =
 
 -- TODO: cycles
 unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
-unifEq (γ,σ) t@(TApp (TDef _) _ _) t' = unifEq (γ,σ) (unfoldSafe γ t) t'
-unifEq (γ,σ) t t'@(TApp (TDef _) _ _) = unifEq (γ,σ) t (unfoldSafe γ t')
+unifEq (γ,σ) t@(TApp (TDef _) _ _) t' = unifEq (γ,σ) (snd $ unfoldSafe γ t) t'
+unifEq (γ,σ) t t'@(TApp (TDef _) _ _) = unifEq (γ,σ) t (snd $ unfoldSafe γ t')
 unifEq (γ,σ) t t'                     = equiv γ t t'
 
 -----------------------------------------------------------------------------

@@ -206,7 +206,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        let γ'' = envAddFun l f αs xs ts t γ'
        setFun (F.symbol f)
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
-         do q              <- tcStmts (γ'', tracePP "tcStmts σ" σ) body
+         do q              <- tcStmts (γ'',σ) body
             θ              <- getSubst
             checkLocSubs θ σ σ'
             when (isJust q) $ void $ unifyTypeM l "Missing return" σ f tVoid t
@@ -270,7 +270,7 @@ tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))
 
 -- e
 tcStmt' (γ,σ) (ExprStmt _ e)   
-  = tcExpr (γ,σ) e >> return (Just (γ,σ)) 
+  = tcExpr (γ,σ) e >>= \(_,σ') -> return $ Just (γ,σ')
 
 -- s1;s2;...;sn
 tcStmt' (γ,σ) (BlockStmt _ stmts) 
@@ -296,18 +296,19 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,σ)) eo
+  = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,tracePP "sig" σ)) eo
         let rt             = envFindReturn γ 
         (_, σ_out)        <- getFunHeaps γ
         (θr, θr', σ_out') <- freshHeap σ_out
-        (θ',σ'')          <- unifyTypeM l "Return" (heapCombine [σ',σ_out']) eo t (apply θr rt)
-        θ''               <- appendToSubst θr'
+        (θ',σ'')          <- unifyTypeM l "Return" (heapCombine [tracePP "sig'" σ', tracePP "sigout'" σ_out']) eo t (apply θr rt)
+        let θ''           = θ' `mappend` θr'
+        setSubst θ''
         -- Apply the substitution
-        let (rt',t')       = mapPair (apply θ'') (rt,t)
+        let (rt', t')       = tracePP "ts" $ mapPair (apply θ'') (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM e  σ'' σ_out') eo
+        maybeM_ (\e -> castHeapM e  (tracePP "sig'' st" σ'') (tracePP "sigout st" σ_out')) eo
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -319,9 +320,6 @@ tcStmt' _ s
 
 tcStmt (γ,σ) s = tcStmt' (γ,σ) s
 
-appendToSubst θ
-  = getSubst >>= (return . (`mappend` θ)) >>= \θ' -> setSubst θ' >> return θ'
-  
 getFunHeaps γ
   = do Just f             <- getFun
        (_,_,σ_in,σ_out,_) <- case envFindTy f γ of 
@@ -382,8 +380,16 @@ tcExpr' (γ,σ) (PrefixExpr l o e)
 tcExpr' (γ,σ) (InfixExpr l o e1 e2)        
   = tcCall (γ,σ) l o [e1, e2] (infixOpTy o γ)
 
+-- TODO: HACK
+tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "wind")) es)
+  = tcWind (γ,σ) l es
+
+-- TODO: HACK
+tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "unwind")) es)
+  = tcUnwind (γ, tracePP "unwind here" σ) l es
+
 tcExpr' (γ,σ) (CallExpr l e es)
-  = do (t, σ')  <- tcExpr (γ,σ) e
+  = do (t, σ')  <- tcExpr (γ, tracePP "call here" σ) e
        tcCall (γ, σ') l e es t
 
 tcExpr' (γ,σ) (ObjectLit _ ps) 
@@ -402,7 +408,6 @@ tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
   = do  (_,ibs,σi,σo,ot)    <- instantiate l fn ft
         let its        = b_type <$> ibs
         -- Typecheck arguments
-        -- (ts,σs)       <- unzip <$> mapM (tcExpr (γ,σ)) es
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
         (θ,σ'')        <- unifyTypesM l "tcCall" σ' ts its
@@ -411,8 +416,8 @@ tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its'
-        castHeapM (head es) (tracePP "σ'" σ'') (tracePP "σi" σi)
-        let σ_out      = heapCombineWith (\_ t2 -> t2) [σ'', (apply θ σo)]
+        castHeapM (head es) σ'' σi
+        let σ_out      = heapCombineWith (curry snd) [σ'', (apply θ σo)]
         return         $ (apply θ ot, σ_out)
 
 tcExprs γ (ts,σ) e = do (t,σ') <- tcExpr (γ,σ) e
@@ -441,7 +446,34 @@ tcObject (γ,σ) bs
       (ts,σ') <- foldM (tcExprs γ) ([],σ) es
       let bts =  zipWith B (map F.symbol ps) ts
       let t   = TObj bts ()
-      return (tRef l, σ')
+      return (tRef l, heapAdd l t σ')
+
+----------------------------------------------------------------------------------
+tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
+----------------------------------------------------------------------------------
+tcUnwind (γ,σ) a [e]
+  = do loc         <- freshLocation
+       (t,σ')      <- tcExpr (γ,σ) e
+       (θ,σ'')     <- unifyTypeM a "Unwind" σ' e t (tRef loc)
+       let l'       = apply θ $ location t
+       (σt,tc)     <- unfoldSafeTC $ tracePP "thing" $ heapRead l' σ''
+       (θ,_,σt')   <- freshHeap σt
+       return (tVoid, tracePP "combined" $ heapCombine [tracePP "tc" $ heapUpd l' (apply θ tc) σ'',tracePP "σt'" σt'])
+       -- return (tVoid, unwindHeap tc
+       -- (θt,_,σt) <- freshHeap $ td_body tc
+       -- return (tVoid, heapCombine [heapUpd l (apply θt tc) σ,σt])
+tcUnwind (γ,σ) l es
+  = tcError (ann l) "Unwind called with wrong number of arguments"
+
+----------------------------------------------------------------------------------
+tcWind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
+----------------------------------------------------------------------------------
+tcWind (γ,σ) l es
+  =  do loc        <- freshLocation
+        (t,σ')     <- tcExpr (γ,σ) e
+        (θ,σ'')    <- unifyTypeM a "Unwind" σ' e t (tRef loc)
+        let l'      = apply θ $ location t
+        return $ (tVoid, σ)
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)

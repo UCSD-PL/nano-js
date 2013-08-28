@@ -71,8 +71,8 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   
   equiv γ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _) | d == d' = equiv γ ts ts'
 
-  equiv γ t@(TApp (TDef _) _ _) t' = equiv γ (unfoldSafe γ t) t'
-  equiv γ t t'@(TApp (TDef _) _ _) = equiv γ t (unfoldSafe γ t')
+  equiv γ t@(TApp (TDef _) _ _) t' = equiv γ (snd $ unfoldSafe γ t) t'
+  equiv γ t t'@(TApp (TDef _) _ _) = equiv γ t (snd $ unfoldSafe γ t')
   
   equiv _ (TApp (TRef _) _ _) (TApp (TRef _) _ _)     = True
   equiv _ (TApp c _ _)         (TApp c' _ _)          = c == c'
@@ -271,8 +271,8 @@ compareTs' γ (TApp d1@(TDef _) t1s r1) (TApp d2@(TDef _) t2s r2) | d1 == d2 =
     (tjs, t1s', t2s', bds)  = unzip4 $ zipWith (compareTs γ) t1s t2s
     mk xs r                 = TApp d1 xs r 
 
-compareTs' γ t1@(TApp (TDef _) _ _) t2       = compareTs γ (unfoldSafe γ t1) t2
-compareTs' γ t1 t2@(TApp (TDef _) _ _)       = compareTs γ t1 (unfoldSafe γ t2)
+compareTs' γ t1@(TApp (TDef _) _ _) t2       = compareTs γ (snd $ unfoldSafe γ t1) t2
+compareTs' γ t1 t2@(TApp (TDef _) _ _)       = compareTs γ t1 (snd $ unfoldSafe γ t2)
 
 -- | Everything else in TApp besides unions and defined types
 compareTs' _ t1@(TApp _ _ _) t2@(TApp _ _ _) = padSimple t1 t2 

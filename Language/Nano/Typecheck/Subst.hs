@@ -120,7 +120,7 @@ instance Free (RType r) where
   free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes h ++ heapTypes h'
   free (TAll α t)           = S.delete α $ free t 
   free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
-  free (TBd (TD _ α t _ ))  = foldr S.delete (free t) α
+  free (TBd (TD _ α h t _ ))= foldr S.delete (free t) α
 
 instance Substitutable () Fact where
   apply _ x@(PhiVar _)  = x
@@ -137,13 +137,13 @@ instance Free Fact where
 ------------------------------------------------------------------------
 -- appTy :: RSubst r -> RType r -> RType r
 ------------------------------------------------------------------------
-appTy (Su _ m) (TApp (TRef l) t z)  = TApp (TRef $ M.lookupDefault l l m) t z
-appTy θ (TApp c ts z)               = TApp c (apply θ ts) z 
-appTy θ (TObj bs z)                 = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
-appTy (Su m _) t@(TVar α r)         = (M.lookupDefault t α m) `strengthen` r
-appTy θ (TFun ts t h h' r)          = appTyFun θ ts t h h' r
-appTy (Su ts ls) (TAll α t)         = apply (Su (M.delete α ts) ls) t 
-appTy (Su ts ls) (TBd (TD c α t s)) = TBd $ TD c α (apply (Su (foldr M.delete ts α) ls) t) s
+appTy (Su _ m) (TApp (TRef l) t z)    = TApp (TRef $ M.lookupDefault l l m) t z
+appTy θ (TApp c ts z)                 = TApp c (apply θ ts) z 
+appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
+appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
+appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
+appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) ls) t 
+appTy (Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α h (apply (Su (foldr M.delete ts α) ls) t) s
 
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (fmap go h) (fmap go h') r
@@ -161,8 +161,8 @@ unfoldFirst env t = go t
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _) = 
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs bd _ )) -> apply (fromList $ zip vs acts) bd
-        _                          -> error $ errorUnboundId id
+        Just (TBd (TD _ vs _ bd _ )) -> apply (fromList $ zip vs acts) bd
+        _                            -> error $ errorUnboundId id
     go (TApp c a r)            = TApp c (go <$> a) r
     go t@(TVar _ _ )           = t
     appTBi f (B s t)           = B s $ f t
@@ -174,23 +174,24 @@ unfoldFirst env t = go t
 -- which case the same type is returned.
 -- If it is a type literal for which no definition exists return 
 -- @Left "<Error message>".
---
+
 -- TODO: Make sure toplevel refinements are the same.
 -------------------------------------------------------------------------------
-unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RType r)
+unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RHeap r, RType r)
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs bd _ )) -> Right $ apply (fromList $ zip vs acts) bd
-        _                          -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
+        Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromList $ zip vs acts
+                                                in (apply θ h, apply θ bd)
+        _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
-unfoldMaybe _ t                           = Right t
+unfoldMaybe _ t                           = Right (heapEmpty, t)
 
 
 -- | Force a successful unfolding
 -------------------------------------------------------------------------------
-unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
+unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> (RHeap r, RType r)
 -------------------------------------------------------------------------------
 unfoldSafe env = either error id . unfoldMaybe env
 

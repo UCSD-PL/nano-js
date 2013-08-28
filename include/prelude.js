@@ -41,7 +41,15 @@ function pos(){
   }
 }
 
+/*@ wind :: (<l>) => <l> */
+function wind(x) {
+    return x;
+}
 
+/*@ unwind :: (<l>) => <l> */
+function unwind(x) {
+    return x;
+}
 
 /*************************************************************************/
 /*********************** Temporary tag maps ******************************/
@@ -70,6 +78,7 @@ function pos(){
 /*************************************************************************/
 
 /*@ type list[A]  {  data : A, next : list[A] + null } */
+/*@ type foo[A] exists! l |-> foo[A]. { data : A, next : <l> + null } */
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 

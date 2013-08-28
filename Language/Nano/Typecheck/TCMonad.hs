@@ -250,7 +250,7 @@ dotAccess f t@(TApp c ts _ ) = go c
          go TString  = return $ Just tUndef
          go TUndef   = return   Nothing
          go TNull    = return   Nothing
-         go (TDef _) = unfoldSafeTC t >>= dotAccess f
+         go (TDef _) = unfoldSafeTC t >>= (dotAccess f . snd)
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
          go (TRef _)  = error "dotAccess ref"
@@ -394,7 +394,7 @@ unfoldFirstTC t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 
 
 -------------------------------------------------------------------------------
-unfoldSafeTC :: Type -> TCM Type
+unfoldSafeTC :: Type -> TCM (BHeap, Type)
 -------------------------------------------------------------------------------
 unfoldSafeTC   t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
