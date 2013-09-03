@@ -33,6 +33,7 @@ module Language.Nano.Typecheck.Heaps (
 
 import           Control.Monad
 import qualified Data.HashMap.Strict     as M
+import qualified Data.HashSet            as S
 import           Data.Generics                   
 import           Data.Maybe                 (catMaybes, isJust, fromJust)
 import           Data.Typeable              ()

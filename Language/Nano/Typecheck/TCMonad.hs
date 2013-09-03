@@ -89,7 +89,7 @@ import qualified Data.HashMap.Strict            as HM
 import qualified Data.Map                       as M
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
-import           Data.List                      (find)
+import           Data.List                      (find, partition, nub)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
 import           Language.ECMAScript3.Parser    (SourceSpan (..))
@@ -418,7 +418,7 @@ unifyTypesM l msg σ t1s t2s
                                     Right (θ',σ') -> setSubst θ' >> return (θ', unifyHeapM γ θ' σ')
 
 -- Unification may have resulted in heap locations that need to be merged
-unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply θ) . heapBinds $ σ
+unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply (tracePP "unify under " θ)) . heapBinds $ (tracePP "unify sig" σ)
     where safeAdd t1 t2   = fst4 $ compareTs γ t1 t2
           joinLoc σ (l,t) = heapAddWith safeAdd l t σ
 ----------------------------------------------------------------------------------
@@ -446,20 +446,33 @@ subTypesM :: [Type] -> [Type] -> TCM [SubDirection]
 ----------------------------------------------------------------------------------
 subTypesM ts ts' = zipWithM subTypeM ts ts'
 
-subHeapM :: BHeap -> BHeap -> TCM SubDirection                   
-subHeapM σ σ' =
-    do γ <- getTDefs
-       let ls  = filter (flip heapMem σ') $ heapLocs σ
-       let ls' = heapLocs σ'
-       let ts  = map (flip heapRead σ) ls
-       let ts' = map (flip heapRead σ') ls
-       ds <- subTypesM ts ts'
-       return $ case compare (length ls) (length ls') of
-                  Prelude.EQ -> foldl (&*&) EqT  ds
-                  Prelude.LT -> foldl (&*&) SubT ds
-                  Prelude.GT -> foldl (&*&) SupT ds
+subHeapM :: Env Type -> BHeap -> BHeap -> TCM SubDirection                   
+subHeapM γ σ σ' 
+  = do let ls = nub ((concatMap (locs.snd) $ envToList γ)
+                       ++ heapLocs σ)
+       let (com,sup) = partition (`heapMem` σ) $ heapLocs σ' 
+       case filter (`elem`ls) sup of
+         [] -> do
+           let ts  = map (`heapRead` σ)  com
+           let ts' = map (`heapRead` σ') com
+           ds <- subTypesM ts ts'
+           return $ foldl (&*&) SubT ds
+         xs -> do
+           let ts  = map (`heapRead` σ)  com
+           let ts' = map (`heapRead` σ') com
+           ds <- subTypesM ts ts'
+           return $ foldl (&*&) SupT ds
+           
+                    
+       -- let ts  = map (flip heapRead σ) ls
+       -- let ts' = map (flip heapRead σ') ls
+       -- ds <- subTypesM ts ts'
+       -- return $ case compare (length ls) (length ls') of
+       --            Prelude.EQ -> foldl (&*&) EqT  ds
+       --            Prelude.LT -> foldl (&*&) SubT ds
+       --            Prelude.GT -> foldl (&*&) SupT ds
 --------------------------------------------------------------------------------
---  Cast Helpers ---------------------------------------------------------------
+--  cast Helpers ---------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 
@@ -485,9 +498,9 @@ castM e t t'    = subTypeM t t' >>= go
         go Nth  = addDeadCast e t'
 
 --------------------------------------------------------------------------------
-castHeapM :: Expression AnnSSA -> BHeap -> BHeap -> TCM ()
+castHeapM :: Env Type -> Expression AnnSSA -> BHeap -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-castHeapM e σ σ' = subHeapM σ σ' >>= go
+castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
   where go SupT = addDownCastH e σ'
         go Rel  = addDownCastH e σ'
         go SubT = addUpCastH e σ'

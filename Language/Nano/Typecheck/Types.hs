@@ -74,7 +74,9 @@ module Language.Nano.Typecheck.Types (
   , AnnType
   , AnnInfo
   , isAsm
-
+    
+  , restrictHeap  
+  , locs
   ) where 
 
 import           Text.Printf
@@ -185,12 +187,23 @@ ofType :: (F.Reftable r) => Type -> RType r
 ofType = fmap (const F.top)
 
 locs :: RType r -> [Location]
-locs (TApp c ts _) = locs' c ++ (ts >>= locs)
-locs _             = []
+locs t             = L.nub (go t)
+  where
+    go (TApp c ts _) = locs' c ++ (concatMap go ts)
+    go (TObj bs _)   = concatMap (go . b_type) bs
+    go _             = []
 
 locs' :: TCon -> [Location]
 locs' (TRef l) = [l]
 locs' _        = []
+
+-- | RHeap utils
+restrictHeap :: (F.Reftable r) => [Location] -> RHeap r -> RHeap r
+restrictHeap [] h = heapEmpty
+restrictHeap ls h = heapCombine [restrictHeap ls' (heapFromBinds nbs), heapFromBinds bs]
+  where
+    (bs,nbs) = L.partition ((`elem` ls) . fst) $ heapBinds h
+    ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
 bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 bkFun t = do let (αs, t') = bkAll t

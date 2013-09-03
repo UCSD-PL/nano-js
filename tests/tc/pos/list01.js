@@ -10,9 +10,21 @@
 //   return { data: a , next: x };
 // }
 
-/*@ do_thing :: (<l>)/ l |-> foo[number] => <l>/l |-> { data:number, next:<m> + null } * m |-> foo[number] */
-function do_thing(x) {
-    unwind(x);
-    return x;
+/*@ do_thing :: (<l>)/l |-> { data:number, next:<m> + null }
+                    * m |-> foo[]
+               => <l>/l |-> foo[] */
+// function do_thing(x) {
+//     wind(x,foo);
+//     return x;
+// }
+
+/*@ mkFoo :: (d:number)/emp => <l>/l |-> foo[] */
+function mkFoo(d) {
+    // k = { data:3 };
+    // m = { data:d, next:null };
+    l = { data:d, next:{data:d}};
+    // wind(m,foo);
+    wind(l,foo);
+    return l;
 }
 

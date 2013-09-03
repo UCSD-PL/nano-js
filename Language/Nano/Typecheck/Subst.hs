@@ -143,7 +143,7 @@ appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
 appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) ls) t 
-appTy (Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α h (apply (Su (foldr M.delete ts α) ls) t) s
+appTy θ@(Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
 
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (fmap go h) (fmap go h') r

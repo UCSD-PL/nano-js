@@ -12,6 +12,7 @@ import           Control.Monad
 import qualified Data.HashSet                       as HS 
 import qualified Data.HashMap.Strict                as M 
 import qualified Data.Traversable                   as T
+import qualified Data.List                      as L
 import           Data.Monoid
 import           Data.Maybe                         (catMaybes, isJust, fromJust)
 import           Data.Generics                   
@@ -208,17 +209,22 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
          do q              <- tcStmts (γ'',σ) body
             θ              <- getSubst
-            checkLocSubs θ σ σ'
-            when (isJust q) $ void $ unifyTypeM l "Missing return" σ f tVoid t
+            checkLocSubs θ σ'
+            when (isJust q) $ void $ unifyTypeM l "Missing return" heapEmpty f tVoid t
        return $ Just (γ', heapEmpty)
 
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
 
-checkLocSubs θ σ σ' =
-    if σ == apply θ σ && σ' == apply θ σ' then
+checkLocSubs θ σ =
+    if check locs then
         return ()
     else
         error "unifies thingers"
+  where
+    check ls = sameLocs $ mapPair L.nub (ls, apply θ ls)
+    sameLocs (ls, ls') | length ls == length ls' = all (`elem` ls) ls'
+    sameLocs (ls, ls') | otherwise               = False
+    locs = heapLocs σ
 
 
 funTy l f xs 
@@ -308,7 +314,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM e  (tracePP "sig'' st" σ'') (tracePP "sigout st" σ_out')) eo
+        maybeM_ (\e -> castHeapM γ e  (tracePP "sig'' st" σ'') (tracePP "sigout st" σ_out')) eo
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -381,7 +387,7 @@ tcExpr' (γ,σ) (InfixExpr l o e1 e2)
   = tcCall (γ,σ) l o [e1, e2] (infixOpTy o γ)
 
 -- TODO: HACK
-tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "wind")) es)
+tcExpr' (γ,σ) x@(CallExpr l (VarRef _ (Id _ "wind")) es)
   = tcWind (γ,σ) l es
 
 -- TODO: HACK
@@ -404,7 +410,7 @@ tcExpr' _ e
 ----------------------------------------------------------------------------------
 tcCall :: (PP fn) => (Env Type, BHeap) -> AnnSSA -> fn -> [Expression AnnSSA]-> Type -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
-tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
+tcCall (γ,σ) l fn es ft
   = do  (_,ibs,σi,σo,ot)    <- instantiate l fn ft
         let its        = b_type <$> ibs
         -- Typecheck arguments
@@ -416,7 +422,7 @@ tcCall (γ,σ) l fn es ft  -- TODO: do a thing with the called function's stores
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its'
-        castHeapM (head es) σ'' σi
+        castHeapM γ (head es) σ'' σi
         let σ_out      = heapCombineWith (curry snd) [σ'', (apply θ σo)]
         return         $ (apply θ ot, σ_out)
 
@@ -459,21 +465,50 @@ tcUnwind (γ,σ) a [e]
        (σt,tc)     <- unfoldSafeTC $ tracePP "thing" $ heapRead l' σ''
        (θ,_,σt')   <- freshHeap σt
        return (tVoid, tracePP "combined" $ heapCombine [tracePP "tc" $ heapUpd l' (apply θ tc) σ'',tracePP "σt'" σt'])
-       -- return (tVoid, unwindHeap tc
-       -- (θt,_,σt) <- freshHeap $ td_body tc
-       -- return (tVoid, heapCombine [heapUpd l (apply θt tc) σ,σt])
-tcUnwind (γ,σ) l es
+tcUnwind _ l _
   = tcError (ann l) "Unwind called with wrong number of arguments"
 
 ----------------------------------------------------------------------------------
 tcWind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
-tcWind (γ,σ) l es
-  =  do loc        <- freshLocation
-        (t,σ')     <- tcExpr (γ,σ) e
-        (θ,σ'')    <- unifyTypeM a "Unwind" σ' e t (tRef loc)
-        let l'      = apply θ $ location t
-        return $ (tVoid, σ)
+tcWind (γ,σ) a (e:es)
+  = do loc             <- freshLocation
+       (t,σ')          <- tcExpr (γ,σ) e
+       (θ,σ'')         <- unifyTypeM a "Wind" σ' e t (tRef loc)
+       let l'           = apply θ $ location t
+       let th           = tracePP "th" $ heapRead l' (tracePP "σ''" σ'')
+       let ls           = tracePP "locs" $ locs th
+       let σt           = tracePP "σt" $ restrictHeap ls σ''
+       let σc           = foldl (flip heapDel) σ'' $ heapLocs σt
+       (θt, σt', t')   <- windType γ a e th σt es
+       -- (θ,σ''')        <- unifyTypeM a "Wind" σ'' e th td
+       return $ (tVoid, tracePP ("σt: " ++ (ppshow σt) ++ " σc: ") (heapUpd l' t' σc))
+tcWind _ l _ 
+  = tcError (ann l) "Wind called with wrong number of arguments"
+    
+-- TODO: TVars
+-- TODO: heap subtyping
+-- TODO: locs are messed up here, fixit. is the heap right?
+windType γ l e t σ ((VarRef _ (Id l' x)):es)
+  = do let t'   = TApp (TDef (Id (ann l') x)) [] ()
+       (σe, _)  <- unfoldSafeTC t'
+       (θe,θe',σe')<- freshHeap σe
+       (θ,σ')  <- unifyTypeM l "Wind" (tracePP "σ" σ) e (tracePP "t" t) (tracePP "t'" (apply θe t'))
+       castM e (apply (θ `mappend` θe) t) (apply (θ `mappend` θe) t')
+       castHeapM γ e (apply (tracePP "windT: θ" θ) (tracePP "windT: σ'" σ')) (apply θ (tracePP "windT: σe'" σe'))
+       return (θ,σ',t')
+
+--                     (d:ts) -> go d ts
+--                     _      -> tcError (ann l) "Wind called with wrong number of arguments"
+--   where 
+--     syms    = F.symbol <$> [ x | (VarRef _ (Id _ x)) <- es ]
+--     go d ts = do
+--       γ <- getTDefs 
+--       case envFindTy d γ of
+--         Just t'@(TBd (TD _ vs h bd _ )) -> 
+--           return (t',vs,h,bd)
+--         _                               -> 
+--           tcError (ann l) ("Unknown type constructor" ++ ppshow d)
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)

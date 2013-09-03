@@ -188,6 +188,10 @@ ssaExpr (PrefixExpr l o e)
 ssaExpr (InfixExpr l o e1 e2)        
   = InfixExpr l o <$> ssaExpr e1 <*> ssaExpr e2
 
+ssaExpr (CallExpr l e@(VarRef _ (Id _ f)) (e1:es))
+  | f == "wind" || f == "unwind"
+  = CallExpr l <$> ssaExpr e <*> (ssaExpr e1 >>= (return . (:es)))
+
 ssaExpr (CallExpr l e es)
   = CallExpr l <$> ssaExpr e <*> mapM ssaExpr es
 
