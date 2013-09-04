@@ -441,7 +441,7 @@ subTypeM :: Type -> Type -> TCM SubDirection
 subTypeM t t' 
   = do  θ            <- getTDefs 
         let (_,_,_,d) = compareTs θ t t'
-        return $  tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) d
+        return $ {- tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -} d
 
 ----------------------------------------------------------------------------------
 subTypeM' :: (IsLocated l) => l -> Type -> Type -> TCM ()
@@ -464,7 +464,7 @@ subHeapM γ σ σ'
                           [] -> SubT
                           _  -> SupT
        ds <- uncurry subTypesM $ mapPair (readTs com) (σ,σ')
-       return $ tracePP "foldldldlld" $ foldl (&*&) dir (tracePP "ds" ds)
+       return $ foldl (&*&) dir ds
     where readTs ls σ = map (`heapRead` σ) ls
 
 --------------------------------------------------------------------------------
@@ -496,7 +496,7 @@ castM e t t'    = subTypeM t t' >>= go
 --------------------------------------------------------------------------------
 castHeapM :: Env Type -> Expression AnnSSA -> BHeap -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-castHeapM γ e σ σ' = subHeapM γ σ σ' >>= (go . tracePP "castHeapM")
+castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
   where go SupT = addDownCastH e σ'
         go Rel  = addDownCastH e σ'
         go SubT = addUpCastH e σ'

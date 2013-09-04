@@ -69,6 +69,7 @@ verifyFile f
         return $ r
 
 
+-- TODO: CHECK HEAP WF
 -------------------------------------------------------------------------------
 typeCheck     :: (Data r, Typeable r, F.Reftable r) => V.Verbosity -> 
                    Nano AnnSSA (RType r) -> (Nano AnnType (RType r))
@@ -479,11 +480,11 @@ tcWind (γ,σ) a (e:es)
        (t,σ')          <- tcExpr (γ,σ) e
        (θ,σ'')         <- unifyTypeM a "Wind" σ' e t (tRef loc)
        let l'           = apply θ $ location t
-       let th           = heapRead l' (tracePP "σ''" σ'')
+       let th           = heapRead l' σ''
        let ls           = locs th
        let σt           = restrictHeap ls σ''
        let σc           = foldl (flip heapDel) σ'' $ heapLocs σt
-       (θt, σt', t')   <- windType γ a e th σt es
+       (θt, σt', t')   <- windType γ a e (apply θ th) σt es
        return $ (tVoid, heapUpd l' t' σc)
 tcWind _ l _ 
   = tcError (ann l) "Wind called with wrong number of arguments"
@@ -493,10 +494,10 @@ windType γ l e t σ ((VarRef _ (Id l' x)):es)
   = do let t'      = TApp (TDef (Id (ann l') x)) [] ()
        (σe, t'')  <- unfoldSafeTC t'
        (θe,_,σe') <- freshHeap σe
-       (θ,σ')     <- unifyTypeM l "Wind" σ e t (apply θe t'')
-       let θ'      = θ `mappend` θe
-       castM e (tracePP "t" (apply θ' t)) (tracePP "t'" (apply θ' t''))
-       castHeapM γ e (tracePP "σ'" (apply θ σ')) (tracePP "σe" (apply θ σe'))
+       (θ,σ')     <- unifyTypeM l "Wind" σ e t t''
+       let θ'      = θe `mappend` θ
+       castM e (apply θ' t) (apply θ' t'')
+       castHeapM γ e (apply θ σ') (apply θ σe')
        return (θ,σ',t')
 
 ----------------------------------------------------------------------------------
