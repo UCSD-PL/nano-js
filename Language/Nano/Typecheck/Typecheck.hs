@@ -433,7 +433,6 @@ tcCall (γ,σ) l fn es ft
 tcExprs γ (ts,σ) e = do (t,σ') <- tcExpr (γ,σ) e
                         return (ts ++ [t], σ')
 
--- TODO: Need to generate fresh location names here
 instantiate l fn ft 
   = do t' <-  {- tracePP "new Ty Args" <$> -} freshTyArgs (srcPos l) (bkAll ft)
        (ts,ibs,σi,σo,ot) <- maybe err return $ bkFun t'
@@ -499,6 +498,15 @@ windType γ l e t σ ((VarRef _ (Id l' x)):es)
        castM e (apply θ' t) (apply θ' t'')
        castHeapM γ e (apply θ σ') (apply θ σe')
        return (θ,σ',t')
+
+freshApp l γ (Id l' x) = 
+  case envFindTy x γ of
+    Just (TBd (TD _ vs _ _ _ )) -> 
+      do θ <- freshSubst l vs
+         let ts = apply θ . tVar <$> vs
+         return $ TApp (TDef (Id (ann l') x)) ts ()
+    _                           ->
+      error$ errorUnboundId x
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)

@@ -1,6 +1,7 @@
 /*@ type nlist  list[number] */
+/*@ type nfoo   foo[number]*/
 
-/*@ main :: (x:<l>, v:number)/l |-> foo[] => <m>/m |-> foo[] */
+/*@ main :: (x:<l>, v:string)/l |-> nfoo => <m>/m |-> nfoo */
 function main(x, a) {
     z = { data: a, next: x };
     wind(z, foo);

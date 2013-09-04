@@ -21,6 +21,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Freshness
   , freshTyArgs
   , freshLocation
+  , freshSubst
   , freshHeap
 
   -- * Dot Access
