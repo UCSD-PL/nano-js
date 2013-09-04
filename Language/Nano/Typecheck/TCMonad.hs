@@ -49,6 +49,7 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Unification
   , unifyTypeM, unifyTypesM
+  , unifyHeapWithM
 
   -- * Casts
   , getCasts, getHCasts
@@ -433,12 +434,18 @@ unifyTypesM l msg σ t1s t2s
                                   γ <- getTDefs
                                   case unifys (γ,σ) θ t1s t2s of
                                     Left msg'     -> tcError l $ msg ++ "\n" ++ msg'
-                                    Right (θ',σ') -> setSubst θ' >> return (θ', unifyHeapM γ θ' σ')
+                                    Right (θ',σ') -> do
+                                      setSubst θ'
+                                      let σ'' = lowerHeap $ unifyHeap γ θ' (Right <$> σ')
+                                      return (θ', σ'')
+  where lowerHeap σ = heapFromBinds [(l,t) | (l, Right t) <- heapBinds σ]
+                                      
+unifyHeapWithM f σ = do
+  θ <- getSubst
+  γ <- getTDefs
+  return $ unifyHeapWith f γ (tracePP "θ" θ) (Right <$> σ)
 
--- Unification may have resulted in heap locations that need to be merged
-unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply θ) . heapBinds $ σ
-    where safeAdd t1 t2   = fst4 $ compareTs γ t1 t2
-          joinLoc σ (l,t) = heapAddWith safeAdd l t σ
+
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
 ----------------------------------------------------------------------------------

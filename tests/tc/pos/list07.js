@@ -1,7 +1,9 @@
 
 /*@ type nlist  list[number] */ 
 
-/*@ foo :: () => nlist */
+/*@ foo :: () => <l>/l |-> nlist */
 function foo() {
-  return { data: 5, more_data: 6, next: null  } ;
+  l = { data: 5, more_data: 6, next: null  } ;
+  wind(l, foo);
+  return l;
 }

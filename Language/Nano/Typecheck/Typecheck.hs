@@ -295,7 +295,7 @@ tcStmt' (γ,σ) (IfStmt l e s1 s2)
   = do  (t,σe) <- tcExpr (γ,σ) e 
     -- Doing check for boolean for the conditional for now
     -- TODO: Will have to suppert truthy/falsy later.
-        (_,σ') <- unifyTypeM l "If condition" σe e t tBool
+        (_,σ') <- tracePP "IfStmt" <$> unifyTypeM l "If condition" σe e t tBool
         e1     <- tcStmt' (γ, σ') s1
         e2     <- tcStmt' (γ, σ') s2
         envJoin l (γ,σ') e1 e2
@@ -420,15 +420,21 @@ tcCall (γ,σ) l fn es ft
         -- Typecheck arguments
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        (θ,σ'')        <- unifyTypesM l "tcCall" σ' ts its
+        (θ,σ'')        <- unifyTypesM l "tcCall" σ' its ts
         -- Apply the substitution
         let (ts',its') = mapPair (apply θ) (ts,its)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its'
         castHeapM γ (head es) σ'' σi
+        checkDisjoint σo
         let σ_out      = heapCombineWith (curry snd) [σ'', (apply θ σo)]
         return         $ (apply θ ot, σ_out)
+    where
+      checkDisjoint σ = do σ' <- unifyHeapWithM (\_ _ _ -> Left ()) σ
+                           case [m | (m, Left _) <- heapBinds σ'] of
+                             [] -> return ()
+                             _  -> tcError (ann l) "Call joins locations that are distinct in callee"
 
 tcExprs γ (ts,σ) e = do (t,σ') <- tcExpr (γ,σ) e
                         return (ts ++ [t], σ')
@@ -463,11 +469,11 @@ tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHe
 tcUnwind (γ,σ) a [e]
   = do loc         <- freshLocation
        (t,σ')      <- tcExpr (γ,σ) e
-       (θ,σ'')     <- unifyTypeM a "Unwind" σ' e (tRef loc) t
+       (θ,σ'')     <- unifyTypeM a "Unwind" σ' e t (tRef loc)
        let l'       = apply θ $ location t
-       (σt,tc)     <- unwindTC $ heapRead l' $ tracePP "σ''" σ''
+       (σt,tc)     <- unwindTC $ heapRead l' σ''
        (θ',_,σt')   <- freshHeap σt
-       return (tVoid, tracePP "heapCombine" $ heapCombine [heapUpd l' (tracePP "upd" (apply θ' tc)) σ'', tracePP "this one" σt'])
+       return (tVoid, heapCombine [heapUpd l' (apply θ' tc) σ'', σt'])
 tcUnwind _ l _
   = tcError (ann l) "Unwind called with wrong number of arguments"
 
@@ -490,13 +496,11 @@ tcWind _ l _
     
 -- TODO: TVars
 windType γ l e t σ ((VarRef _ i@(Id l' x)):es)
-  = do t'         <- freshApp l i --TApp (TDef (Id (ann l') x)) [] ()
-       (σe, t'')  <- unwindTC $ tracePP "freshApp" $ t'
-       (θe,_,σe') <- freshHeap σe
+  = do t'         <- freshApp l i
+       (σe, t'')  <- unwindTC t'
        (θ,σ')     <- unifyTypeM l "Wind" σ e t t''
-       let θ'      = θe `mappend` θ
-       castM e (apply θ' t) (apply θ' t'')
-       castHeapM γ e (apply θ σ') (apply θ σe')
+       castM e (apply θ t) (apply θ t'')
+       castHeapM γ e (apply θ σ') (apply θ σe)
        return (θ,σ',t')
 
 freshApp l (Id l' x)
@@ -513,10 +517,13 @@ freshApp l (Id l' x)
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
 tcAccess (γ,σ) _ e f = 
-  do  (r,σ') <- tcExpr (γ,σ) e
-      let l  =  location r -- TODO: should be unify with reference?
-      t'     <- dotAccess f (heapRead (tracePP "reading" l) $ tracePP "Access" $ σ')
-      return $ (fromJust t', σ')
+  do (r,σ') <- tcExpr (γ,σ) e
+     tcAccess' σ' r f
+
+tcAccess' σ (TApp TNull [] _) f = return $ (tUndef, σ)
+tcAccess' σ t f = do let l  = location t -- TODO: should be unify with reference?
+                     t'    <- dotAccess f (heapRead l σ)
+                     return $ (fromJust t', σ)
 
 location (TApp (TRef l) [] _) = l
 location t                    = error $ "location of non-ref " ++ (ppshow t)

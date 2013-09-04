@@ -82,7 +82,7 @@ function unwind(x) {
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
-/*@ cons  :: forall A. (A, list[A] + null) => list [A]                                            */
+/*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
 /*@ nil   :: () => null                                                                           */
 /*@ head  :: forall A. (xs:list [A]) => A                                                         */
 /*@ tail  :: forall A. (xs:list [A]) => list [A]                                                  */

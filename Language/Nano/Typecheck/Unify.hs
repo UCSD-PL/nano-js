@@ -6,7 +6,9 @@
 module Language.Nano.Typecheck.Unify ( 
   
   -- * Unification 
-  unify, unifys
+  unify, unifys,
+  unifyHeapWith, unifyHeap,
+
 
   ) where 
 
@@ -103,6 +105,16 @@ unifyHeapLocations (γ,σ) θ =
             else 
               s
           joinSub s _ = s
+
+-- Unification may have resulted in heap locations that need to be merged
+unifyHeapWith f γ θ σ = foldl joinLoc heapEmpty . map (apply' θ) . heapBinds $ σ
+    where joinLoc σ (l,t) = heapAddWith (f γ) l t σ
+          apply' θ (l,(Right t)) = (apply θ l, Right $ apply θ t)
+          apply' _ l             = l
+
+unifyHeap = unifyHeapWith safeAdd
+    where safeAdd γ (Right t1) (Right t2)   = Right $ fst4 $ compareTs γ t1 t2
+          safeAdd γ _          _            = error "Bug in unifyHeap"
                                             
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
@@ -135,11 +147,14 @@ unifys' env@(γ,σ) θ ts ts'
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
-check (Su m _) (Su m' _) = vs == vs'
+check (Su m lm) (Su m' lm') = vs == vs' -- && ls == ls'
   where vs  = (`M.lookup` m ) <$> ks
         vs' = (`M.lookup` m') <$> ks
-        ks  = M.keys $ M.intersection (clr m) (clr m')
-        clr = M.filterWithKey (\k v -> tVar k /= v)
+        ls  = (`M.lookup` lm)  <$> lks
+        ls' = (`M.lookup` lm') <$> lks
+        ks  = M.keys $ M.intersection (clr tVar m) (clr tVar m')
+        lks = M.keys $ M.intersection (clr id lm)  (clr id lm')
+        clr f = M.filterWithKey (\k v -> f k /= v)
 
 
 -----------------------------------------------------------------------------

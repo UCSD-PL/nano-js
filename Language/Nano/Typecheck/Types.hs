@@ -422,7 +422,7 @@ instance F.Reftable r => PP (RType r) where
                               <+> pp t <+> text "/" <+> pp h'
   pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." 
                                    <+> pp t' where (αs, t') = bkAll t
-  pp (TApp TUn ts r)            = F.ppTy r $ ppArgs (text "union:" <+>) {- id -} (text "+") ts 
+  pp (TApp TUn ts r)            = F.ppTy r $ ppArgs id (text "+") ts 
   pp (TApp d@(TDef _)ts r)      = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
 
   pp (TApp c [] r)              = F.ppTy r $ ppTC c 

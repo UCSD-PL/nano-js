@@ -1,8 +1,6 @@
-/*@ inc :: (ref l)/l |-> number => void/l |-> number */
+/*@ inc :: (<l>)/l |-> {n:number} => void/l |-> {n:number} */
 function inc(x){
-    var xv = !x;
-    var res = xv + 1;
-    x := res;
+    x.n = x.n + 1;
     return;
 }
 
