@@ -50,7 +50,7 @@ module Language.Nano.Typecheck.TCMonad (
   , unifyTypeM, unifyTypesM
 
   -- * Casts
-  , getCasts
+  , getCasts, getHCasts
   , castM, castsM, castHeapM
   
   -- * Get Type Signature 
@@ -113,7 +113,8 @@ data TCState = TCS {
                    , tc_anns  :: AnnInfo
                    , tc_annss :: [AnnInfo]
                    -- Cast map: 
-                   , tc_casts :: M.Map (Expression AnnSSA) (Cast Type)
+                   , tc_casts  :: M.Map (Expression AnnSSA) (Cast Type)
+                   , tc_hcasts :: M.Map (Expression AnnSSA) (Cast (Heap Type))
                    -- Function definitions
                    , tc_defs  :: !(Env Type) 
                    , tc_fun   :: !(Maybe F.Symbol)
@@ -170,8 +171,13 @@ getSubst :: TCM Subst
 -------------------------------------------------------------------------------
 getSubst = tc_subst <$> get 
 
-getCasts = do c <- tc_casts <$> get 
-              return $ M.toList c
+-- getCasts :: TCM (M.Map (Expression AnnSSA) Type)
+getCasts = getCastsF tc_casts
+
+getHCasts = getCastsF tc_hcasts
+
+getCastsF f = do c <- f <$> get
+                 return $ M.toList c
 
 -------------------------------------------------------------------------------
 setSubst   :: Subst -> TCM () 
@@ -321,19 +327,20 @@ execute verb pgm act
 
 initState :: V.Verbosity -> Nano z (RType r) -> TCState
 initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss 
-                       tc_casts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
+                       tc_casts tc_hcasts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
   where
-    tc_errss = []
-    tc_subst = mempty 
-    tc_cnt   = 0
-    tc_anns  = HM.empty
-    tc_annss = []
-    tc_casts = M.empty
-    tc_defs  = envMap toType $ defs pgm
-    tc_fun   = Nothing
-    tc_tdefs = envMap toType $ tDefs pgm
-    tc_expr  = Nothing
-    tc_verb  = verb
+    tc_errss  = []
+    tc_subst  = mempty 
+    tc_cnt    = 0
+    tc_anns   = HM.empty
+    tc_annss  = []
+    tc_casts  = M.empty
+    tc_hcasts = M.empty
+    tc_defs   = envMap toType $ defs pgm
+    tc_fun    = Nothing
+    tc_tdefs  = envMap toType $ tDefs pgm
+    tc_expr   = Nothing
+    tc_verb   = verb
 
 
 getDefType f 
@@ -418,7 +425,7 @@ unifyTypesM l msg σ t1s t2s
                                     Right (θ',σ') -> setSubst θ' >> return (θ', unifyHeapM γ θ' σ')
 
 -- Unification may have resulted in heap locations that need to be merged
-unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply (tracePP "unify under " θ)) . heapBinds $ (tracePP "unify sig" σ)
+unifyHeapM γ θ σ = foldl joinLoc heapEmpty . map (apply θ) . heapBinds $ σ
     where safeAdd t1 t2   = fst4 $ compareTs γ t1 t2
           joinLoc σ (l,t) = heapAddWith safeAdd l t σ
 ----------------------------------------------------------------------------------
@@ -434,7 +441,7 @@ subTypeM :: Type -> Type -> TCM SubDirection
 subTypeM t t' 
   = do  θ            <- getTDefs 
         let (_,_,_,d) = compareTs θ t t'
-        return $  {- trace (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -}  d
+        return $  tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) d
 
 ----------------------------------------------------------------------------------
 subTypeM' :: (IsLocated l) => l -> Type -> Type -> TCM ()
@@ -446,31 +453,20 @@ subTypesM :: [Type] -> [Type] -> TCM [SubDirection]
 ----------------------------------------------------------------------------------
 subTypesM ts ts' = zipWithM subTypeM ts ts'
 
+----------------------------------------------------------------------------------
 subHeapM :: Env Type -> BHeap -> BHeap -> TCM SubDirection                   
+----------------------------------------------------------------------------------
 subHeapM γ σ σ' 
   = do let ls = nub ((concatMap (locs.snd) $ envToList γ)
                        ++ heapLocs σ)
        let (com,sup) = partition (`heapMem` σ) $ heapLocs σ' 
-       case filter (`elem`ls) sup of
-         [] -> do
-           let ts  = map (`heapRead` σ)  com
-           let ts' = map (`heapRead` σ') com
-           ds <- subTypesM ts ts'
-           return $ foldl (&*&) SubT ds
-         xs -> do
-           let ts  = map (`heapRead` σ)  com
-           let ts' = map (`heapRead` σ') com
-           ds <- subTypesM ts ts'
-           return $ foldl (&*&) SupT ds
-           
-                    
-       -- let ts  = map (flip heapRead σ) ls
-       -- let ts' = map (flip heapRead σ') ls
-       -- ds <- subTypesM ts ts'
-       -- return $ case compare (length ls) (length ls') of
-       --            Prelude.EQ -> foldl (&*&) EqT  ds
-       --            Prelude.LT -> foldl (&*&) SubT ds
-       --            Prelude.GT -> foldl (&*&) SupT ds
+       let dir       =  case filter (`elem` ls) sup of
+                          [] -> SubT
+                          _  -> SupT
+       ds <- uncurry subTypesM $ mapPair (readTs com) (σ,σ')
+       return $ tracePP "foldldldlld" $ foldl (&*&) dir (tracePP "ds" ds)
+    where readTs ls σ = map (`heapRead` σ) ls
+
 --------------------------------------------------------------------------------
 --  cast Helpers ---------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -500,7 +496,7 @@ castM e t t'    = subTypeM t t' >>= go
 --------------------------------------------------------------------------------
 castHeapM :: Env Type -> Expression AnnSSA -> BHeap -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
+castHeapM γ e σ σ' = subHeapM γ σ σ' >>= (go . tracePP "castHeapM")
   where go SupT = addDownCastH e σ'
         go Rel  = addDownCastH e σ'
         go SubT = addUpCastH e σ'
@@ -533,27 +529,28 @@ addDeadCast e t = modify $ \st -> st { tc_casts = M.insert e (DC t) (tc_casts st
 --------------------------------------------------------------------------------
 addUpCastH :: Expression AnnSSA -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-addUpCastH e σ = modify $ \st -> st { tc_casts = M.insert e (UCSTH σ) (tc_casts st) }
+addUpCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (UCST σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
 addDownCastH :: Expression AnnSSA -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-addDownCastH e σ = modify $ \st -> st { tc_casts = M.insert e (DCSTH σ) (tc_casts st) }
+addDownCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DCST σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
 addDeadCastH:: Expression AnnSSA -> BHeap -> TCM ()
 --------------------------------------------------------------------------------
-addDeadCastH e σ = modify $ \st -> st { tc_casts = M.insert e (DCH σ) (tc_casts st) }
+addDeadCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DC σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
 patchPgmM :: (Typeable r, Data r) => Nano AnnSSA (RType r) -> TCM (Nano AnnSSA (RType r))
 --------------------------------------------------------------------------------
 patchPgmM pgm = 
-  do  c <- tc_casts <$> get
-      return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c)
+  do  c  <- tc_casts <$> get
+      hc <- tc_hcasts <$> get
+      return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c hc)
 
 
-data PState = PS { m :: Casts }
+data PState = PS { m :: Casts, hm :: HCasts }
 type PM     = State PState
 
 --------------------------------------------------------------------------------
@@ -561,24 +558,32 @@ transform :: Expression AnnSSA -> PM (Expression AnnSSA)
 --------------------------------------------------------------------------------
 transform e = 
   do  c  <- m <$> get      
-      put (PS $ M.delete e c)
-      return $ patchExpr c e
+      hc <- hm <$> get
+      put $ PS (M.delete e c) (M.delete e hc)
+      return $ patchExpr c hc e
 
 --------------------------------------------------------------------------------
-patchExpr :: Casts -> Expression AnnSSA -> Expression AnnSSA
+patchExpr :: Casts -> HCasts -> Expression AnnSSA -> Expression AnnSSA
 --------------------------------------------------------------------------------
-patchExpr m e =
-  case M.lookup e m of
-    Just (UCST t)  -> UpCast   (a { ann_fact = (Assume t):fs }) e
-    Just (DCST t)  -> DownCast (a { ann_fact = (Assume t):fs }) e
-    Just (DC   t)  -> DeadCast (a { ann_fact = (Assume t):fs }) e
-    Just (UCSTH h) -> UpCast   (a { ann_fact = (AssumeH h):fs}) e
-    Just (DCSTH h) -> DownCast (a { ann_fact = (AssumeH h):fs}) e
-    Just (DCH   h) -> DeadCast (a { ann_fact = (AssumeH h):fs}) e
-    _             -> e
-  where 
-    fs = ann_fact a
-    a  = getAnnotation e
+patchExpr m hm e = go a2 AssumeH $ go a1 Assume e
+  where a1 = M.lookup e m
+        a2 = M.lookup e hm
+        a  = getAnnotation e
+        fs = ann_fact a
+        go (Just (UCST t)) f = UpCast   (a { ann_fact = (f t):fs })
+        go (Just (DCST t)) f = DownCast (a { ann_fact = (f t):fs }) 
+        go (Just (DC t))   f = DeadCast (a { ann_fact = (f t):fs }) 
+        go _               _ = id
+
+-- patchExpr' f m e =
+--   case M.lookup e m of
+--     Just (UCST t) -> UpCast   (a { ann_fact = (f t):fs }) e
+--     Just (DCST t) -> DownCast (a { ann_fact = (f t):fs }) e
+--     Just (DC   t) -> DeadCast (a { ann_fact = (f t):fs }) e
+--     _             -> e
+--   where 
+--     fs = ann_fact a
+--     a  = getAnnotation e
 
 
 

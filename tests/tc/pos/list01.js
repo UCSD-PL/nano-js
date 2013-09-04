@@ -20,11 +20,11 @@
 
 /*@ mkFoo :: (d:number)/emp => <l>/l |-> foo[] */
 function mkFoo(d) {
-    // k = { data:3 };
-    // m = { data:d, next:null };
-    l = { data:d, next:{data:d}};
-    // wind(m,foo);
+    k = null;
+    m = { data:d, next:k };
+    l = { data:d, next:m};
+    wind(m,foo);
     wind(l,foo);
-    return l;
+    return m;
 }
 

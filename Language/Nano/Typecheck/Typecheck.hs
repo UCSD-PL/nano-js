@@ -128,16 +128,19 @@ tcAndPatch p =
       p2 <- patchPgmM p1
       s  <- getSubst
       c  <- getCasts
-      whenQuiet' (return p2) (return $ trace (codePP p2 s c) p2)
+      hc <- getHCasts
+      whenQuiet' (return p2) (return $ trace (codePP p2 s c hc) p2)
       -- return p1
   where 
-    codePP (Nano {code = Src src}) sub cst = render $
+    codePP (Nano {code = Src src}) sub cst hcst = render $
           text "********************** CODE **********************"
       $+$ pp src
       $+$ text "***************** SUBSTITUTIONS ******************"
       $+$ pp sub
       $+$ text "******************** CASTS ***********************"
       $+$ vcat ((\(e,t) -> (pp $ ann $ getAnnotation e) <+> pp (e,t)) <$> cst)
+      $+$ text "****************** HEAP CASTS ********************"
+      $+$ vcat ((\(e,t) -> (pp $ ann $ getAnnotation e) <+> pp (e,t)) <$> hcst)
       $+$ text "**************************************************"
 
 
@@ -302,19 +305,19 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,tracePP "sig" σ)) eo
+  = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,σ)) eo
         let rt             = envFindReturn γ 
         (_, σ_out)        <- getFunHeaps γ
         (θr, θr', σ_out') <- freshHeap σ_out
-        (θ',σ'')          <- unifyTypeM l "Return" (heapCombine [tracePP "sig'" σ', tracePP "sigout'" σ_out']) eo t (apply θr rt)
+        (θ',σ'')          <- unifyTypeM l "Return" (heapCombine [σ', σ_out']) eo t (apply θr rt)
         let θ''           = θ' `mappend` θr'
         setSubst θ''
         -- Apply the substitution
-        let (rt', t')       = tracePP "ts" $ mapPair (apply θ'') (rt,t)
+        let (rt', t')       = mapPair (apply θ'') (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM γ e  (tracePP "sig'' st" σ'') (tracePP "sigout st" σ_out')) eo
+        maybeM_ (\e -> castHeapM γ e  σ'' σ_out') eo
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -392,10 +395,10 @@ tcExpr' (γ,σ) x@(CallExpr l (VarRef _ (Id _ "wind")) es)
 
 -- TODO: HACK
 tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "unwind")) es)
-  = tcUnwind (γ, tracePP "unwind here" σ) l es
+  = tcUnwind (γ,σ) l es
 
 tcExpr' (γ,σ) (CallExpr l e es)
-  = do (t, σ')  <- tcExpr (γ, tracePP "call here" σ) e
+  = do (t, σ')  <- tcExpr (γ,σ) e
        tcCall (γ, σ') l e es t
 
 tcExpr' (γ,σ) (ObjectLit _ ps) 
@@ -462,9 +465,9 @@ tcUnwind (γ,σ) a [e]
        (t,σ')      <- tcExpr (γ,σ) e
        (θ,σ'')     <- unifyTypeM a "Unwind" σ' e t (tRef loc)
        let l'       = apply θ $ location t
-       (σt,tc)     <- unfoldSafeTC $ tracePP "thing" $ heapRead l' σ''
+       (σt,tc)     <- unfoldSafeTC $ heapRead l' σ''
        (θ,_,σt')   <- freshHeap σt
-       return (tVoid, tracePP "combined" $ heapCombine [tracePP "tc" $ heapUpd l' (apply θ tc) σ'',tracePP "σt'" σt'])
+       return (tVoid, heapCombine [heapUpd l' (apply θ tc) σ'',σt'])
 tcUnwind _ l _
   = tcError (ann l) "Unwind called with wrong number of arguments"
 
@@ -476,39 +479,25 @@ tcWind (γ,σ) a (e:es)
        (t,σ')          <- tcExpr (γ,σ) e
        (θ,σ'')         <- unifyTypeM a "Wind" σ' e t (tRef loc)
        let l'           = apply θ $ location t
-       let th           = tracePP "th" $ heapRead l' (tracePP "σ''" σ'')
-       let ls           = tracePP "locs" $ locs th
-       let σt           = tracePP "σt" $ restrictHeap ls σ''
+       let th           = heapRead l' (tracePP "σ''" σ'')
+       let ls           = locs th
+       let σt           = restrictHeap ls σ''
        let σc           = foldl (flip heapDel) σ'' $ heapLocs σt
        (θt, σt', t')   <- windType γ a e th σt es
-       -- (θ,σ''')        <- unifyTypeM a "Wind" σ'' e th td
-       return $ (tVoid, tracePP ("σt: " ++ (ppshow σt) ++ " σc: ") (heapUpd l' t' σc))
+       return $ (tVoid, heapUpd l' t' σc)
 tcWind _ l _ 
   = tcError (ann l) "Wind called with wrong number of arguments"
     
 -- TODO: TVars
--- TODO: heap subtyping
--- TODO: locs are messed up here, fixit. is the heap right?
 windType γ l e t σ ((VarRef _ (Id l' x)):es)
-  = do let t'   = TApp (TDef (Id (ann l') x)) [] ()
-       (σe, _)  <- unfoldSafeTC t'
-       (θe,θe',σe')<- freshHeap σe
-       (θ,σ')  <- unifyTypeM l "Wind" (tracePP "σ" σ) e (tracePP "t" t) (tracePP "t'" (apply θe t'))
-       castM e (apply (θ `mappend` θe) t) (apply (θ `mappend` θe) t')
-       castHeapM γ e (apply (tracePP "windT: θ" θ) (tracePP "windT: σ'" σ')) (apply θ (tracePP "windT: σe'" σe'))
+  = do let t'      = TApp (TDef (Id (ann l') x)) [] ()
+       (σe, t'')  <- unfoldSafeTC t'
+       (θe,_,σe') <- freshHeap σe
+       (θ,σ')     <- unifyTypeM l "Wind" σ e t (apply θe t'')
+       let θ'      = θ `mappend` θe
+       castM e (tracePP "t" (apply θ' t)) (tracePP "t'" (apply θ' t''))
+       castHeapM γ e (tracePP "σ'" (apply θ σ')) (tracePP "σe" (apply θ σe'))
        return (θ,σ',t')
-
---                     (d:ts) -> go d ts
---                     _      -> tcError (ann l) "Wind called with wrong number of arguments"
---   where 
---     syms    = F.symbol <$> [ x | (VarRef _ (Id _ x)) <- es ]
---     go d ts = do
---       γ <- getTDefs 
---       case envFindTy d γ of
---         Just t'@(TBd (TD _ vs h bd _ )) -> 
---           return (t',vs,h,bd)
---         _                               -> 
---           tcError (ann l) ("Unknown type constructor" ++ ppshow d)
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)
