@@ -1,7 +1,8 @@
 
-/*@ append :: (x:list[number], number) => list[number] */
+/*@ append :: (x:<l>,number)/l |-> list[number] => <m>/m |-> list[number] */
 function append(x, a) {
-
-    return { data: a , next: x };
+    var l = { data: a, next: x };
+    wind(l, list);
+    return l;
 
 }

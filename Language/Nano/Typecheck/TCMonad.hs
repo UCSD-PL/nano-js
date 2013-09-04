@@ -41,7 +41,7 @@ module Language.Nano.Typecheck.TCMonad (
   , getAllAnns
 
   -- * Unfolding
-  , unfoldFirstTC, unfoldSafeTC
+  , unfoldFirstTC, unfoldSafeTC, unwindTC
 
   -- * Subtyping
   , subTypeM  , subTypeM'
@@ -404,9 +404,19 @@ unfoldFirstTC t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 -------------------------------------------------------------------------------
 unfoldSafeTC :: Type -> TCM (BHeap, Type)
 -------------------------------------------------------------------------------
-unfoldSafeTC   t = getTDefs >>= \γ -> return $ unfoldSafe γ t
+unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
-
+-------------------------------------------------------------------------------
+unwindTC :: Type -> TCM (BHeap, Type)
+-------------------------------------------------------------------------------
+unwindTC = go heapEmpty
+  where go σ t@(TApp (TDef _) _ _) = do
+          (σu, tu)  <- unfoldSafeTC t
+          (θ,_,σu') <- freshHeap σu
+          let σ' = heapCombine [σu',σ]
+          case tu of
+            t'@(TApp (TDef _) _ _) -> go σ' (apply θ t')
+            _                      -> return (σ', apply θ tu)
 
 --------------------------------------------------------------------------------
 --  Unification and Subtyping --------------------------------------------------

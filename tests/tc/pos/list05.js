@@ -1,5 +1,5 @@
 
-/*@ safeNull :: forall A . (x:list[A] + null, def: list[A]) => list[A] */
+/*@ safeNull :: forall A . (x:<l> + null, def: <l>)/l |-> list[A] => <l>/same */
 function safeNull(x, def) {
 
   if (empty(x)) 

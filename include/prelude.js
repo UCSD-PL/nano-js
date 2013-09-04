@@ -77,7 +77,7 @@ function unwind(x) {
 /************** Types for list Operators ******************************/
 /*************************************************************************/
 
-/*@ type list[A]  {  data : A, next : list[A] + null } */
+/*@ type list[A]  exists! l |-> list[A]. {  data : A, next : <l> + null } */
 /*@ type foo[A] exists! l |-> foo[A]. { data : A, next : <l> + null } */
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
@@ -87,8 +87,8 @@ function unwind(x) {
 /*@ head  :: forall A. (xs:list [A]) => A                                                         */
 /*@ tail  :: forall A. (xs:list [A]) => list [A]                                                  */
 /*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
-/*@ empty :: forall A. (xango: list[A] + null ) => 
-                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}                      */
+/*@ empty :: forall A. (xango:<l> + null)/l |-> list[A] => 
+                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}/same                 */
 /*@ emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
 
 

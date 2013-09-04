@@ -1,6 +1,6 @@
-/*@ append :: forall A . (x:list[A], A) => list[A] */
+/*@ append :: forall A. (x:<l>,A)/l |-> list[A] => <m>/m |-> list[A] */
 function append(x, a) {
-
-    return { data: a , next: x };
-
+    var l = { data: a, next: x };
+    wind(l, list);
+    return l;
 }

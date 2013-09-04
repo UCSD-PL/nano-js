@@ -323,7 +323,7 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
   TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
   TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
   TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
-  TBd (TD c1 a1 h1 b1 _) == TBd (TD c2 a2 h2 b2 _)= (c1, a1, b1)   == (c2, a2, b2)
+  TBd (TD c1 a1 h1 b1 _) == TBd (TD c2 a2 h2 b2 _)= (c1, a1, h1, b1)   == (c2, a2, h2, b2)
   TAll _ _               == TAll _ _              = undefined -- TODO
   _                      == _                     = False
 

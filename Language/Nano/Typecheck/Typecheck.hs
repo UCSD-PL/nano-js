@@ -463,11 +463,11 @@ tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHe
 tcUnwind (γ,σ) a [e]
   = do loc         <- freshLocation
        (t,σ')      <- tcExpr (γ,σ) e
-       (θ,σ'')     <- unifyTypeM a "Unwind" σ' e t (tRef loc)
+       (θ,σ'')     <- unifyTypeM a "Unwind" σ' e (tRef loc) t
        let l'       = apply θ $ location t
-       (σt,tc)     <- unfoldSafeTC $ heapRead l' σ''
-       (θ,_,σt')   <- freshHeap σt
-       return (tVoid, heapCombine [heapUpd l' (apply θ tc) σ'',σt'])
+       (σt,tc)     <- unwindTC $ heapRead l' $ tracePP "σ''" σ''
+       (θ',_,σt')   <- freshHeap σt
+       return (tVoid, tracePP "heapCombine" $ heapCombine [heapUpd l' (tracePP "upd" (apply θ' tc)) σ'', tracePP "this one" σt'])
 tcUnwind _ l _
   = tcError (ann l) "Unwind called with wrong number of arguments"
 
@@ -489,9 +489,9 @@ tcWind _ l _
   = tcError (ann l) "Wind called with wrong number of arguments"
     
 -- TODO: TVars
-windType γ l e t σ ((VarRef _ (Id l' x)):es)
-  = do let t'      = TApp (TDef (Id (ann l') x)) [] ()
-       (σe, t'')  <- unfoldSafeTC t'
+windType γ l e t σ ((VarRef _ i@(Id l' x)):es)
+  = do t'         <- freshApp l i --TApp (TDef (Id (ann l') x)) [] ()
+       (σe, t'')  <- unwindTC $ tracePP "freshApp" $ t'
        (θe,_,σe') <- freshHeap σe
        (θ,σ')     <- unifyTypeM l "Wind" σ e t t''
        let θ'      = θe `mappend` θ
@@ -499,14 +499,15 @@ windType γ l e t σ ((VarRef _ (Id l' x)):es)
        castHeapM γ e (apply θ σ') (apply θ σe')
        return (θ,σ',t')
 
-freshApp l γ (Id l' x) = 
-  case envFindTy x γ of
-    Just (TBd (TD _ vs _ _ _ )) -> 
-      do θ <- freshSubst l vs
-         let ts = apply θ . tVar <$> vs
-         return $ TApp (TDef (Id (ann l') x)) ts ()
-    _                           ->
-      error$ errorUnboundId x
+freshApp l (Id l' x)
+  = do γ <- getTDefs
+       case envFindTy x γ of
+         Just (TBd (TD _ vs _ _ _ )) -> 
+           do θ <- freshSubst (ann l) vs
+              let ts = apply θ . tVar <$> vs
+              return $ TApp (TDef (Id (ann l') x)) ts ()
+         _                           ->
+           error$ errorUnboundId x
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)
@@ -514,7 +515,7 @@ tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM
 tcAccess (γ,σ) _ e f = 
   do  (r,σ') <- tcExpr (γ,σ) e
       let l  =  location r -- TODO: should be unify with reference?
-      t'     <- dotAccess f (heapRead l σ')
+      t'     <- dotAccess f (heapRead (tracePP "reading" l) $ tracePP "Access" $ σ')
       return $ (fromJust t', σ')
 
 location (TApp (TRef l) [] _) = l
