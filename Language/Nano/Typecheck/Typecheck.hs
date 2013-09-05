@@ -230,13 +230,13 @@ checkSigWellFormed l ts t σ σ'
        checkHeapClosed l σ'
 
 checkHeapClosed l σ =
-  if ls /= ls' then
-    tcError (ann l) (printf "Heap %s is not well formed" (ppshow σ))
-  else
+  if all (flip elem ls) ls' then
     return ()
+  else
+    tcError (ann l) (printf "Heap %s is not well formed" (ppshow σ))
   where
-    ls  = L.nub $ heapLocs σ
-    ls' = L.nub $ concatMap locs $ heapTypes σ
+    ls       = L.nub $ heapLocs σ
+    ls'      = L.nub $ concatMap locs $ heapTypes σ
 
 checkLocSubs θ σ =
     if check locs then
