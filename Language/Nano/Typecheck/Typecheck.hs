@@ -207,6 +207,7 @@ type TCEnv = Maybe (Env Type, BHeap)
 tcFun    :: (Env Type, BHeap) -> FunctionStatement AnnSSA -> TCM TCEnv 
 tcFun (γ,_) (FunctionStmt l f xs body) 
   = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
+       checkSigWellFormed l ts t σ σ'
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
        setFun (F.symbol f)
@@ -217,7 +218,25 @@ tcFun (γ,_) (FunctionStmt l f xs body)
             when (isJust q) $ void $ unifyTypeM l "Missing return" heapEmpty f tVoid t
        return $ Just (γ', heapEmpty)
 
+    
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
+
+checkSigWellFormed l ts t σ σ'
+  = do when (not . all (`heapMem` σ) $ concatMap locs ts) $
+         tcError (ann l) (printf "Arguments refer to locations not in %s" (ppshow σ))
+       when (not . all (`heapMem` σ') $ locs t) $
+         tcError (ann l) (printf "Return type refers to locations not in %s" (ppshow σ))
+       checkHeapClosed l σ
+       checkHeapClosed l σ'
+
+checkHeapClosed l σ =
+  if ls /= ls' then
+    tcError (ann l) (printf "Heap %s is not well formed" (ppshow σ))
+  else
+    return ()
+  where
+    ls  = L.nub $ heapLocs σ
+    ls' = L.nub $ concatMap locs $ heapTypes σ
 
 checkLocSubs θ σ =
     if check locs then
@@ -415,12 +434,12 @@ tcExpr' _ e
 tcCall :: (PP fn) => (Env Type, BHeap) -> AnnSSA -> fn -> [Expression AnnSSA]-> Type -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
 tcCall (γ,σ) l fn es ft
-  = do  (_,ibs,σi,σo,ot)    <- instantiate l fn ft
-        let its        = b_type <$> ibs
+  = do  (_,ibs,σi,σo,ot) <- instantiate l fn ft
+        let its           = b_type <$> ibs
         -- Typecheck arguments
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        (θ,σ'')        <- unifyTypesM l "tcCall" σ' its ts
+        (θ,σ'')          <- unifyTypesM l "tcCall" σ' its ts
         -- Apply the substitution
         let (ts',its') = mapPair (apply θ) (ts,its)
         -- Subtype the arguments against the formals and cast if 
@@ -428,8 +447,8 @@ tcCall (γ,σ) l fn es ft
         castsM es ts' its'
         castHeapM γ (head es) σ'' σi
         checkDisjoint σo
-        let σ_out      = heapCombineWith (curry snd) [σ'', (apply θ σo)]
-        return         $ (apply θ ot, σ_out)
+        let σ_out         = heapCombineWith (curry snd) [σ'', (apply θ σo)]
+        return $ (apply θ ot, σ_out)
     where
       checkDisjoint σ = do σ' <- unifyHeapWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of
