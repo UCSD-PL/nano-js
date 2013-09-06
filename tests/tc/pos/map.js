@@ -4,10 +4,10 @@ function map(f, xs){
     return nil();
   }
 
-  var y   = f(xs.data);
+  // var y   = f(xs.data);
   
-  var ys = map(f, xs.next);
+  // var ys = map(f, xs.next);
 
-  return cons(y, ys);
+  // return cons(y, ys);
 }
 

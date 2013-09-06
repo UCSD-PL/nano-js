@@ -34,6 +34,7 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Substitutions
   , getSubst, setSubst
+  , safeHeapSubstWithM
 
   -- * Functions
   , getFun, setFun
@@ -51,7 +52,7 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Unification
   , unifyTypeM, unifyTypesM
-  , unifyHeapWithM
+  , unifyHeapsM
 
   -- * Casts
   , getCasts, getHCasts
@@ -455,6 +456,18 @@ unwindTC = go heapEmpty
 --  Unification and Subtyping --------------------------------------------------
 --------------------------------------------------------------------------------
 
+----------------------------------------------------------------------------------
+unifyHeapsM :: (IsLocated l) => l -> String -> BHeap -> BHeap -> TCM (Subst, BHeap)
+----------------------------------------------------------------------------------
+unifyHeapsM l msg σ1 σ2 = do θ <- getSubst
+                             γ <- getTDefs
+                             case unifyHeaps (γ,σ1) θ σ1 σ2 of
+                               Left msg' -> tcError l $ msg ++ "\n" ++ msg'
+                               Right (θ',σ') -> do
+                                 setSubst θ'
+                                 let σ'' = lowerHeap $ safeHeapSubst γ θ' (Right <$> σ1)
+                                 return (θ', σ'')
+  where lowerHeap σ = heapFromBinds [(l,t) | (l, Right t) <- heapBinds σ]
 
 ----------------------------------------------------------------------------------
 unifyTypesM :: (IsLocated l) => l -> String -> BHeap -> [Type] -> [Type] -> TCM (Subst, BHeap)
@@ -468,15 +481,14 @@ unifyTypesM l msg σ t1s t2s
                                     Left msg'     -> tcError l $ msg ++ "\n" ++ msg'
                                     Right (θ',σ') -> do
                                       setSubst θ'
-                                      let σ'' = lowerHeap $ unifyHeap γ θ' (Right <$> σ')
+                                      let σ'' = lowerHeap $ safeHeapSubst γ θ' (Right <$> σ')
                                       return (θ', σ'')
   where lowerHeap σ = heapFromBinds [(l,t) | (l, Right t) <- heapBinds σ]
                                       
-unifyHeapWithM f σ = do
+safeHeapSubstWithM f σ = do
   θ <- getSubst
   γ <- getTDefs
-  return $ unifyHeapWith f γ θ (Right <$> σ)
-
+  return $ safeHeapSubstWith f γ θ (Right <$> σ)
 
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst

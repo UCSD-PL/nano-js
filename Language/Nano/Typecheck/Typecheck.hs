@@ -332,16 +332,14 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
   = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,σ)) eo
         let rt             = envFindReturn γ 
         (_, σ_out)        <- getFunHeaps γ
-        (θr, θr', σ_out') <- freshHeap σ_out
-        (θ',σ'')          <- unifyTypeM l "Return" (heapCombine [σ', σ_out']) eo t (apply θr rt)
-        let θ''           = θ' `mappend` θr'
-        setSubst θ''
+        (θ',σ'')          <- unifyTypeM l "Return" σ' eo t rt
+        (θ',σ'')          <- unifyHeapsM l "Return" σ'' σ_out
         -- Apply the substitution
-        let (rt', t')       = mapPair (apply θ'') (rt,t)
+        let (rt', t')       = mapPair (apply θ') (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM γ e  σ'' σ_out') eo
+        maybeM_ (\e -> castHeapM γ e  σ'' σ_out) eo
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -456,6 +454,7 @@ tcCall (γ,σ) l fn es ft
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
         (θ,σ'')          <- unifyTypesM l "tcCall" σ' its ts
+        (θ,σ'')          <- unifyHeapsM l "tcCall" σ'' σi
         -- Apply the substitution
         let (ts',its') = mapPair (apply θ) (ts,its)
         -- Subtype the arguments against the formals and cast if 
@@ -467,7 +466,7 @@ tcCall (γ,σ) l fn es ft
         let σ_out         = heapCombineWith (curry snd) [σ'', (apply θ σo)]
         return $ (apply θ ot, σ_out)
     where
-      checkDisjoint σ = do σ' <- unifyHeapWithM (\_ _ _ -> Left ()) σ
+      checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of
                              [] -> return ()
                              _  -> tcError (ann l) "Call joins locations that are distinct in callee"
@@ -481,7 +480,7 @@ instantiate l fn ft
        (θi,_,σi')        <- freshHeap σi
        (θo,_,σo')        <- freshHeap (apply θi σo)
        let θ              = θi `mappend` θo
-       return $ (ts, map (apply θ) ibs,σi',σo', apply θ ot)
+       return $ (ts, map (apply θ) ibs, apply θo σi', σo', apply θ ot)
     where
        err = logError (ann l) (errorNonFunction fn ft) tFunErr
 
@@ -535,6 +534,7 @@ windType γ l e t σ ((VarRef _ i@(Id l' x)):es)
   = do t'         <- freshApp l i
        (σe, t'')  <- unwindTC t'
        (θ,σ')     <- unifyTypeM l "Wind" σ e t t''
+       (θ,σ')     <- tracePP "thinger" <$> unifyHeapsM l "Wind" σ' σe
        castM e (apply θ t) (apply θ t'')
        castHeapM γ e (apply θ σ') (apply θ σe)
        return (θ,σ',t')

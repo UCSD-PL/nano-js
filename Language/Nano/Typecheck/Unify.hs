@@ -6,9 +6,13 @@
 module Language.Nano.Typecheck.Unify ( 
   
   -- * Unification 
-  unify, unifys,
-  unifyHeapWith, unifyHeap,
+    unify
+  , unifys
+  , unifyHeaps
 
+  -- * Heap Substs
+  , safeHeapSubst
+  , safeHeapSubstWith
 
   ) where 
 
@@ -25,6 +29,7 @@ import           Language.Nano.Typecheck.Compare
 
 import           Control.Applicative ((<$>))
 -- import           Control.Monad
+import           Data.Maybe                         (catMaybes, isJust, fromJust)
 import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid
@@ -44,11 +49,16 @@ import           Language.Nano.Misc (fst4)
 unify :: (Env Type, BHeap) -> Subst -> Type -> Type -> Either String (Subst, BHeap)
 -----------------------------------------------------------------------------
 -- TODO: is this right??
+-- unify (γ,σ) θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
+--     if l1' == l2' then
+--         Right $ (θ,σ)
+--     else
+--         unifyHeapLocations (γ,σ) θ'
+--     where l1'      = apply θ l1
+--           l2'      = apply θ l2
+--           θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
 unify (γ,σ) θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
-    if l1' == l2' then
-        Right $ (θ,σ)
-    else
-        unifyHeapLocations (γ,σ) θ'
+  Right (if l1' == l2' then θ else θ', σ)
     where l1'      = apply θ l1
           l2'      = apply θ l2
           θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
@@ -105,17 +115,17 @@ unifyHeapLocations (γ,σ) θ =
             else 
               s
           joinSub s _ = s
-
+          
 -- Unification may have resulted in heap locations that need to be merged
-unifyHeapWith f γ θ σ = foldl joinLoc heapEmpty . map (apply' θ) . heapBinds $ σ
+safeHeapSubstWith f γ θ σ = foldl joinLoc heapEmpty . map (apply' θ) . heapBinds $ σ
     where joinLoc σ (l,t) = heapAddWith (f γ) l t σ
           apply' θ (l,(Right t)) = (apply θ l, Right $ apply θ t)
           apply' _ l             = l
 
-unifyHeap = unifyHeapWith safeAdd
+safeHeapSubst = safeHeapSubstWith safeAdd
     where safeAdd γ (Right t1) (Right t2)   = Right $ fst4 $ compareTs γ t1 t2
           safeAdd γ _          _            = error "Bug in unifyHeap"
-                                            
+
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
 -- TODO: cycles
@@ -155,6 +165,45 @@ check (Su m lm) (Su m' lm') = vs == vs' -- && ls == ls'
         ks  = M.keys $ M.intersection (clr tVar m) (clr tVar m')
         lks = M.keys $ M.intersection (clr id lm)  (clr id lm')
         clr f = M.filterWithKey (\k v -> f k /= v)
+
+-----------------------------------------------------------------------------
+unifyHeaps ::  (Env Type, BHeap) -> Subst -> BHeap -> BHeap -> Either String (Subst, BHeap)
+-----------------------------------------------------------------------------
+-- unifyHeaps env θ σ σ' = unifys env θ ts ts'
+--   where 
+--     ts  = map (flip heapRead σ) ls
+--     ts' = map (flip heapRead σ') ls
+--     ls  = filter memBoth $ L.nub (heapLocs σ ++ heapLocs σ')
+--     memBoth l = uncurry (&&) $ mapPair (heapMem l) (σ, σ')
+unifyHeaps env θ σ1 σ2 = unifyHeaps' env (Right (θ,heapEmpty)) bs1 bs2
+  where
+    bs1 = heapBinds σ1
+    bs2 = heapBinds σ2
+    
+unifyHeaps' :: (Env Type, BHeap) -> Either String (Subst, BHeap) -> [(Location, Type)] -> [(Location, Type)] -> Either String (Subst, BHeap)
+unifyHeaps' env r@(Left _)    _  _    = r
+unifyHeaps' env r             [] _    = r
+unifyHeaps' env r             _  []   = r
+unifyHeaps' env r@(Right (θ,_)) bs1 bs2 = 
+  if common == [] then
+    r
+  else
+    unifyHeaps' env (unifys env θ t1s t2s) bs1'' bs2''
+  where
+    ls        = L.nub $ ls1 ++ ls2
+    bs1'      = map (\(l,t) -> (apply θ l, t)) bs1
+    bs2'      = map (\(l,t) -> (apply θ l, t)) bs2
+    ls1       = map fst bs1'
+    ls2       = map fst bs2'
+
+    memBoth l = apply θ l `elem` ls1 && apply θ l `elem` ls2
+    common    = L.filter memBoth ls
+
+    t1s       = (fromJust . flip L.lookup bs1') <$> (L.nub common)
+    t2s       = (fromJust . flip L.lookup bs2') <$> (L.nub common)
+
+    bs1''      = filter (not . (`elem` common) . fst) bs1'
+    bs2''      = filter (not . (`elem` common) . fst) bs2'
 
 
 -----------------------------------------------------------------------------
