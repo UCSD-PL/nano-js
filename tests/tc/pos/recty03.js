@@ -1,5 +1,4 @@
-
-/*@ sum :: (x:list[number]) => number */
+/*@ sum :: (x:<l>)/l |-> list[number] => number */
 function sum(l) {
     
   var s = 0;

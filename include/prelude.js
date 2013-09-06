@@ -78,14 +78,15 @@ function unwind(x) {
 /*************************************************************************/
 
 /*@ type list[A]  exists! l |-> list[A]. {  data : A, next : <l> + null } */
+/*@ type inflist[A]  exists! l |-> inflist[A]. {  data : A, next : <l> } */
 /*@ type foo[A] exists! l |-> foo[A]. { data : A, next : <l> + null } */
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
 /*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
 /*@ nil   :: () => null                                                                           */
-/*@ head  :: forall A. (xs:list [A]) => A                                                         */
-/*@ tail  :: forall A. (xs:list [A]) => list [A]                                                  */
+/*@ head  :: forall A. (xs:<l>)/l |-> list [A] => A/same                                          */
+/*@ tail  :: forall A. (xs:<l>)/l |-> list [A] => <m>+null/l |-> { data : A, next :<m>+null} * m |-> list[A] */ 
 /*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
 /*@ empty :: forall A. (xango:<l> + null)/l |-> list[A] => 
                         {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}/same                 */

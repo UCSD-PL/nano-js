@@ -1,5 +1,4 @@
-
-/*@ fold :: forall A B. (list[A], (A,B) => B, B) => B */
+/*@ fold :: forall A B. (<l>, (A,B) => B, B)/l |-> inflist[A] => B/same */
 function fold(l,f,b) {
 
 

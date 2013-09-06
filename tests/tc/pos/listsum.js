@@ -1,4 +1,4 @@
-/*@ sum :: (list [number]+null) => number */
+/*@ sum :: (<l>+null)/l |-> list[number] => number */
 function sum(xs){
   if (empty(xs)) {
     return 0;

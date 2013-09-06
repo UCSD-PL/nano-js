@@ -1,10 +1,8 @@
-/*@ type nlist  { data : number, 
-                  next : nlist } */
+/*@ type nlist  list[number] */
 
-/*@ type blist  { data : boolean, 
-                  next : blist } */
+/*@ type blist  list[boolean] */
 
-/*@ append :: (x:nlist, number) => blist */
+/*@ append :: (x:<l>, number)/l |-> nlist => <m>/l |-> nlist * m |-> blist */
 function append(x, a) {
   return { data: a , next: x };
 }

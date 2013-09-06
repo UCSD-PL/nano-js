@@ -227,7 +227,9 @@ bRefP kindP
       v   <- symbolP
       colon
       t   <- kindP
+      spaces
       reserved "|"
+      spaces
       ras <- refasP 
       return $ t (Reft (v, ras))
 

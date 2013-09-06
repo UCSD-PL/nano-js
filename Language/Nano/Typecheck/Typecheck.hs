@@ -297,6 +297,10 @@ tcStmt' (γ,σ) (EmptyStmt _)
 tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))   
   = tcAsgn (γ,σ)  l (Id lx x) e
 
+-- x.f = e
+tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LDot ld (VarRef lx x) f) e))   
+  = tcDotAsgn (γ,σ) l x e (Id ld f)
+
 -- e
 tcStmt' (γ,σ) (ExprStmt _ e)   
   = tcExpr (γ,σ) e >>= \(_,σ') -> return $ Just (γ,σ')
@@ -314,7 +318,7 @@ tcStmt' (γ,σ) (IfStmt l e s1 s2)
   = do  (t,σe) <- tcExpr (γ,σ) e 
     -- Doing check for boolean for the conditional for now
     -- TODO: Will have to suppert truthy/falsy later.
-        (_,σ') <- tracePP "IfStmt" <$> unifyTypeM l "If condition" σe e t tBool
+        (_,σ') <- unifyTypeM l "If condition" σe e t tBool
         e1     <- tcStmt' (γ, σ') s1
         e2     <- tcStmt' (γ, σ') s2
         envJoin l (γ,σ') e1 e2
@@ -374,6 +378,20 @@ tcAsgn (γ,σ) _ x e
   = do (t, σ') <- tcExpr (γ,σ) e
        return $ Just (envAdds [(x, t)] γ, σ')
 
+------------------------------------------------------------------------------------
+tcDotAsgn :: (Env Type, BHeap)
+          -> AnnSSA
+          -> Id AnnSSA
+          -> Expression AnnSSA
+          -> Id AnnSSA
+          -> TCM TCEnv
+------------------------------------------------------------------------------------
+tcDotAsgn (γ,σ) l x e f
+  = do t      <- varLookup γ l x
+       let lx  = location t
+       let t   = heapRead lx σ
+       return $ Just (γ,σ)
+
 
 
 -------------------------------------------------------------------------------
@@ -399,9 +417,7 @@ tcExpr' (_,σ) (NullLit _)
   = return (tNull, σ)
 
 tcExpr' (γ,σ) (VarRef l x)
-  = case envFindTy x γ of 
-      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) (tErr, heapEmpty)
-      Just z  -> return (z, σ)
+  = varLookup γ l x >>= return . (,σ)
 
 tcExpr' (γ,σ) (PrefixExpr l o e)
   = tcCall (γ,σ) l o [e] (prefixOpTy o γ)
@@ -445,7 +461,8 @@ tcCall (γ,σ) l fn es ft
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its'
-        castHeapM γ (head es) σ'' σi
+        eh <- tick >>= return . VarRef l . Id l . show
+        castHeapM γ eh σ'' σi
         checkDisjoint σo
         let σ_out         = heapCombineWith (curry snd) [σ'', (apply θ σo)]
         return $ (apply θ ot, σ_out)
@@ -491,7 +508,7 @@ tcUnwind (γ,σ) a [e]
        (θ,σ'')     <- unifyTypeM a "Unwind" σ' e t (tRef loc)
        let l'       = apply θ $ location t
        (σt,tc)     <- unwindTC $ heapRead l' σ''
-       (θ',_,σt')   <- freshHeap σt
+       (θ',_,σt')  <- freshHeap σt
        return (tVoid, heapCombine [heapUpd l' (apply θ' tc) σ'', σt'])
 tcUnwind _ l _
   = tcError (ann l) "Unwind called with wrong number of arguments"
@@ -540,9 +557,10 @@ tcAccess (γ,σ) _ e f =
      tcAccess' σ' r f
 
 tcAccess' σ (TApp TNull [] _) f = return $ (tUndef, σ)
-tcAccess' σ t f = do let l  = location t -- TODO: should be unify with reference?
-                     t'    <- dotAccess f (heapRead l σ)
-                     return $ (fromJust t', σ)
+tcAccess' σ t f = do acc       <- dotAccessRef σ f t
+                     let (tr,newBinds,σt)  = fromJust acc
+                     let σ' = heapCombineWith (curry snd) [σ, heapFromBinds newBinds]
+                     return $ (tr, heapCombine [σ',σt])
 
 location (TApp (TRef l) [] _) = l
 location t                    = error $ "location of non-ref " ++ (ppshow t)
@@ -582,3 +600,7 @@ getPhiType l (γ1,σ1) (γ2,σ2) x =
 forceCheck x (γ,_) 
   = elem x $ fst <$> envToList γ
 
+varLookup γ l x
+  = case envFindTy x γ of 
+      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
+      Just z  -> return z

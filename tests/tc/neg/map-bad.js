@@ -1,4 +1,4 @@
-/*@ map :: forall A B. ((A) => B, list [A]) => list [B] */
+/*@ map :: forall A B. ((A) => B, <l>)/l |-> list [A] => <m>/m |-> list [B] */
 function map(f, xs){
   
   if (empty(xs)) {
@@ -11,6 +11,7 @@ function map(f, xs){
   var xs_ = tail(xs);
   var y   = x0;
   var ys_ = map(f, xs_);
+  var r = cons(y, ys_);
   return cons(y, ys_);
 
 }

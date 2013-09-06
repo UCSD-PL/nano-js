@@ -23,9 +23,11 @@ module Language.Nano.Typecheck.TCMonad (
   , freshLocation
   , freshSubst
   , freshHeap
+  , tick
 
   -- * Dot Access
   , dotAccess
+  , dotAccessRef
 
   -- * Type definitions
   , getTDefs
@@ -158,11 +160,6 @@ whenQuiet' quiet other = do  v <- tc_verb <$> get
                                V.Quiet -> quiet
                                _       -> other
 
-
-
-
-
-
 -------------------------------------------------------------------------------
 getTDefs :: TCM (Env Type)
 -------------------------------------------------------------------------------
@@ -244,31 +241,65 @@ setTyArgs l βs
 -- | Field access -------------------------------------------------------------
 -------------------------------------------------------------------------------
 
+-- Returns a result type, a list of locations that have been unwound, 
+-- and possibly a (fresh) heap that might have been unwound     
 -------------------------------------------------------------------------------
-dotAccess :: Id AnnSSA -> Type -> TCM (Maybe Type)
+dotAccessRef :: BHeap -> Id AnnSSA -> Type -> TCM (Maybe (Type, [(Location,Type)], BHeap))
 -------------------------------------------------------------------------------
-dotAccess f   (TObj bs _) = 
-  return $ Just $ maybe tUndef b_type $ find (match $ F.symbol f) bs
+dotAccessRef _ _ t@(TApp TNull _ _) = return Nothing
+
+dotAccessRef σ f t@(TApp (TRef l) _ _) = do 
+  r <- dotAccess f (heapRead l σ)
+  case r of 
+    Just (t, tuw,  σ) -> return $ Just (t, [(l, tuw)], σ)
+    _                 -> return Nothing
+
+dotAccessRef σ f t@(TApp TUn ts _)     = do 
+  e <- fromJust <$> getExpr
+  tfs <- mapM (dotAccessRef σ f) ts
+  let (ts', ls, tfs') = unzip3 [(t,l,tf) | (t@(TApp (TRef l) _ _), Just tf) <- zip ts tfs]
+  castM e (mkUnion ts) (mkUnion ts')
+  case tfs' of
+    [] -> return Nothing
+    ps -> let (rs, uwts, σs) = unzip3 ps 
+          in return $ Just (mkUnion rs, concat uwts, heapCombine σs)
+
+dotAccessRef _ _ t  = error $ "Can not dereference " ++ (ppshow t)
+
+-------------------------------------------------------------------------------
+dotAccess :: Id AnnSSA -> Type -> TCM (Maybe (Type, Type, BHeap))
+-------------------------------------------------------------------------------
+dotAccess f   t@(TObj bs _) = 
+  return $ Just (maybe tUndef b_type $ find (match $ F.symbol f) bs, t, heapEmpty)
   where match s (B f _)  = s == f
 
 dotAccess f t@(TApp c ts _ ) = go c
   where  go TUn      = dotAccessUnion f ts
-         go TInt     = return $ Just tUndef
-         go TBool    = return $ Just tUndef
-         go TString  = return $ Just tUndef
+         go TInt     = return $ Just (tUndef, t, heapEmpty)
+         go TBool    = return $ Just (tUndef, t, heapEmpty)
+         go TString  = return $ Just (tUndef, t, heapEmpty)
          go TUndef   = return   Nothing
          go TNull    = return   Nothing
-         go (TDef _) = unfoldSafeTC t >>= (dotAccess f . snd)
+         go (TDef _) = dotAccessDef f t
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
          go (TRef _)  = error "dotAccess ref"
 
-dotAccess _   (TFun _ _ _ _ _ ) = return $ Just tUndef
+dotAccess _   t@(TFun _ _ _ _ _ ) = return $ Just (tUndef, t, heapEmpty)
 dotAccess _ t               = error $ "dotAccess " ++ (ppshow t) 
+
+dotAccessDef :: Id AnnSSA -> Type -> TCM (Maybe (Type, Type, BHeap))
+dotAccessDef f t = do 
+  (σ,t')    <- unwindTC t
+  (θ',_,σ') <- freshHeap σ
+  da        <- dotAccess f $ apply θ' t'
+  case da of
+    Just (t, t'', σ'') -> return $ Just (t, t'', heapCombine [σ',σ''])
+    _                  -> return da
 
 
 -------------------------------------------------------------------------------
-dotAccessUnion :: Id AnnSSA -> [Type] -> TCM (Maybe Type)
+dotAccessUnion :: Id AnnSSA -> [Type] -> TCM (Maybe (Type, Type, BHeap))
 -------------------------------------------------------------------------------
 dotAccessUnion f ts = 
   do  e              <- fromJust <$> getExpr
@@ -279,8 +310,9 @@ dotAccessUnion f ts =
       castM e (mkUnion ts) (mkUnion ts')
       case tfs' of
         [] -> return Nothing
-        _  -> return $ Just $ mkUnion tfs'
-
+        ps -> let (rs, ts, σs) = unzip3 ps 
+              in return $ Just (mkUnion rs, mkUnion ts, heapCombine σs)
+  
       
 
 -------------------------------------------------------------------------------
@@ -443,7 +475,7 @@ unifyTypesM l msg σ t1s t2s
 unifyHeapWithM f σ = do
   θ <- getSubst
   γ <- getTDefs
-  return $ unifyHeapWith f γ (tracePP "θ" θ) (Right <$> σ)
+  return $ unifyHeapWith f γ θ (Right <$> σ)
 
 
 ----------------------------------------------------------------------------------
