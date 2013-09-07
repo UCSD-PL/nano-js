@@ -34,6 +34,7 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Substitutions
   , getSubst, setSubst
+  , safeHeapSubstM
   , safeHeapSubstWithM
 
   -- * Functions
@@ -81,7 +82,7 @@ import           Language.Fixpoint.Misc
 import qualified Language.Fixpoint.Types as F
 
 import           Language.Nano.Env
-import           Language.Nano.Misc             (unique, everywhereM', zipWith3M_, fst4)
+import           Language.Nano.Misc             (unique, everywhereM', zipWith3M_)
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
@@ -247,18 +248,18 @@ setTyArgs l βs
 -------------------------------------------------------------------------------
 dotAccessRef :: BHeap -> Id AnnSSA -> Type -> TCM (Maybe (Type, [(Location,Type)], BHeap))
 -------------------------------------------------------------------------------
-dotAccessRef _ _ t@(TApp TNull _ _) = return Nothing
+dotAccessRef _ _ (TApp TNull _ _) = return Nothing
 
-dotAccessRef σ f t@(TApp (TRef l) _ _) = do 
+dotAccessRef σ f (TApp (TRef l) _ _) = do 
   r <- dotAccess f (heapRead l σ)
   case r of 
     Just (t, tuw,  σ) -> return $ Just (t, [(l, tuw)], σ)
     _                 -> return Nothing
 
-dotAccessRef σ f t@(TApp TUn ts _)     = do 
-  e <- fromJust <$> getExpr
+dotAccessRef σ f (TApp TUn ts _)     = do 
+  e   <- fromJust <$> getExpr
   tfs <- mapM (dotAccessRef σ f) ts
-  let (ts', ls, tfs') = unzip3 [(t,l,tf) | (t@(TApp (TRef l) _ _), Just tf) <- zip ts tfs]
+  let (ts', tfs') = unzip [(t,tf) | (t, Just tf) <- zip ts tfs]
   castM e (mkUnion ts) (mkUnion ts')
   case tfs' of
     [] -> return Nothing
@@ -451,39 +452,44 @@ unwindTC = go heapEmpty
           case tu of
             t'@(TApp (TDef _) _ _) -> go σ' (apply θ t')
             _                      -> return (σ', apply θ tu)
+        go _ _ = error "unwind of a non-TDef"
 
 --------------------------------------------------------------------------------
 --  Unification and Subtyping --------------------------------------------------
 --------------------------------------------------------------------------------
 
 ----------------------------------------------------------------------------------
-unifyHeapsM :: (IsLocated l) => l -> String -> BHeap -> BHeap -> TCM (Subst, BHeap)
+unifyHeapsM :: (IsLocated l) => l -> String -> BHeap -> BHeap -> TCM Subst
 ----------------------------------------------------------------------------------
 unifyHeapsM l msg σ1 σ2 = do θ <- getSubst
                              γ <- getTDefs
-                             case unifyHeaps (γ,σ1) θ σ1 σ2 of
+                             case unifyHeaps γ θ σ1 σ2 of
                                Left msg' -> tcError l $ msg ++ "\n" ++ msg'
-                               Right (θ',σ') -> do
+                               Right θ'  -> do
                                  setSubst θ'
-                                 let σ'' = lowerHeap $ safeHeapSubst γ θ' (Right <$> σ1)
-                                 return (θ', σ'')
-  where lowerHeap σ = heapFromBinds [(l,t) | (l, Right t) <- heapBinds σ]
+                                 return θ'
 
 ----------------------------------------------------------------------------------
-unifyTypesM :: (IsLocated l) => l -> String -> BHeap -> [Type] -> [Type] -> TCM (Subst, BHeap)
+unifyTypesM :: (IsLocated l) => l -> String -> [Type] -> [Type] -> TCM Subst
 ----------------------------------------------------------------------------------
-unifyTypesM l msg σ t1s t2s
+unifyTypesM l msg t1s t2s
   -- TODO: This check might be done multiple times
   | length t1s /= length t2s = tcError l errorArgMismatch 
   | otherwise                = do θ <- getSubst 
                                   γ <- getTDefs
-                                  case unifys (γ,σ) θ t1s t2s of
-                                    Left msg'     -> tcError l $ msg ++ "\n" ++ msg'
-                                    Right (θ',σ') -> do
+                                  case unifys γ θ t1s t2s of
+                                    Left msg' -> tcError l $ msg ++ "\n" ++ msg'
+                                    Right θ'  -> do
                                       setSubst θ'
-                                      let σ'' = lowerHeap $ safeHeapSubst γ θ' (Right <$> σ')
-                                      return (θ', σ'')
-  where lowerHeap σ = heapFromBinds [(l,t) | (l, Right t) <- heapBinds σ]
+                                      return θ'
+
+----------------------------------------------------------------------------------
+safeHeapSubstM :: BHeap -> TCM BHeap
+----------------------------------------------------------------------------------
+safeHeapSubstM σ = do
+  θ <- getSubst
+  γ <- getTDefs
+  return $ heapFromBinds [(l,t) | (l, Right t) <- heapBinds $ safeHeapSubst γ θ (Right <$> σ)]
                                       
 safeHeapSubstWithM f σ = do
   θ <- getSubst
@@ -493,7 +499,7 @@ safeHeapSubstWithM f σ = do
 ----------------------------------------------------------------------------------
 --unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
 ----------------------------------------------------------------------------------
-unifyTypeM l m σ e t t' = unifyTypesM l msg σ [t] [t']
+unifyTypeM l m e t t' = unifyTypesM l msg [t] [t']
   where 
     msg              = errorWrongType m e t t'
 
