@@ -332,7 +332,7 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
   = do  
-        σ'                <- tracePP "windLocations thinger" <$>  windLocations (γ,σ) l
+        σ'                <- tracePP "windLocations thinger" <$>  windLocations (γ, tracePP "pre wind" σ) l
         (t,σ')            <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
         -- End of basic block --> Wind up locations
         let rt             = envFindReturn γ 
@@ -456,11 +456,10 @@ tcCall :: (PP fn) => (Env Type, BHeap) -> AnnSSA -> fn -> [Expression AnnSSA]-> 
 tcCall (γ,σ) l fn es ft
   = do  (_,ibs,σi,σo,ot) <- instantiate l fn ft
         let its           = b_type <$> ibs
-        -- Typecheck arguments
+        -- Typecheck argument
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        unifyTypesM l "tcCall" its ts
-        θ  <- unifyHeapsM l "tcCall" σ' σi
+        θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
         -- Apply the substitution
         let (ts',its') = mapPair (apply θ) (ts,its)
         -- Subtype the arguments against the formals and cast if 
@@ -469,7 +468,7 @@ tcCall (γ,σ) l fn es ft
         eh <- tick >>= return . VarRef l . Id l . show
         castHeapM γ eh σ' σi
         checkDisjoint σo
-        let σ_out         = heapCombineWith (curry snd) [σ', (apply θ σo)]
+        let σ_out         = heapCombineWith (curry snd) [σ', apply θ σo]
         return $ (apply θ ot, σ_out)
     where
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
@@ -537,30 +536,25 @@ tcUnwind (γ,σ) a [e] = error "foo"
 windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM BHeap
 ----------------------------------------------------------------------------------
 windLocations (γ,σ) l = do
-  uwls <- tracePP "unwound" <$> getUnwound
-  -- For each unwound location l |-> t, record (l, locations referred to by t
-  -- build a graph of these dependencies and sort it, then fold locations
-  -- in that order
-  let deps        = map (\(v,l) -> (v,l,locs $ heapRead l σ)) (zip [1..] uwls) 
-  let (g,v2e,k2v) = graphFromEdges deps
-  let uwOrder      = reverse $ map (snd3 . v2e) $ topSort g :: [Location]
-  foldM (\s loc -> doWind l (γ,s) loc) σ uwOrder
+  uwls         <- tracePP "unwound" <$> getUnwound
+  -- let deps      = map (\(v,l) -> (v,l,locs $ heapRead l σ)) (zip [1..] uwls) 
+  -- let (g,v2e,_) = graphFromEdges deps
+  -- let uwOrder   = reverse $ map (snd3 . v2e) $ topSort g
+  foldM (\s loc -> windLocation l (γ,s) loc) σ $ uwOrder l σ (map fst uwls)
 
-doWind :: AnnSSA -> (Env Type, BHeap) -> Location -> TCM BHeap
-doWind l (γ,σ) loc 
+windLocation :: AnnSSA -> (Env Type, BHeap) -> Location -> TCM BHeap
+windLocation l (γ,σ) loc 
   = do -- (t,σ')      <- tcExpr (γ,σ) e
        -- let l'       = location t
        let th       = heapRead loc σ
        let ls       = locs th
        let σt       = restrictHeap ls σ
        let σc       = foldl (flip heapDel) σ $ heapLocs σt
-       (_, _, t')  <- tracePP "windType" <$> windType γ l {- e -} th σt {- es -}
-       let x = heapUpd loc t' σc 
-       (tracePP "windType done" x) `seq` (return x)
-       -- return $ tracePP "windType Done" $ heapUpd loc t' σc
+       (_, _, t')  <- tracePP "windType" <$> windType γ l th σt
+       return $ heapUpd loc t' σc 
 
 -- TODO: TVars
-windType γ l {- e -} t σ {- (e@(VarRef _ i@(Id _ _)):_) -}
+windType γ l t σ 
   = do t'         <- tracePP "freshApp" <$> freshApp l --i
        (σe, t'')  <- unwindTC t'
        unifyTypeM l "Wind" (VarRef l (Id l "list")) {- e -} t t''
@@ -570,6 +564,13 @@ windType γ l {- e -} t σ {- (e@(VarRef _ i@(Id _ _)):_) -}
        return (θ,σe,t')
 -- windType _ l _ _ _ e = tcError (ann l) $ "Wind called on non-var:" ++ (ppshow e)
   
+
+uwOrder l σ ls = reverse $ map (snd3 . v2e) $ topSort g
+  -- For each unwound location l |-> t, record (l, locations referred to by t
+  -- build a graph of these dependencies and sort it, then fold locations
+  -- in that order
+  where deps      = map (\(v,l) ->(v,l,locs $ heapRead l σ)) (zip [1..] ls)
+        (g,v2e,_) = graphFromEdges deps
 
 freshApp l -- (Id l' x)
   = do γ <- getTDefs

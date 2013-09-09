@@ -121,7 +121,7 @@ data TCState = TCS {
                    , tc_anns  :: AnnInfo
                    , tc_annss :: [AnnInfo]
                    -- Unwound ptrs
-                   , tc_unwound :: [Location] 
+                   , tc_unwound :: [(Location, Id SourceSpan)] 
                    -- Cast map: 
                    , tc_casts  :: M.Map (Expression AnnSSA) (Cast Type)
                    , tc_hcasts :: M.Map (Expression AnnSSA) (Cast (Heap Type))
@@ -257,9 +257,11 @@ dotAccessRef _ _ (TApp TNull _ _) = return Nothing
 dotAccessRef σ f (TApp (TRef l) _ _) = do 
   r <- dotAccess f (heapRead l σ)
   case r of 
-    Just (t, Just tuw,  Just σ) -> do
-         getUnwound >>= setUnwound . (l:)
-         return $ Just (t, [(l, tuw)], σ)
+    Just (t, Just tuw,  Just σ') -> do
+         -- If something was unwound, the type
+         -- at l must have been an application
+         addUnwound (l, defAtLoc σ l)
+         return $ Just (t, [(l, tuw)], σ')
     Just (t, Nothing,  Nothing) -> return $ Just (t, [], heapEmpty)
     _                           -> return Nothing
 
@@ -274,6 +276,10 @@ dotAccessRef σ f (TApp TUn ts _)     = do
           in return $ Just (mkUnion rs, concat uwts, heapCombine σs)
 
 dotAccessRef _ _ t  = error $ "Can not dereference " ++ (ppshow t)
+
+defAtLoc σ l = go $ heapRead l σ                      
+  where go (TApp (TDef i) _ _) = i
+        go t                   = error $ "BUG: Somehow unwound " ++ (ppshow t)
 
 -------------------------------------------------------------------------------
 dotAccess :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
@@ -305,8 +311,8 @@ dotAccessDef f t = do
   case tracePP "da" da of
     Just (t,  Nothing, Nothing)  -> return $ Just (apply θ' t, Just $ apply θ' t', Just σ')
     -- Do the next two even make sense?
-    Just (t, Just t'', Just σ'') -> return $ Just (t, Just t'', Just $ heapCombine[σ',σ''])
-    Just (t, Just t'', Nothing)  -> return $ Just (t, Just t'', Just σ')
+    -- Just (t, Just t'', Just σ'') -> return $ Just (t, Just t'', Just $ heapCombine[σ',σ''])
+    -- Just (t, Just t'', Nothing)  -> return $ Just (t, Just t'', Just σ')
     _                            -> return da
 
 
@@ -400,14 +406,16 @@ getDefType f
        l   = srcPos f
 
 -------------------------------------------------------------------------------
-getUnwound :: TCM [Location]
+getUnwound :: TCM [(Location, Id SourceSpan)]
 -------------------------------------------------------------------------------
 getUnwound = tc_unwound <$> get
 
 -------------------------------------------------------------------------------
-setUnwound :: [Location] -> TCM ()
+setUnwound :: [(Location, Id SourceSpan)] -> TCM ()
 -------------------------------------------------------------------------------
 setUnwound ls = modify $ \st -> st { tc_unwound = ls }
+
+addUnwound l = getUnwound >>= setUnwound . (l:)                                
 
 -------------------------------------------------------------------------------
 setExpr   :: Maybe (Expression AnnSSA) -> TCM () 
