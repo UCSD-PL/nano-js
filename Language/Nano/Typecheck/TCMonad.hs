@@ -46,6 +46,8 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Unfolding
   , unfoldFirstTC, unfoldSafeTC, unwindTC
+  , getUnwound
+  , setUnwound
 
   -- * Subtyping
   , subTypeM  , subTypeM'
@@ -118,6 +120,8 @@ data TCState = TCS {
                    -- Annotations
                    , tc_anns  :: AnnInfo
                    , tc_annss :: [AnnInfo]
+                   -- Unwound ptrs
+                   , tc_unwound :: [Location] 
                    -- Cast map: 
                    , tc_casts  :: M.Map (Expression AnnSSA) (Cast Type)
                    , tc_hcasts :: M.Map (Expression AnnSSA) (Cast (Heap Type))
@@ -253,8 +257,11 @@ dotAccessRef _ _ (TApp TNull _ _) = return Nothing
 dotAccessRef σ f (TApp (TRef l) _ _) = do 
   r <- dotAccess f (heapRead l σ)
   case r of 
-    Just (t, tuw,  σ) -> return $ Just (t, [(l, tuw)], σ)
-    _                 -> return Nothing
+    Just (t, Just tuw,  Just σ) -> do
+         getUnwound >>= setUnwound . (l:)
+         return $ Just (t, [(l, tuw)], σ)
+    Just (t, Nothing,  Nothing) -> return $ Just (t, [], heapEmpty)
+    _                           -> return Nothing
 
 dotAccessRef σ f (TApp TUn ts _)     = do 
   e   <- fromJust <$> getExpr
@@ -269,17 +276,17 @@ dotAccessRef σ f (TApp TUn ts _)     = do
 dotAccessRef _ _ t  = error $ "Can not dereference " ++ (ppshow t)
 
 -------------------------------------------------------------------------------
-dotAccess :: Id AnnSSA -> Type -> TCM (Maybe (Type, Type, BHeap))
+dotAccess :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
 -------------------------------------------------------------------------------
 dotAccess f   t@(TObj bs _) = 
-  return $ Just (maybe tUndef b_type $ find (match $ F.symbol f) bs, t, heapEmpty)
+  return $ Just (maybe tUndef b_type $ find (match $ F.symbol f) bs, Nothing, Nothing)
   where match s (B f _)  = s == f
 
 dotAccess f t@(TApp c ts _ ) = go c
   where  go TUn      = dotAccessUnion f ts
-         go TInt     = return $ Just (tUndef, t, heapEmpty)
-         go TBool    = return $ Just (tUndef, t, heapEmpty)
-         go TString  = return $ Just (tUndef, t, heapEmpty)
+         go TInt     = return $ Just (tUndef, Nothing, Nothing)
+         go TBool    = return $ Just (tUndef, Nothing, Nothing)
+         go TString  = return $ Just (tUndef, Nothing, Nothing)
          go TUndef   = return   Nothing
          go TNull    = return   Nothing
          go (TDef _) = dotAccessDef f t
@@ -287,21 +294,24 @@ dotAccess f t@(TApp c ts _ ) = go c
          go TVoid    = error "dotAccess void"
          go (TRef _)  = error "dotAccess ref"
 
-dotAccess _   t@(TFun _ _ _ _ _ ) = return $ Just (tUndef, t, heapEmpty)
+dotAccess _   t@(TFun _ _ _ _ _ ) = return $ Just (tUndef, Nothing, Nothing)
 dotAccess _ t               = error $ "dotAccess " ++ (ppshow t) 
 
-dotAccessDef :: Id AnnSSA -> Type -> TCM (Maybe (Type, Type, BHeap))
+dotAccessDef :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
 dotAccessDef f t = do 
-  (σ,t')    <- unwindTC t
+  (σ,t')    <- tracePP "unwindTC" <$> unwindTC t
   (θ',_,σ') <- freshHeap σ
   da        <- dotAccess f $ apply θ' t'
-  case da of
-    Just (t, t'', σ'') -> return $ Just (t, t'', heapCombine [σ',σ''])
-    _                  -> return da
+  case tracePP "da" da of
+    Just (t,  Nothing, Nothing)  -> return $ Just (apply θ' t, Just $ apply θ' t', Just σ')
+    -- Do the next two even make sense?
+    Just (t, Just t'', Just σ'') -> return $ Just (t, Just t'', Just $ heapCombine[σ',σ''])
+    Just (t, Just t'', Nothing)  -> return $ Just (t, Just t'', Just σ')
+    _                            -> return da
 
 
 -------------------------------------------------------------------------------
-dotAccessUnion :: Id AnnSSA -> [Type] -> TCM (Maybe (Type, Type, BHeap))
+dotAccessUnion :: Id AnnSSA -> [Type] -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
 -------------------------------------------------------------------------------
 dotAccessUnion f ts = 
   do  e              <- fromJust <$> getExpr
@@ -313,7 +323,9 @@ dotAccessUnion f ts =
       case tfs' of
         [] -> return Nothing
         ps -> let (rs, ts, σs) = unzip3 ps 
-              in return $ Just (mkUnion rs, mkUnion ts, heapCombine σs)
+                  mt           = return $ mkUnion [t | Just t <- ts]
+                  mσ           = return $ heapCombine [σ | Just σ <- σs]
+              in return $ Just (mkUnion rs, mt, mσ)
   
       
 
@@ -362,21 +374,22 @@ execute verb pgm act
 
 
 initState :: V.Verbosity -> Nano z (RType r) -> TCState
-initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss 
+initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_unwound
                        tc_casts tc_hcasts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
   where
-    tc_errss  = []
-    tc_subst  = mempty 
-    tc_cnt    = 0
-    tc_anns   = HM.empty
-    tc_annss  = []
-    tc_casts  = M.empty
-    tc_hcasts = M.empty
-    tc_defs   = envMap toType $ defs pgm
-    tc_fun    = Nothing
-    tc_tdefs  = envMap toType $ tDefs pgm
-    tc_expr   = Nothing
-    tc_verb   = verb
+    tc_errss   = []
+    tc_subst   = mempty 
+    tc_cnt     = 0
+    tc_anns    = HM.empty
+    tc_annss   = []
+    tc_unwound = []
+    tc_casts   = M.empty
+    tc_hcasts  = M.empty
+    tc_defs    = envMap toType $ defs pgm
+    tc_fun     = Nothing
+    tc_tdefs   = envMap toType $ tDefs pgm
+    tc_expr    = Nothing
+    tc_verb    = verb
 
 
 getDefType f 
@@ -386,6 +399,15 @@ getDefType f
        err = tcError l $ errorMissingSpec l f
        l   = srcPos f
 
+-------------------------------------------------------------------------------
+getUnwound :: TCM [Location]
+-------------------------------------------------------------------------------
+getUnwound = tc_unwound <$> get
+
+-------------------------------------------------------------------------------
+setUnwound :: [Location] -> TCM ()
+-------------------------------------------------------------------------------
+setUnwound ls = modify $ \st -> st { tc_unwound = ls }
 
 -------------------------------------------------------------------------------
 setExpr   :: Maybe (Expression AnnSSA) -> TCM () 

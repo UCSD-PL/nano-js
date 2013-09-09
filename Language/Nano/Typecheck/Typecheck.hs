@@ -16,6 +16,7 @@ import qualified Data.List                      as L
 import           Data.Monoid
 import           Data.Maybe                         (catMaybes, isJust, fromJust)
 import           Data.Generics                   
+import           Data.Graph
 
 import           Text.PrettyPrint.HughesPJ          (text, render, vcat, ($+$), (<+>))
 import           Text.Printf                        (printf)
@@ -32,7 +33,7 @@ import           Language.Nano.Typecheck.Parse
 import           Language.Nano.Typecheck.TCMonad
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.SSA.SSA
-import           Language.Nano.HeapTypes.HeapTypes
+--import           Language.Nano.HeapTypes.HeapTypes
 
 import qualified Language.Fixpoint.Types            as F
 import           Language.Fixpoint.Misc             as FM 
@@ -330,18 +331,21 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  (t,σ')            <- maybe (return (tVoid,heapEmpty)) (tcExpr (γ,σ)) eo
+  = do  
+        σ'                <- tracePP "windLocations thinger" <$>  windLocations (γ,σ) l
+        (t,σ')            <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
+        -- End of basic block --> Wind up locations
         let rt             = envFindReturn γ 
         (_, σ_out)        <- getFunHeaps γ
         unifyTypeM l "Return" eo t rt
-        θ                 <- unifyHeapsM l "Return" σ' σ_out
-        σ'                <- safeHeapSubstM σ
+        θ                 <- tracePP "return θ" <$> unifyHeapsM l "Return" σ' σ_out
+        σ'                <- tracePP "what" <$> safeHeapSubstM (tracePP "σ''''" σ')
         -- Apply the substitution
         let (rt', t')       = mapPair (apply θ) (rt,t)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        maybeM_ (\e -> castHeapM γ e σ' σ_out) eo
+        castHeapM γ (VarRef l (Id l "return heap")) σ' σ_out
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -425,9 +429,9 @@ tcExpr' (γ,σ) (PrefixExpr l o e)
 tcExpr' (γ,σ) (InfixExpr l o e1 e2)        
   = tcCall (γ,σ) l o [e1, e2] (infixOpTy o γ)
 
--- TODO: HACK
-tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "wind")) es)
-  = tcWind (γ,σ) l es
+-- -- TODO: HACK
+-- tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "wind")) es)
+--   = tcWind (γ,σ) l es
 
 -- TODO: HACK
 tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "unwind")) es)
@@ -503,53 +507,79 @@ tcObject (γ,σ) bs
 ----------------------------------------------------------------------------------
 tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
-tcUnwind (γ,σ) a [e]
-  = do loc         <- freshLocation
-       (t,σ')      <- tcExpr (γ,σ) e
-       θ           <- unifyTypeM a "Unwind" e t (tRef loc)
-       let l'       = apply θ $ location t
-       (σt,tc)     <- unwindTC $ heapRead l' σ'
-       (θ',_,σt')  <- freshHeap σt
-       return (tVoid, heapCombine [heapUpd l' (apply θ' tc) σ', σt'])
-tcUnwind _ l _
-  = tcError (ann l) "Unwind called with wrong number of arguments"
+tcUnwind (γ,σ) a [e] = error "foo"
+--   = do -- loc         <- freshLocation
+--        (t,σ')      <- tcExpr (γ,σ) e
+--    --    θ           <- unifyTypeM a "Unwind" e t (tRef loc)
+--   --     let l'       = apply θ $ location t
+--        (σt,tc)     <- unwindTC t σ -- $ heapRead l' σ'
+--        (θ',_,σt')  <- freshHeap σt
+--        return (tVoid, heapCombine [heapUpd l' (apply θ' tc) σ', σt'])
+-- tcUnwind _ l _
+--   = tcError (ann l) "Unwind called with wrong number of arguments"
+
+-- ----------------------------------------------------------------------------------
+-- tcWind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
+-- ----------------------------------------------------------------------------------
+-- tcWind (γ,σ) a (e:es)
+--   = do (t,σ')      <- tcExpr (γ,σ) e
+--        let l'       = location t
+--        let th       = heapRead l' σ'
+--        let ls       = locs th
+--        let σt       = restrictHeap ls σ'
+--        let σc       = foldl (flip heapDel) σ' $ heapLocs σt
+--        (_, _, t')  <- windType γ a e th σt es
+--        return $ (tVoid, heapUpd l' t' σc)
+-- tcWind _ l _ 
+--   = tcError (ann l) "Wind called with wrong number of arguments"
 
 ----------------------------------------------------------------------------------
-tcWind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
+windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM BHeap
 ----------------------------------------------------------------------------------
-tcWind (γ,σ) a (e:es)
-  = do (t,σ')      <- tcExpr (γ,σ) e
-       let l'       = location t
-       let th       = heapRead l' σ'
+windLocations (γ,σ) l = do
+  uwls <- tracePP "unwound" <$> getUnwound
+  -- For each unwound location l |-> t, record (l, locations referred to by t
+  -- build a graph of these dependencies and sort it, then fold locations
+  -- in that order
+  let deps        = map (\(v,l) -> (v,l,locs $ heapRead l σ)) (zip [1..] uwls) 
+  let (g,v2e,k2v) = graphFromEdges deps
+  let uwOrder      = reverse $ map (snd3 . v2e) $ topSort g :: [Location]
+  foldM (\s loc -> doWind l (γ,s) loc) σ uwOrder
+
+doWind :: AnnSSA -> (Env Type, BHeap) -> Location -> TCM BHeap
+doWind l (γ,σ) loc 
+  = do -- (t,σ')      <- tcExpr (γ,σ) e
+       -- let l'       = location t
+       let th       = heapRead loc σ
        let ls       = locs th
-       let σt       = restrictHeap ls σ'
-       let σc       = foldl (flip heapDel) σ' $ heapLocs σt
-       (_, _, t')  <- windType γ a e th σt es
-       return $ (tVoid, heapUpd l' t' σc)
-tcWind _ l _ 
-  = tcError (ann l) "Wind called with wrong number of arguments"
-    
+       let σt       = restrictHeap ls σ
+       let σc       = foldl (flip heapDel) σ $ heapLocs σt
+       (_, _, t')  <- tracePP "windType" <$> windType γ l {- e -} th σt {- es -}
+       let x = heapUpd loc t' σc 
+       (tracePP "windType done" x) `seq` (return x)
+       -- return $ tracePP "windType Done" $ heapUpd loc t' σc
+
 -- TODO: TVars
-windType γ l e t σ ((VarRef _ i@(Id _ _)):_)
-  = do t'         <- freshApp l i
+windType γ l {- e -} t σ {- (e@(VarRef _ i@(Id _ _)):_) -}
+  = do t'         <- tracePP "freshApp" <$> freshApp l --i
        (σe, t'')  <- unwindTC t'
-       unifyTypeM l "Wind" e t t''
+       unifyTypeM l "Wind" (VarRef l (Id l "list")) {- e -} t t''
        θ          <- unifyHeapsM l "Wind" σ σe
-       castM e (apply θ t) (apply θ t'')
-       castHeapM γ e (apply θ σe) (apply θ σe)
+       -- castM e (apply θ t) (apply θ t'')
+       -- castHeapM γ e (apply θ σe) (apply θ σe)
        return (θ,σe,t')
-windType _ l _ _ _ e = tcError (ann l) $ "Wind called on non-var:" ++ (ppshow e)
+-- windType _ l _ _ _ e = tcError (ann l) $ "Wind called on non-var:" ++ (ppshow e)
   
 
-freshApp l (Id l' x)
+freshApp l -- (Id l' x)
   = do γ <- getTDefs
-       case envFindTy x γ of
+       case envFindTy "list" γ of
          Just (TBd (TD _ vs _ _ _ )) -> 
            do θ <- freshSubst (ann l) vs
               let ts = apply θ . tVar <$> vs
-              return $ TApp (TDef (Id (ann l') x)) ts ()
+              return $ TApp (TDef (Id (ann l) "list")) ts ()
          _                           ->
-           error$ errorUnboundId x
+           error$ errorUnboundId "list" 
 
 ----------------------------------------------------------------------------------
 tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)
@@ -606,3 +636,4 @@ varLookup γ l x
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
+
