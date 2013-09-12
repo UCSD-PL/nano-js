@@ -23,6 +23,7 @@ module Language.Nano.Typecheck.TCMonad (
   , freshLocation
   , freshSubst
   , freshHeap
+  , freshHeapVar
   , tick
 
   -- * Dot Access
@@ -45,9 +46,13 @@ module Language.Nano.Typecheck.TCMonad (
   , getAllAnns
 
   -- * Unfolding
-  , unfoldFirstTC, unfoldSafeTC, unwindTC
+  , unfoldFirstTC
+  , unfoldSafeTC
+  , unwindTC
   , getUnwound
   , setUnwound
+  , withUnwound
+  , pushUnwound
 
   -- * Subtyping
   , subTypeM  , subTypeM'
@@ -64,7 +69,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Get Type Signature 
   , getDefType 
 
-  -- * Expression Getter/Setter
+    -- * Expression Getter/Setter
   , getExpr, setExpr, withExpr
 
   -- * Patch the program with assertions
@@ -97,13 +102,15 @@ import qualified Data.HashMap.Strict            as HM
 import qualified Data.Map                       as M
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
-import           Data.List                      (find, partition, nub)
+import           Data.List                      (find, partition, nub, sort, unzip4)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
 import           Language.ECMAScript3.Parser    (SourceSpan (..))
 -- import           Language.ECMAScript3.PrettyPrint
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
+
+import           Text.Parsec.Pos
 
 -- import           Debug.Trace                      (trace)
 import qualified System.Console.CmdArgs.Verbosity as V
@@ -114,24 +121,25 @@ import qualified System.Console.CmdArgs.Verbosity as V
 
 data TCState = TCS { 
                    -- Errors
-                     tc_errss :: ![(SourceSpan, String)]
-                   , tc_subst :: !Subst
-                   , tc_cnt   :: !Int
+                     tc_errss    :: ![(SourceSpan, String)]
+                   , tc_subst    :: !Subst
+                   , tc_cnt      :: !Int
                    -- Annotations
-                   , tc_anns  :: AnnInfo
-                   , tc_annss :: [AnnInfo]
-                   -- Unwound ptrs
-                   , tc_unwound :: [(Location, Id SourceSpan)] 
+                   , tc_anns     :: AnnInfo
+                   , tc_annss    :: [AnnInfo]
+                   -- Heap bookkeeping
+                   , tc_heapExps :: M.Map SourceSpan [Expression AnnSSA] -- dummy expressions
+                   , tc_unwound  :: [(Location, Id SourceSpan)] 
                    -- Cast map: 
-                   , tc_casts  :: M.Map (Expression AnnSSA) (Cast Type)
-                   , tc_hcasts :: M.Map (Expression AnnSSA) (Cast (Heap Type))
+                   , tc_casts    :: M.Map (Expression AnnSSA) (Cast Type)
+                   , tc_hcasts   :: M.Map (Expression AnnSSA) (Cast (Heap Type))
                    -- Function definitions
-                   , tc_defs  :: !(Env Type) 
-                   , tc_fun   :: !(Maybe F.Symbol)
+                   , tc_defs     :: !(Env Type) 
+                   , tc_fun      :: !(Maybe F.Symbol)
                    -- Type definitions
-                   , tc_tdefs :: !(Env Type)
+                   , tc_tdefs    :: !(Env Type)
                    -- The currently typed expression 
-                   , tc_expr  :: Maybe (Expression AnnSSA)
+                   , tc_expr     :: Maybe (Expression AnnSSA)
 
                    -- Verbosiry
                    , tc_verb  :: V.Verbosity
@@ -238,9 +246,10 @@ freshSubst l αs
       fUnique xs = when (not $ unique xs) $ logError l errorUniqueTypeParams ()
 
 setTyArgs l βs 
-  = do m <- tc_anns <$> get 
-       when (HM.member l m) $ tcError l "Multiple Type Args"
-       addAnn l $ TypInst (tVar <$> βs)
+  -- = do m <- tc_anns <$> get 
+  --      when (HM.member l m) $ tcError l "Multiple Type Args"
+  --      addAnn l $ TypInst (tVar <$> βs)
+  = return ()
 
 
 -------------------------------------------------------------------------------
@@ -250,19 +259,19 @@ setTyArgs l βs
 -- Returns a result type, a list of locations that have been unwound, 
 -- and possibly a (fresh) heap that might have been unwound     
 -------------------------------------------------------------------------------
-dotAccessRef :: BHeap -> Id AnnSSA -> Type -> TCM (Maybe (Type, [(Location,Type)], BHeap))
+dotAccessRef :: BHeap -> Id AnnSSA -> Type -> TCM (Maybe (Type, Type, [(Location,Type)], BHeap))
 -------------------------------------------------------------------------------
 dotAccessRef _ _ (TApp TNull _ _) = return Nothing
 
-dotAccessRef σ f (TApp (TRef l) _ _) = do 
+dotAccessRef σ f ref@(TApp (TRef l) _ _) = do 
   r <- dotAccess f (heapRead l σ)
   case r of 
     Just (t, Just tuw,  Just σ') -> do
          -- If something was unwound, the type
          -- at l must have been an application
          addUnwound (l, defAtLoc σ l)
-         return $ Just (t, [(l, tuw)], σ')
-    Just (t, Nothing,  Nothing) -> return $ Just (t, [], heapEmpty)
+         return $ Just (ref, t, [(l, tuw)], σ')
+    Just (t, Nothing,  Nothing) -> return $ Just (ref, t, [], heapEmpty)
     _                           -> return Nothing
 
 dotAccessRef σ f (TApp TUn ts _)     = do 
@@ -272,8 +281,8 @@ dotAccessRef σ f (TApp TUn ts _)     = do
   castM e (mkUnion ts) (mkUnion ts')
   case tfs' of
     [] -> return Nothing
-    ps -> let (rs, uwts, σs) = unzip3 ps 
-          in return $ Just (mkUnion rs, concat uwts, heapCombine σs)
+    ps -> let (refs, rs, uwts, σs) = unzip4 ps 
+          in return $ Just (mkUnion refs, mkUnion rs, concat uwts, heapCombine σs)
 
 dotAccessRef _ _ t  = error $ "Can not dereference " ++ (ppshow t)
 
@@ -305,10 +314,10 @@ dotAccess _ t               = error $ "dotAccess " ++ (ppshow t)
 
 dotAccessDef :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
 dotAccessDef f t = do 
-  (σ,t')    <- tracePP "unwindTC" <$> unwindTC t
+  (σ,t')    <- unwindTC t
   (θ',_,σ') <- freshHeap σ
   da        <- dotAccess f $ apply θ' t'
-  case tracePP "da" da of
+  case da of
     Just (t,  Nothing, Nothing)  -> return $ Just (apply θ' t, Just $ apply θ' t', Just σ')
     -- Do the next two even make sense?
     -- Just (t, Just t'', Just σ'') -> return $ Just (t, Just t'', Just $ heapCombine[σ',σ''])
@@ -380,22 +389,23 @@ execute verb pgm act
 
 
 initState :: V.Verbosity -> Nano z (RType r) -> TCState
-initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_unwound
+initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_heapExps tc_unwound
                        tc_casts tc_hcasts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
   where
-    tc_errss   = []
-    tc_subst   = mempty 
-    tc_cnt     = 0
-    tc_anns    = HM.empty
-    tc_annss   = []
-    tc_unwound = []
-    tc_casts   = M.empty
-    tc_hcasts  = M.empty
-    tc_defs    = envMap toType $ defs pgm
-    tc_fun     = Nothing
-    tc_tdefs   = envMap toType $ tDefs pgm
-    tc_expr    = Nothing
-    tc_verb    = verb
+    tc_errss    = []
+    tc_subst    = mempty 
+    tc_cnt      = 0
+    tc_anns     = HM.empty
+    tc_annss    = []
+    tc_heapExps = M.empty 
+    tc_unwound  = []
+    tc_casts    = M.empty
+    tc_hcasts   = M.empty
+    tc_defs     = envMap toType $ defs pgm
+    tc_fun      = Nothing
+    tc_tdefs    = envMap toType $ tDefs pgm
+    tc_expr     = Nothing
+    tc_verb     = verb
 
 
 getDefType f 
@@ -415,7 +425,29 @@ setUnwound :: [(Location, Id SourceSpan)] -> TCM ()
 -------------------------------------------------------------------------------
 setUnwound ls = modify $ \st -> st { tc_unwound = ls }
 
+-------------------------------------------------------------------------------
+addUnwound :: (Location, Id SourceSpan) -> TCM ()
+-------------------------------------------------------------------------------
 addUnwound l = getUnwound >>= setUnwound . (l:)                                
+
+-----------------------------------------------------------------------------
+withUnwound  :: [(Location, Id SourceSpan)] -> TCM a -> TCM a
+-----------------------------------------------------------------------------
+withUnwound uw action = 
+  do  uwold  <- getUnwound 
+      setUnwound uw 
+      r     <- action 
+      setUnwound uw
+      return $ r
+
+-----------------------------------------------------------------------------
+pushUnwound  :: TCM a -> TCM a
+-----------------------------------------------------------------------------
+pushUnwound action = 
+  do  uwold  <- getUnwound 
+      r      <- action 
+      setUnwound uwold
+      return $ r
 
 -------------------------------------------------------------------------------
 setExpr   :: Maybe (Expression AnnSSA) -> TCM () 
@@ -459,6 +491,19 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
           do l' <- freshLocation
              return $ (mappend θ  (Su HM.empty (HM.singleton l l')),
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
+
+-------------------------------------------------------------------------------
+freshHeapVar :: AnnSSA -> String -> TCM (Expression AnnSSA)
+-------------------------------------------------------------------------------
+freshHeapVar l x
+  = do n <- tick
+       let v = newVar n idStr
+       modify $ \st -> st { tc_heapExps = M.insertWith (flip (++)) (srcPos l) [v] $ tc_heapExps st }
+       return v
+  where
+    newVar n str = VarRef l (Id l (str ++ "_" ++ show n))
+    idStr        = printf "%s__%d:%d" x (sourceLine . sp_begin $ srcPos l) (sourceLine . sp_end $ srcPos l)
+
 -- | Monadic unfolding
 -------------------------------------------------------------------------------
 unfoldFirstTC :: Type -> TCM Type
@@ -539,7 +584,7 @@ subTypeM :: Type -> Type -> TCM SubDirection
 subTypeM t t' 
   = do  θ            <- getTDefs 
         let (_,_,_,d) = compareTs θ t t'
-        return $ {- tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -} d
+        return {- $ tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -} d
 
 ----------------------------------------------------------------------------------
 subTypeM' :: (IsLocated l) => l -> Type -> Type -> TCM ()
@@ -554,15 +599,26 @@ subTypesM ts ts' = zipWithM subTypeM ts ts'
 ----------------------------------------------------------------------------------
 subHeapM :: Env Type -> BHeap -> BHeap -> TCM SubDirection                   
 ----------------------------------------------------------------------------------
-subHeapM γ σ σ' 
-  = do let ls = nub ((concatMap (locs.snd) $ envToList γ)
-                       ++ heapLocs σ)
-       let (com,sup) = partition (`heapMem` σ) $ heapLocs σ' 
-       let dir       =  case filter (`elem` ls) sup of
-                          [] -> SubT
+subHeapM γ σ1 σ2 
+  = do let l1s       = sort $ heapLocs σ1
+       let l2s       = sort $ heapLocs σ2
+       let envLocs   = concat [locs t | (Id _ s, t) <- envToList γ, s /= F.symbolString returnSymbol]
+       let ls        = nub $ envLocs ++ l1s
+       let σ2'       = restrictHeap ls σ2
+       let (com,sup) = partition (`heapMem` σ1) $ heapLocs σ2' 
+       let dir       = case filter (`elem` ls) sup of
+                          [] -> if l1s == l2s then EqT else SubT
                           _  -> SupT
-       ds <- uncurry subTypesM $ mapPair (readTs com) (σ,σ')
+       ds <- uncurry subTypesM $ mapPair (readTs com) (σ1, σ2')
        return $ foldl (&*&) dir ds
+
+       -- let ls        = nub ((concatMap (locs.snd) $ envToList γ) ++ heapLocs σ)
+       -- let (com,sup) = partition (`heapMem` σ) $ heapLocs σ' 
+       -- let dir       =  case filter (`elem` ls) sup of
+       --                    [] -> if sup == [] then EqT else SubT
+       --                    _  -> SupT
+       -- ds <- uncurry subTypesM $ mapPair (readTs com) (σ,σ')
+       -- return $ foldl (&*&) dir ds
     where readTs ls σ = map (`heapRead` σ) ls
 
 --------------------------------------------------------------------------------
@@ -643,13 +699,28 @@ addDeadCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DC σ) (tc_hcas
 patchPgmM :: (Typeable r, Data r) => Nano AnnSSA (RType r) -> TCM (Nano AnnSSA (RType r))
 --------------------------------------------------------------------------------
 patchPgmM pgm = 
-  do  c  <- tc_casts <$> get
-      hc <- tc_hcasts <$> get
-      return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c hc)
-
+  do  c    <- tc_casts <$> get
+      hc   <- tc_hcasts <$> get
+      m    <- tc_heapExps <$> get
+      pgm' <- insertHeapCasts m pgm
+      return $ fst $ runState (everywhereM' (mkM transform) pgm') (PS c hc)
 
 data PState = PS { m :: Casts, hm :: HCasts }
 type PM     = State PState
+
+insertHeapCasts m pgm =
+  return $ fst $ runState (everywhereM' (mkM go) pgm) (HS m)
+  where go :: Statement AnnSSA -> HSM (Statement AnnSSA)
+        go s = do
+          let l = getAnnotation s
+          emap  <- em <$> get
+          case M.findWithDefault [] (srcPos l) emap of
+            [] -> return s
+            es -> do put $ HS { em = M.delete (srcPos l) emap }
+                     return $ BlockStmt l (s:map (ExprStmt l) es)
+
+data HState = HS { em :: M.Map SourceSpan [Expression AnnSSA] }
+type HSM    = State HState
 
 --------------------------------------------------------------------------------
 transform :: Expression AnnSSA -> PM (Expression AnnSSA)

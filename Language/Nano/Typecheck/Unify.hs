@@ -64,9 +64,9 @@ unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) =
 unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)
   | d == d'                             = unifys env θ ts ts'
 
-unify γ θ t@(TApp (TDef _) _ _) t'  = unify γ θ (snd $ unfoldSafe γ t) t'
+-- unify γ θ t@(TApp (TDef _) _ _) t'  = unify γ θ (snd $ unfoldSafe γ t) t'
+-- unify γ θ t t'@(TApp (TDef _) _ _)  = unify γ θ t (snd $ unfoldSafe γ t')
 
-unify γ θ t t'@(TApp (TDef _) _ _)  = unify γ θ t (snd $ unfoldSafe γ t')
 -- TODO: fix                                          
 unify _ θ (TVar α _) (TVar β _) =  varEql θ α β
 unify _ θ (TVar α _) t          =  varAsn θ α t
@@ -121,16 +121,16 @@ safeHeapSubst = safeHeapSubstWith safeAdd
 
 -- TODO: cycles
 unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
-unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (snd $ unfoldSafe γ t) t'
-unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (snd $ unfoldSafe γ t')
+-- unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (snd $ unfoldSafe γ t) t'
+-- unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (snd $ unfoldSafe γ t')
 unifEq γ t t'                     = equiv γ t t'
 
 -----------------------------------------------------------------------------
 unifys :: Env Type -> Subst -> [Type] -> [Type] -> Either String Subst
 -----------------------------------------------------------------------------
-unifys env θ xs ys =   {- tracePP msg $ -} unifys' env θ xs ys
+unifys env θ xs ys = {- tracePP msg $ -} unifys' env θ xs ys
    -- where
-   --   msg      = printf "unifys: [xs = %s] [ys = %s]"  (ppshow xs) (ppshow ys)
+   --   msg      = printf "unifys: [xs = %s] [ys = %s] [θ = %s]"  (ppshow xs) (ppshow ys) (ppshow θ)
 
 unifys' γ θ ts ts' 
   | nTs == nTs' = go γ θ ts ts'

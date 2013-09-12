@@ -1,17 +1,11 @@
 /*@ type nlist  inflist[number] */
 /*@ type blist  inflist[boolean] */
 
-/*@ map :: (<l>, (number) => boolean)/l |-> nlist => <m>/m |-> blist */
+/*@ map :: (<l>, (number) => boolean)/l |-> inflist[number] => <l>/l |-> inflist[boolean] */
 function map(x,f) {
-  d = f(x.data);
-  n = map(x.next, f);
-  r = {data:d, next:n};
-  wind(r, inflist);
-  return r;
+  d      = x.data;
+  x.data = f(d);
+  x.next = map(x.next, f);
 
-  //return { 
-  //  data: f(x.data) , 
-  //  next: map(x.next, f)
-  //};
-
+  return x;
 }

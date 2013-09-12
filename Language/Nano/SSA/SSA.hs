@@ -90,8 +90,10 @@ ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign (LVar l3 x) e))
   = do (x', e') <- ssaAsgn l2 (Id l3 x) e
        return (True, VarDeclStmt l1 [VarDecl l2 x' (Just e')])
 -- el.f = e
-ssaStmt s@(ExprStmt _ (AssignExpr _ OpAssign (LDot _ (VarRef _ _) _) e))
-  = return (True, s)
+ssaStmt s@(ExprStmt l1 (AssignExpr l2 OpAssign (LDot l3 ev@(VarRef _ _) l4) e))
+  = do ev' <- ssaExpr ev
+       e'  <- ssaExpr e
+       return (True, ExprStmt l1 (AssignExpr l2 OpAssign (LDot l3 ev' l4) e'))
 
 -- e
 ssaStmt (ExprStmt l e)   

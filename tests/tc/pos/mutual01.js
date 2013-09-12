@@ -4,7 +4,7 @@
 /*@ type c  {  next : a } */
 
 
-/*@ foo :: (x: a) => c */
+/*@ foo :: (x: <l>)/l |-> a => <l>/l |-> c */
 function foo(x) {
     return x;
 }

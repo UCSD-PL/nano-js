@@ -12,7 +12,7 @@ import           Control.Monad
 import qualified Data.HashSet                       as HS 
 import qualified Data.HashMap.Strict                as M 
 import qualified Data.Traversable                   as T
-import qualified Data.List                      as L
+import qualified Data.List                          as L
 import           Data.Monoid
 import           Data.Maybe                         (catMaybes, isJust, fromJust)
 import           Data.Generics                   
@@ -301,7 +301,8 @@ tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))
 
 -- x.f = e
 tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LDot ld (VarRef _ x) f) e))   
-  = tcDotAsgn (γ,σ) l x e (Id ld f)
+  = do t <- varLookup γ l x
+       tcDotAsgn (γ,σ) l t (Id ld f) e
 
 -- e
 tcStmt' (γ,σ) (ExprStmt _ e)   
@@ -321,9 +322,15 @@ tcStmt' (γ,σ) (IfStmt l e s1 s2)
     -- Doing check for boolean for the conditional for now
     -- TODO: Will have to suppert truthy/falsy later.
         unifyTypeM l "If condition" e t tBool
-        e1     <- tcStmt' (γ, σe) s1
-        e2     <- tcStmt' (γ, σe) s2
+        uw <- getUnwound
+        e1 <- preWind uw $ tcStmt' (γ, σe) s1
+        e2 <- preWind uw $ tcStmt' (γ, σe) s2
         envJoin l (γ,σe) e1 e2
+    where
+      preWind uw m = do r <- setUnwound uw >> m
+                        case r of
+                          Just e -> Just <$> windLocations e l
+                          _      -> return r
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
 tcStmt' (γ,σ) (VarDeclStmt _ ds)
@@ -331,26 +338,29 @@ tcStmt' (γ,σ) (VarDeclStmt _ ds)
 
 -- return e 
 tcStmt' (γ,σ) (ReturnStmt l eo) 
-  = do  
-        σ'                <- tracePP "windLocations thinger" <$>  windLocations (γ, tracePP "pre wind" σ) l
+  = do  -- End of basic block --> Wind up locations
+        (γ,σ')            <- windLocations (γ,σ) l
         (t,σ')            <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
-        -- End of basic block --> Wind up locations
         let rt             = envFindReturn γ 
         (_, σ_out)        <- getFunHeaps γ
         unifyTypeM l "Return" eo t rt
-        θ                 <- tracePP "return θ" <$> unifyHeapsM l "Return" σ' σ_out
-        σ'                <- tracePP "what" <$> safeHeapSubstM (tracePP "σ''''" σ')
-        -- Apply the substitution
+        -- Now we may need to wind up any new locations so that
+        -- heap subtyping and unification will go through
+        (γ,σ')            <- windReturnValue (γ,σ') l σ_out t
+        -- Now unify heap
+        θ                 <- unifyHeapsM l "Return" σ' σ_out
+        -- Apply the substitutions
         let (rt', t')       = mapPair (apply θ) (rt,t)
+        σ'                <- safeHeapSubstM σ'
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
+        eHeap             <- freshHeapVar l "return_heap"
         maybeM_ (\e -> castM e t' rt') eo
-        castHeapM γ (VarRef l (Id l "return heap")) σ' σ_out
+        castHeapM γ eHeap σ' σ_out
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
   = tcFun (γ,σ) s
-
 -- OTHER (Not handled)
 tcStmt' _ s 
   = convertError "TC Cannot Handle: tcStmt'" s
@@ -363,6 +373,24 @@ getFunHeaps γ
                             Nothing -> error "Unknown current typed function"
                             Just z  -> return $ fromJust $ bkFun z 
        return (σ_in, σ_out)
+-- Compare locations in σ with σ_spec using the current θ.
+-- If a location exists in both and is wound up in σ_spec,
+-- then wind it up here.
+windReturnValue (γ,σ) l σ_spec t 
+  = do θ         <- getSubst
+       let wls    = woundLocations σ_spec
+       let tlocs  = locs t
+       let uwls   = map (\l -> (l, L.lookup (apply θ l) wls)) tlocs
+       let uwls'  = [(l,d) | (l, Just d) <- uwls, not . isWoundTy $ heapRead l σ]
+       foldM go (γ,σ) $ uwOrder σ uwls' 
+    where go (γ,σ) loc = windLocation l (γ,σ) loc
+          isWoundTy (TApp (TDef _) _ _) = True
+          isWoundTy _                   = False
+
+woundLocations σ_spec = [ p | Just p <- map go $heapBinds σ_spec ]
+  where
+    go (l, (TApp (TDef d) _ _)) = Just (l, d)                       
+    go _                        = Nothing
 
 -------------------------------------------------------------------------------
 tcVarDecl :: (Env Type, BHeap) -> VarDecl AnnSSA -> TCM TCEnv  
@@ -385,18 +413,30 @@ tcAsgn (γ,σ) _ x e
 ------------------------------------------------------------------------------------
 tcDotAsgn :: (Env Type, BHeap)
           -> AnnSSA
+          -> Type 
           -> Id AnnSSA
           -> Expression AnnSSA
-          -> Id AnnSSA
           -> TCM TCEnv
 ------------------------------------------------------------------------------------
-tcDotAsgn (γ,σ) l x e f
-  = do t      <- varLookup γ l x
-       let lx  = location t
-       let t   = heapRead lx σ
-       return $ Just (γ,σ)
+tcDotAsgn (γ,σ) l x f e
+  = do (t,σ)                   <- tcExpr (γ,σ) e 
+       acc                     <- dotAccessRef σ f x
+       let (refs,_,newBinds,σt) = fromJust acc -- newBinds will contain the field f
+       let ls                   = locs refs 
+       let σ'                   = heapCombineWith (curry snd) [σ, heapFromBinds newBinds, σt]
+       ts'                      <- mapM (\loc -> updateField l (heapRead loc σ') f t) ls
+       let σ''                  = foldl (\σ (l,t) -> heapUpd l t σ) σ' (zip ls ts')
+       return $ Just (γ, σ'')
 
+updateField _ (TObj bs r) (Id _ f) t = return $ TObj (scanUpdate bs) r
+  where scanUpdate []     = [B (F.symbol f) t]
+        scanUpdate (b:bs) = if b_sym b == F.symbol f then
+                              (B (b_sym b) t):bs
+                            else
+                              b:scanUpdate bs
 
+updateField l t            f       t' =
+  tcError (ann l) $ (printf "Can not update %s.%s = %s" (ppshow f) (ppshow t) (ppshow t'))
 
 -------------------------------------------------------------------------------
 tcExpr :: (Env Type, BHeap) -> Expression AnnSSA -> TCM (Type, BHeap)
@@ -434,8 +474,8 @@ tcExpr' (γ,σ) (InfixExpr l o e1 e2)
 --   = tcWind (γ,σ) l es
 
 -- TODO: HACK
-tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "unwind")) es)
-  = tcUnwind (γ,σ) l es
+-- tcExpr' (γ,σ) (CallExpr l (VarRef _ (Id _ "unwind")) es)
+--   = tcUnwind (γ,σ) l es
 
 tcExpr' (γ,σ) (CallExpr l e es)
   = do (t, σ')  <- tcExpr (γ,σ) e
@@ -445,7 +485,7 @@ tcExpr' (γ,σ) (ObjectLit _ ps)
   = tcObject (γ,σ) ps
 
 tcExpr' (γ,σ) (DotRef l e i) 
-  = tcAccess (γ, σ) l e i
+  = tcAccess (γ,σ) l e i
 
 tcExpr' _ e 
   = convertError "tcExpr" e
@@ -465,10 +505,11 @@ tcCall (γ,σ) l fn es ft
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its'
-        eh <- tick >>= return . VarRef l . Id l . show
+        eh <- freshHeapVar l "input_heap"
         castHeapM γ eh σ' σi
         checkDisjoint σo
-        let σ_out         = heapCombineWith (curry snd) [σ', apply θ σo]
+        let σ_out = heapCombine [foldl (flip heapDel) σ' $ apply θ $ heapLocs σi, apply θ σo]
+        -- let σ_out         = heapCombineWith (curry snd) [σ', apply θ σo]
         return $ (apply θ ot, σ_out)
     where
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
@@ -504,9 +545,9 @@ tcObject (γ,σ) bs
       return (tRef l, heapAdd l t σ')
 
 ----------------------------------------------------------------------------------
-tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
+-- tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
 ----------------------------------------------------------------------------------
-tcUnwind (γ,σ) a [e] = error "foo"
+-- tcUnwind (γ,σ) a [e] = error "foo"
 --   = do -- loc         <- freshLocation
 --        (t,σ')      <- tcExpr (γ,σ) e
 --    --    θ           <- unifyTypeM a "Unwind" e t (tRef loc)
@@ -533,52 +574,50 @@ tcUnwind (γ,σ) a [e] = error "foo"
 --   = tcError (ann l) "Wind called with wrong number of arguments"
 
 ----------------------------------------------------------------------------------
-windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM BHeap
+windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM (Env Type, BHeap)
 ----------------------------------------------------------------------------------
-windLocations (γ,σ) l = do
-  uwls         <- tracePP "unwound" <$> getUnwound
-  -- let deps      = map (\(v,l) -> (v,l,locs $ heapRead l σ)) (zip [1..] uwls) 
-  -- let (g,v2e,_) = graphFromEdges deps
-  -- let uwOrder   = reverse $ map (snd3 . v2e) $ topSort g
-  foldM (\s loc -> windLocation l (γ,s) loc) σ $ uwOrder l σ (map fst uwls)
+windLocations (γ,σ) l = getUnwound >>= foldM (windLocation l) (γ,σ) . uwOrder σ
 
-windLocation :: AnnSSA -> (Env Type, BHeap) -> Location -> TCM BHeap
-windLocation l (γ,σ) loc 
-  = do -- (t,σ')      <- tcExpr (γ,σ) e
-       -- let l'       = location t
-       let th       = heapRead loc σ
+----------------------------------------------------------------------------------
+windLocation :: AnnSSA -> (Env Type, BHeap) -> (Location, Id SourceSpan) -> TCM (Env Type, BHeap)
+----------------------------------------------------------------------------------
+windLocation l (γ,σ) (loc, tWind)
+  = do let th       = heapRead loc σ
        let ls       = locs th
        let σt       = restrictHeap ls σ
        let σc       = foldl (flip heapDel) σ $ heapLocs σt
-       (_, _, t')  <- tracePP "windType" <$> windType γ l th σt
-       return $ heapUpd loc t' σc 
+       (_, _, t')  <- windType γ l tWind th σt
+       σ           <- safeHeapSubstM (heapUpd loc t' σc)
+       uw          <- getUnwound
+       setUnwound $ (filter (not.(== loc).fst)) uw
+       return (γ,σ)
 
--- TODO: TVars
-windType γ l t σ 
-  = do t'         <- tracePP "freshApp" <$> freshApp l --i
+windType γ l tWind@(Id _ i) t σ 
+  = do t'         <- freshApp l tWind
        (σe, t'')  <- unwindTC t'
-       unifyTypeM l "Wind" (VarRef l (Id l "list")) {- e -} t t''
-       θ          <- unifyHeapsM l "Wind" σ σe
-       -- castM e (apply θ t) (apply θ t'')
-       -- castHeapM γ e (apply θ σe) (apply θ σe)
+       et         <- freshHeapVar l ("wind<" ++ i ++ ">")
+       eh         <- freshHeapVar l ("wind<" ++ i ++ ">_heap")
+       θ          <- unifyTypeM l "Wind" et t t''
+       θ          <- unifyHeapsM l "Wind(heap)" (apply θ σ) (apply θ σe)
+       castM et (apply θ t) (apply θ t'')
+       castHeapM γ eh (apply θ σ) (apply θ σe)
        return (θ,σe,t')
--- windType _ l _ _ _ e = tcError (ann l) $ "Wind called on non-var:" ++ (ppshow e)
-  
 
-uwOrder l σ ls = reverse $ map (snd3 . v2e) $ topSort g
+uwOrder :: BHeap -> [(Location, Id SourceSpan)] -> [(Location, Id SourceSpan)]
+uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
   -- For each unwound location l |-> t, record (l, locations referred to by t
   -- build a graph of these dependencies and sort it, then fold locations
   -- in that order
-  where deps      = map (\(v,l) ->(v,l,locs $ heapRead l σ)) (zip [1..] ls)
+  where deps      = map (\(l,i) ->((l,i),l,locs $ heapRead l σ)) ls
         (g,v2e,_) = graphFromEdges deps
 
-freshApp l -- (Id l' x)
+freshApp l i@(Id _ x)
   = do γ <- getTDefs
-       case envFindTy "list" γ of
+       case envFindTy x γ of
          Just (TBd (TD _ vs _ _ _ )) -> 
            do θ <- freshSubst (ann l) vs
               let ts = apply θ . tVar <$> vs
-              return $ TApp (TDef (Id (ann l) "list")) ts ()
+              return $ TApp (TDef i) ts F.top
          _                           ->
            error$ errorUnboundId "list" 
 
@@ -590,14 +629,11 @@ tcAccess (γ,σ) _ e f =
      tcAccess' σ' r f
 
 tcAccess' σ (TApp TNull [] _) _ = return $ (tUndef, σ)
-tcAccess' σ t f = do acc       <- dotAccessRef σ f t
-                     let (tr,newBinds,σt)  = fromJust acc
-                     let σ' = heapCombineWith (curry snd) [σ, heapFromBinds newBinds]
+tcAccess' σ t f = do acc                    <- dotAccessRef σ f t
+                     let (_,tr,newBinds,σt)  = fromJust acc
+                     let σ'                  = heapCombineWith (curry snd) [σ, heapFromBinds newBinds]
                      return $ (tr, heapCombine [σ',σt])
 
-location (TApp (TRef l) [] _) = l
-location t                    = error $ "location of non-ref " ++ (ppshow t)
-                              
 ----------------------------------------------------------------------------------
 envJoin :: AnnSSA -> (Env Type, BHeap) -> TCEnv -> TCEnv -> TCM TCEnv 
 ----------------------------------------------------------------------------------
@@ -638,3 +674,19 @@ varLookup γ l x
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
 
+-- ----------------------------------------------------------------------------------
+-- data WindState = WS { wm :: M.Map (Id SourceSpan) (Id SourceSpan) }
+-- type WSM = State WindState
+-- ----------------------------------------------------------------------------------
+
+-- windDefsFun :: FunctionStatement SourceSpan -> WSM (Bool)
+-- windDefsFun (FunctionStmt l f xs body)
+--   = do m <- wm <$> get
+--        error "TODO"
+
+-- windDefsStmts = error "TODO"
+
+-- windDefStmt :: Statement SourceSpan -> WSM (Bool)
+
+-- windDefStmt ::  
+-- windDefStmt = error "TODO"
