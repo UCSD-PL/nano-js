@@ -1,10 +1,9 @@
-/*@ type nlist list[number] */
-
-/*@ next :: (x:<l> + null)/l |-> nlist => <m> + null/m |-> nlist */
+/*@ next :: (x:<l> + null)/l |-> list[number] => <m> + null/m |-> list[number] */
 function next(x) {
 
   if (1 > 0) {
-    return x.next;
+    var z = x.next;
+    return z;
   }
   else 
     return null;

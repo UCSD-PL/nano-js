@@ -488,6 +488,8 @@ data Fact
   | TypInst ![Type]
   | Assume  ! Type
   | AssumeH ! BHeap
+  | Unwind  !Location
+  | Wind    !(Location, Id SourceSpan, Id SourceSpan, Id SourceSpan)
     deriving (Eq, Ord, Show, Data, Typeable)
 
 data Annot b a = Ann { ann :: a, ann_fact :: [b] } deriving (Show, Data, Typeable)

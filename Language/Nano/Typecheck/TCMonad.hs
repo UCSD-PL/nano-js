@@ -49,6 +49,8 @@ module Language.Nano.Typecheck.TCMonad (
   , unfoldFirstTC
   , unfoldSafeTC
   , unwindTC
+  , recordWindExpr
+  , recordUnwindExpr
   , getUnwound
   , setUnwound
   , withUnwound
@@ -128,8 +130,9 @@ data TCState = TCS {
                    , tc_anns     :: AnnInfo
                    , tc_annss    :: [AnnInfo]
                    -- Heap bookkeeping
-                   , tc_heapExps :: M.Map SourceSpan [Expression AnnSSA] -- dummy expressions
                    , tc_unwound  :: [(Location, Id SourceSpan)] 
+                   , tc_winds    :: M.Map SourceSpan [WindCall]
+                   , tc_unwinds  :: M.Map SourceSpan [(Location, Id SourceSpan)]
                    -- Cast map: 
                    , tc_casts    :: M.Map (Expression AnnSSA) (Cast Type)
                    , tc_hcasts   :: M.Map (Expression AnnSSA) (Cast (Heap Type))
@@ -146,7 +149,7 @@ data TCState = TCS {
                    }
 
 type TCM     = ErrorT String (State TCState)
-
+type WindCall = (Location, Id SourceSpan, Expression AnnSSA, Expression AnnSSA)
 
 -------------------------------------------------------------------------------
 whenLoud :: TCM () -> TCM ()
@@ -246,10 +249,9 @@ freshSubst l αs
       fUnique xs = when (not $ unique xs) $ logError l errorUniqueTypeParams ()
 
 setTyArgs l βs 
-  -- = do m <- tc_anns <$> get 
+  = do m <- tc_anns <$> get 
   --      when (HM.member l m) $ tcError l "Multiple Type Args"
-  --      addAnn l $ TypInst (tVar <$> βs)
-  = return ()
+       addAnn l $ TypInst (tVar <$> βs)
 
 
 -------------------------------------------------------------------------------
@@ -389,7 +391,7 @@ execute verb pgm act
 
 
 initState :: V.Verbosity -> Nano z (RType r) -> TCState
-initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_heapExps tc_unwound
+initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_unwound tc_winds tc_unwinds
                        tc_casts tc_hcasts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
   where
     tc_errss    = []
@@ -397,8 +399,9 @@ initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_heapExps t
     tc_cnt      = 0
     tc_anns     = HM.empty
     tc_annss    = []
-    tc_heapExps = M.empty 
     tc_unwound  = []
+    tc_winds    = M.empty
+    tc_unwinds  = M.empty
     tc_casts    = M.empty
     tc_hcasts   = M.empty
     tc_defs     = envMap toType $ defs pgm
@@ -497,9 +500,10 @@ freshHeapVar :: AnnSSA -> String -> TCM (Expression AnnSSA)
 -------------------------------------------------------------------------------
 freshHeapVar l x
   = do n <- tick
-       let v = newVar n idStr
-       modify $ \st -> st { tc_heapExps = M.insertWith (flip (++)) (srcPos l) [v] $ tc_heapExps st }
-       return v
+       return $ newVar n idStr
+       -- let v = newVar n idStr
+       -- modify $ \st -> st { tc_heapExps = M.insertWith (flip (++)) (srcPos l) [v] $ tc_heapExps st }
+       -- return v
   where
     newVar n str = VarRef l (Id l (str ++ "_" ++ show n))
     idStr        = printf "%s__%d:%d" x (sourceLine . sp_begin $ srcPos l) (sourceLine . sp_end $ srcPos l)
@@ -516,6 +520,19 @@ unfoldSafeTC :: Type -> TCM (BHeap, Type)
 -------------------------------------------------------------------------------
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
+-------------------------------------------------------------------------------
+recordWindExpr :: SourceSpan -> WindCall -> TCM ()
+-------------------------------------------------------------------------------
+recordWindExpr l p = modify $ \s -> s {
+  tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
+  }
+
+-------------------------------------------------------------------------------
+recordUnwindExpr :: SourceSpan -> (Location, Id SourceSpan) -> TCM ()
+-------------------------------------------------------------------------------
+recordUnwindExpr l p = modify $ \s -> s {
+  tc_unwinds = M.insertWith (flip (++)) l [p] $ tc_unwinds s
+  }
 -------------------------------------------------------------------------------
 unwindTC :: Type -> TCM (BHeap, Type)
 -------------------------------------------------------------------------------
@@ -701,32 +718,36 @@ patchPgmM :: (Typeable r, Data r) => Nano AnnSSA (RType r) -> TCM (Nano AnnSSA (
 patchPgmM pgm = 
   do  c    <- tc_casts <$> get
       hc   <- tc_hcasts <$> get
-      m    <- tc_heapExps <$> get
+      m    <- tc_winds <$> get
       pgm' <- insertHeapCasts m pgm
       return $ fst $ runState (everywhereM' (mkM transform) pgm') (PS c hc)
 
 data PState = PS { m :: Casts, hm :: HCasts }
 type PM     = State PState
 
-insertHeapCasts m pgm =
+insertHeapCasts m pgm = 
   return $ fst $ runState (everywhereM' (mkM go) pgm) (HS m)
   where go :: Statement AnnSSA -> HSM (Statement AnnSSA)
         go s = do
-          let l = getAnnotation s
-          emap  <- em <$> get
-          case M.findWithDefault [] (srcPos l) emap of
-            [] -> return s
-            es -> do put $ HS { em = M.delete (srcPos l) emap }
-                     return $ BlockStmt l (s:map (ExprStmt l) es)
+          m <- em <$> get
+          let l  = getAnnotation s
+          let ws = M.findWithDefault [] (ann l) m
+          let es = map (buildWind l) ws 
+          put . HS $ M.delete (ann l) m
+          return $ if length es == 0 then s else BlockStmt l (map (ExprStmt l) es ++ [s])
+        -- 
+        windArgs a (l, (Id _ d), et, eh) = [StringLit a l, VarRef a (Id a d), et, eh]
+        buildWind a args = CallExpr a (VarRef a (Id a "@Wind")) $ windArgs a args
+                                               
 
-data HState = HS { em :: M.Map SourceSpan [Expression AnnSSA] }
+data HState = HS { em :: M.Map SourceSpan [WindCall] }
 type HSM    = State HState
 
 --------------------------------------------------------------------------------
 transform :: Expression AnnSSA -> PM (Expression AnnSSA)
 --------------------------------------------------------------------------------
 transform e = 
-  do  c  <- m <$> get      
+  do  c  <- m <$> get
       hc <- hm <$> get
       put $ PS (M.delete e c) (M.delete e hc)
       return $ patchExpr c hc e

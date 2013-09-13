@@ -378,8 +378,9 @@ getFunHeaps γ
 -- then wind it up here.
 windReturnValue (γ,σ) l σ_spec t 
   = do θ         <- getSubst
+       σ         <- safeHeapSubstM σ
        let wls    = woundLocations σ_spec
-       let tlocs  = locs t
+       let tlocs  = apply θ $ locs t
        let uwls   = map (\l -> (l, L.lookup (apply θ l) wls)) tlocs
        let uwls'  = [(l,d) | (l, Just d) <- uwls, not . isWoundTy $ heapRead l σ]
        foldM go (γ,σ) $ uwOrder σ uwls' 
@@ -545,35 +546,6 @@ tcObject (γ,σ) bs
       return (tRef l, heapAdd l t σ')
 
 ----------------------------------------------------------------------------------
--- tcUnwind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
-----------------------------------------------------------------------------------
--- tcUnwind (γ,σ) a [e] = error "foo"
---   = do -- loc         <- freshLocation
---        (t,σ')      <- tcExpr (γ,σ) e
---    --    θ           <- unifyTypeM a "Unwind" e t (tRef loc)
---   --     let l'       = apply θ $ location t
---        (σt,tc)     <- unwindTC t σ -- $ heapRead l' σ'
---        (θ',_,σt')  <- freshHeap σt
---        return (tVoid, heapCombine [heapUpd l' (apply θ' tc) σ', σt'])
--- tcUnwind _ l _
---   = tcError (ann l) "Unwind called with wrong number of arguments"
-
--- ----------------------------------------------------------------------------------
--- tcWind :: (Env Type, BHeap) -> AnnSSA -> [Expression AnnSSA] -> TCM (Type, BHeap)
--- ----------------------------------------------------------------------------------
--- tcWind (γ,σ) a (e:es)
---   = do (t,σ')      <- tcExpr (γ,σ) e
---        let l'       = location t
---        let th       = heapRead l' σ'
---        let ls       = locs th
---        let σt       = restrictHeap ls σ'
---        let σc       = foldl (flip heapDel) σ' $ heapLocs σt
---        (_, _, t')  <- windType γ a e th σt es
---        return $ (tVoid, heapUpd l' t' σc)
--- tcWind _ l _ 
---   = tcError (ann l) "Wind called with wrong number of arguments"
-
-----------------------------------------------------------------------------------
 windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM (Env Type, BHeap)
 ----------------------------------------------------------------------------------
 windLocations (γ,σ) l = getUnwound >>= foldM (windLocation l) (γ,σ) . uwOrder σ
@@ -586,13 +558,13 @@ windLocation l (γ,σ) (loc, tWind)
        let ls       = locs th
        let σt       = restrictHeap ls σ
        let σc       = foldl (flip heapDel) σ $ heapLocs σt
-       (_, _, t')  <- windType γ l tWind th σt
+       (_, _, t')  <- windType γ l loc tWind th σt
        σ           <- safeHeapSubstM (heapUpd loc t' σc)
        uw          <- getUnwound
        setUnwound $ (filter (not.(== loc).fst)) uw
        return (γ,σ)
 
-windType γ l tWind@(Id _ i) t σ 
+windType γ l loc tWind@(Id _ i) t σ 
   = do t'         <- freshApp l tWind
        (σe, t'')  <- unwindTC t'
        et         <- freshHeapVar l ("wind<" ++ i ++ ">")
@@ -601,6 +573,7 @@ windType γ l tWind@(Id _ i) t σ
        θ          <- unifyHeapsM l "Wind(heap)" (apply θ σ) (apply θ σe)
        castM et (apply θ t) (apply θ t'')
        castHeapM γ eh (apply θ σ) (apply θ σe)
+       recordWindExpr (ann l) (loc, tWind, et, eh)
        return (θ,σe,t')
 
 uwOrder :: BHeap -> [(Location, Id SourceSpan)] -> [(Location, Id SourceSpan)]

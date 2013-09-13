@@ -79,7 +79,6 @@ function unwind(x) {
 
 /*@ type list[A]  exists! l |-> list[A]. {  data : A, next : <l> + null } */
 /*@ type inflist[A]  exists! l |-> inflist[A]. {  data : A, next : <l> } */
-/*@ type foo[A] exists! l |-> foo[A]. { data : A, next : <l> + null } */
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
