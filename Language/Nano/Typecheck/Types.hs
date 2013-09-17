@@ -29,6 +29,7 @@ module Language.Nano.Typecheck.Types (
   , toType
   , ofType
   , strengthen 
+  , strengthenContainers 
 
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
@@ -39,7 +40,7 @@ module Language.Nano.Typecheck.Types (
   -- * Deconstructing Types
   , bkFun
   , bkAll
-  , bkUnion, rUnion
+  , bkUnion, rUnion, rTypeR, setRTypeR
   , noUnion, unionCheck
 
   -- * Regular Types
@@ -68,11 +69,12 @@ module Language.Nano.Typecheck.Types (
   
   -- * Annotations
   , Annot (..)
-  , Fact (..)
-  , AnnBare
-  , AnnSSA
-  , AnnType
-  , AnnInfo
+  , Fact
+  , Fact_ (..)
+  , AnnBare_ ,AnnBare
+  , AnnSSA_, AnnSSA
+  , AnnType_, AnnType
+  , AnnInfo_, AnnInfo
   , isAsm
     
   , restrictHeap  
@@ -243,9 +245,13 @@ bkUnion (TApp TUn xs _) = xs
 bkUnion t               = [t]
 
 
+-- | Strengthen the top-level refinement
+
 ---------------------------------------------------------------------------------
 strengthen                   :: F.Reftable r => RType r -> r -> RType r
 ---------------------------------------------------------------------------------
+{-strengthen t = setRTypeR t . (rTypeR t `F.meet`)-} 
+-- The above does not handle cases other than TApp and TVar correctly
 strengthen (TApp c ts r) r'  = TApp c ts $ r' `F.meet` r 
 strengthen (TVar α r)    r'  = TVar α    $ r' `F.meet` r 
 strengthen t _               = t                         
@@ -253,6 +259,22 @@ strengthen t _               = t
 -- NOTE: r' is the OLD refinement. 
 --       We want to preserve its VV binder as it "escapes", 
 --       e.g. function types. Sigh. Should have used a separate function binder.
+
+
+-- | Strengthen the refinement of a type @t2@ deeply, using the 
+-- refinements of an equivalnet (having the same raw version) 
+-- type @t1@
+-- TODO: Add checks for equivalence in union and objects
+strengthenContainers (TApp TUn ts r) (TApp TUn ts' r') =
+  TApp TUn (zipWith strengthenContainers ts ts') $ r' `F.meet` r
+strengthenContainers (TObj ts r) (TObj ts' r') = 
+  TObj (zipWith doB ts ts') $ r' `F.meet` r
+  where 
+    doB (B s t) (B s' t') | s == s' =  B s $ strengthenContainers t t'
+    doB _       _                   = errorstar "strengthenContainers: sanity check - 1"
+strengthenContainers t t' | toType t == toType t' = strengthen t' $ rTypeR t
+strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity check - 2"
+  
 
 
 ---------------------------------------------------------------------------------
@@ -287,6 +309,23 @@ rUnion               :: F.Reftable r => RType r -> r
 rUnion (TApp TUn _ r) = r
 rUnion _              = F.top
  
+-- Get the top-level refinement 
+rTypeR :: RType r -> r
+rTypeR (TApp _ _ r) = r
+rTypeR (TVar _ r)   = r
+rTypeR (TFun _ _ _ _ r) = r
+rTypeR (TObj _ r)   = r
+rTypeR (TBd  _)     = errorstar "Unimplemented: rTypeR - TBd"
+rTypeR (TAll _ _ )  = errorstar "Unimplemented: rTypeR - TAll"
+
+setRTypeR :: RType r -> r -> RType r
+setRTypeR (TApp c ts _) r'   = TApp c ts r'
+setRTypeR (TVar v _)    r'   = TVar v r'
+setRTypeR (TFun xts ot ih oh _) r' = TFun xts ot ih oh r'
+setRTypeR (TObj xts _)  r'   = TObj xts r'
+setRTypeR (TBd  _)     _     = errorstar "Unimplemented: setRTypeR - TBd"
+setRTypeR (TAll _ _ )  _     = errorstar "Unimplemented: setRTypeR - TAll"
+
 
 ---------------------------------------------------------------------------------------
 noUnion :: (F.Reftable r) => RType r -> Bool
@@ -342,9 +381,13 @@ data Nano a t = Nano { code   :: !(Source a)        -- ^ Code to check
                      , invts  :: ![Located t]       -- ^ Type Invariants
                      } deriving (Functor, Data, Typeable)
 
-type NanoBare    = Nano AnnBare Type 
-type NanoSSA     = Nano AnnSSA  Type 
-type NanoType    = Nano AnnType Type 
+type NanoBareR r   = Nano (AnnBare_ r) (RType r)
+type NanoSSAR r    = Nano (AnnSSA_  r) (RType r)
+type NanoTypeR r   = Nano (AnnType_ r) (RType r)
+
+type NanoBare   = NanoBareR ()
+type NanoSSA    = NanoSSAR ()
+type NanoType   = NanoTypeR ()
 
 {-@ measure isFunctionStatement :: (Statement SourceSpan) -> Prop 
     isFunctionStatement (FunctionStmt {}) = true
@@ -355,7 +398,8 @@ type NanoType    = Nano AnnType Type
 type FunctionStatement a = Statement a 
 
 {-@ newtype Source a = Src [FunctionStatement a] @-}
-newtype Source a = Src [FunctionStatement a]
+-- newtype Source a = Src [FunctionStatement a]
+newtype Source a = Src [Statement a]
   deriving (Data, Typeable)
 
 instance Functor Source where 
@@ -375,12 +419,12 @@ instance PP t => PP (Nano a t) where
     $+$ pp (tDefs  pgm)
     $+$ text "********************** QUALS *********************"
     $+$ F.toFix (quals  pgm) 
-    $+$ text "********************** QUALS *********************"
+    $+$ text "********************** INVARIANTS ****************"
     $+$ pp (invts pgm) 
     $+$ text "**************************************************"
     
 instance Monoid (Nano a t) where 
-  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty [] []
+  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty [] [] 
   mappend p1 p2 = Nano ss e e' cs tds qs is 
     where 
       ss        = Src $ s1 ++ s2
@@ -483,26 +527,33 @@ ppTC TUndef           = text "Undefined"
 --   Ideally, we'd have "room" for these inside the @Statement@ and
 --   @Expression@ type, but are tucking them in using the @a@ parameter.
 
-data Fact 
+data Fact_  r
   = PhiVar  !(Id SourceSpan) 
-  | TypInst ![Type]
-  | Assume  ! Type
-  | AssumeH ! BHeap
+  | TypInst ![RType r]
+  | Assume  !(RType r)
+  | AssumeH !(RHeap r)
   | Unwind  !Location
   | Wind    !(Location, Id SourceSpan, Id SourceSpan, Id SourceSpan)
     deriving (Eq, Ord, Show, Data, Typeable)
 
+type Fact = Fact_ ()
+
 data Annot b a = Ann { ann :: a, ann_fact :: [b] } deriving (Show, Data, Typeable)
-type AnnBare   = Annot Fact SourceSpan -- NO facts
-type AnnSSA    = Annot Fact SourceSpan -- Only Phi + Assume     facts
-type AnnType   = Annot Fact SourceSpan -- Only Phi + Typ        facts
-type AnnInfo   = M.HashMap SourceSpan [Fact] 
+type AnnBare_ r  = Annot (Fact_ r) SourceSpan -- NO facts
+type AnnSSA_  r  = Annot (Fact_ r) SourceSpan -- Only Phi + Assume     facts
+type AnnType_ r  = Annot (Fact_ r) SourceSpan -- Only Phi + Typ        facts
+type AnnInfo_ r  = M.HashMap SourceSpan [Fact_ r] 
+
+type AnnBare = AnnBare_ () 
+type AnnSSA  = AnnSSA_  ()
+type AnnType = AnnType_ ()
+type AnnInfo = AnnInfo_ ()
 
 
 instance HasAnnotation (Annot b) where 
   getAnnotation = ann 
 
-instance Ord AnnSSA where 
+instance Ord (AnnSSA_  r) where 
   compare (Ann s1 _) (Ann s2 _) = compare s1 s2
 
 instance Eq (Annot a SourceSpan) where 
@@ -517,7 +568,13 @@ instance PP Fact where
   pp (Assume t)   = text "assume" <+> pp t
   pp (AssumeH h)  = text "assume heap" <+> pp h
 
-instance PP AnnInfo where
+instance (F.Reftable r, PP r) => PP (Fact_ r) where
+  pp (PhiVar x)   = text "phi"  <+> pp x
+  pp (TypInst ts) = text "inst" <+> pp ts 
+  pp (Assume t)   = text "assume" <+> pp t
+  pp (AssumeH h)  = text "assume heap" <+> pp h
+
+instance (F.Reftable r, PP r) => PP (AnnInfo_ r) where
   pp             = vcat . (ppB <$>) . M.toList 
     where 
       ppB (x, t) = pp x <+> dcolon <+> pp t

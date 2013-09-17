@@ -16,7 +16,9 @@ module Language.Nano.Typecheck.Compare (
   -- * Type comparison/joining/subtyping
     Equivalent, equiv
   , compareTs
-  , unionParts, unionPartsWithEq, bkPaddedUnion
+  , alignTs
+  , unionParts, unionPartsWithEq
+  , bkPaddedUnion, bkPaddedObject
   , isSubType
   , eqType
   , (&*&), (&+&)
@@ -24,8 +26,9 @@ module Language.Nano.Typecheck.Compare (
   
   -- * Casting
   , Cast(..)
-  , Casts
-  , HCasts
+  , Casts,  Casts_
+  , HCasts, HCasts_
+  , zipType1, zipType2
 
   , SubDirection (..)
 
@@ -44,6 +47,7 @@ import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
+import           Language.Nano.Liquid.Types
 
 import qualified Language.Fixpoint.Types            as F
 import           Language.Fixpoint.Misc
@@ -67,6 +71,9 @@ instance Equivalent e a => Equivalent e [a] where
   equiv γ a b = and $ zipWith (equiv γ) a b 
 
 instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where 
+
+  equiv _ t t'  | toType t == toType t'               = True
+  
   equiv _ t t'  | any isUnion [t,t']                  = errorstar (printf "equiv: no unions: %s\n\t\t%s" (ppshow t) (ppshow t'))
   -- No unions beyond this point!
   
@@ -112,8 +119,10 @@ instance Equivalent e (Id a) where
 -- Casts ------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------
 
-type Casts   = M.Map (Expression AnnSSA) (Cast Type)
-type HCasts  = M.Map (Expression AnnSSA) (Cast BHeap)
+type Casts     = M.Map (Expression (AnnSSA_ F.Reft)) (Cast RefType)
+type Casts_ r  = M.Map (Expression (AnnSSA_ r)) (Cast (RType r))
+type HCasts    = M.Map (Expression (AnnSSA_ F.Reft)) (Cast (RHeap F.Reft))
+type HCasts_ r = M.Map (Expression (AnnSSA_ r)) (Cast (RHeap r))
 
 data Cast t  = UCST t
              | DCST t
@@ -204,14 +213,16 @@ mconcatP xs = getProduct $ mconcat (Product <$> xs)
 ---------------------------------------------------------------------------------
 isSubType :: (F.Reftable r, Ord r, PP r) => Env (RType r) -> RType r -> RType r -> Bool
 isSubType γ t1 t2 = (fth4 $ compareTs γ t1 t2) `elem` [EqT, SubT]
-{-isSubType γ t1 t2 = (fth4 $ compareTs γ -}
-{-                              (tracePP (printf "Comparing: %s - %s" (ppshow t1) (ppshow t2)) t1) -}
-{-                              t2) -}
-{-                    `elem` [EqT, SubT]-}
 
 
 eqType :: (F.Reftable r, Ord r, PP r) => Env (RType r) -> RType r -> RType r -> Bool
 eqType γ t1 t2 = (fth4 $ compareTs γ t1 t2) == EqT
+
+
+
+-- | `alignTs`
+alignTs γ t1 t2 = (t1', t2')
+  where (_,t1', t2', _) = compareTs γ t1 t2
 
 
 -- | `compareTs`
@@ -219,7 +230,7 @@ eqType γ t1 t2 = (fth4 $ compareTs γ t1 t2) == EqT
 -- General purpose function that returns:
 --
 -- ∙ A padded version of the upper bound of @t1@ and @t2@
--- ∙ An equivalent version of @t1@ that has the same sort as the first output
+-- ∙ An equivalent version of @t1@ that has the same sort as the second output
 -- ∙ An equivalent version of @t2@ that has the same sort as the first output
 -- ∙ A subtyping direction between @t1@ and @t2@
 --
@@ -231,30 +242,35 @@ compareTs :: (F.Reftable r, Ord r, PP r) => Env (RType r) -> RType r -> RType r 
 -- Deal with some standard cases of subtyping, e.g.: Top, Null, Undefined ...
 compareTs _ t1 t2 | toType t1 == toType t2 = (ofType $ toType t1, t1, t2, EqT)
 
-compareTs γ t1 t2 | all isTop [t1,t2]      = setFth4 (compareTs' γ t1 t2) EqT
-compareTs γ t1 t2 | isTop t1               = setFth4 (compareTs' γ t1 t2) SupT
-compareTs γ t1 t2 | isTop t2               = setFth4 (compareTs' γ t1 t2) SubT
+-- compareTs γ t1 t2 | isUndefined t1         = setFth4 (compareTs' γ t1 t2) SubT
 
-compareTs γ t1 t2 | isUndefined t1         = setFth4 (compareTs' γ t1 t2) SubT
+-- XXX: Null is not considered a subtype of all types. If null is to be 
+-- expected this should be explicitly specified by using " + null"
+-- compareTs γ t1 t2 | and [isNull t1, not $ isUndefined t2] = setFth4 (compareTs' γ t1 t2) SubT
 
-compareTs γ t1 t2 | and [isNull t1, not $ isUndefined t2] = setFth4 (compareTs' γ t1 t2) SubT
-
-compareTs γ t1 t2 | otherwise              = 
-   {-tracePP (printf "compareTs %s - %s" (ppshow t1) (ppshow t2)) $  -}
-  compareTs' γ t1 t2
+compareTs γ t1 t2 | otherwise              = compareTs' γ t1 t2
+  {-where msg = printf "About to compareTs %s and %s" (ppshow $ toType t1) (ppshow $ toType t2)-}
 
 
 -- | Top-level Unions
 
+compareTs' _ t1 _  | isTop t1               = errorstar "unimplemented: compareTs - top"
+compareTs' _ t1 t2 | isTop t2               = (t1', t1, t2', SubT)
+  where
+    t1' = setRTypeR t1 F.top -- this will be kVared
+    -- @t2@ is a Top, so just to make the types compatible we will 
+    -- use the base type of @t1@ and stregthen with @t2@'s refinement.
+    t2' = setRTypeR t1 $ rTypeR t2
+  
+
 -- Eliminate top-level unions
-compareTs' γ t1 t2 | any isUnion [t1,t2]     =  {- tracePP "padUnion " $ -} padUnion γ 
-  ({- tracePP ("padding union " ++ ppshow t1 ++ "\n - " ++ ppshow t2) -}t1)  t2
+compareTs' γ t1 t2 | any isUnion [t1,t2]     = padUnion γ t1  t2
 
 -- | Top-level Objects
 
 compareTs' γ t1@(TObj _ _) t2@(TObj _ _)     = 
   {-tracePP (printf "Padding: %s and %s" (ppshow t1) (ppshow t2)) $ -}
-  padObject γ ({-trace ("padding obj " ++ ppshow t1 ++ "\n - " ++ ppshow t2)-} t1) t2
+  padObject γ ( {- trace ("padding obj " ++ ppshow t1 ++ "\n - " ++ ppshow t2) -} t1) t2
 
 -- | Type definitions
 
@@ -341,23 +357,25 @@ padUnion ::  (Eq r, Ord r, F.Reftable r, PP r) =>
                 SubDirection)   -- Subtyping relation between LHS and RHS
 --------------------------------------------------------------------------------
 padUnion env t1 t2 = 
-  (joinType, mkUnionR topR1 $ t1s, mkUnionR topR2 $ t2s, direction)
+  (joinType, mkUnionR topR1 $ t1s, 
+             mkUnionR topR2 $ t2s, direction)
   where
     -- Extract top-level refinements
-    topR1       = rUnion t1 
+    topR1       = rUnion t1
     topR2       = rUnion t2
     -- No reason to add the kVars here. They will be added in the CGMonad
     joinType   = mkUnion $ ((ofType . toType) <$> ((fst4 <$> commonTs) ++ d1s ++ d2s))
     (t1s, t2s) = unzip $ safeZip "unionParts" t1s' t2s'
 
     -- It is crucial to sort the types so that they are aligned
-    t1s'       = L.sort $ commonT1s ++ d1s ++ (fmap F.bot <$> d2s)    
+    t1s'       = L.sort $ commonT1s ++ d1s ++ (fmap F.bot <$> d2s)
     t2s'       = L.sort $ commonT2s ++ d2s ++ (fmap F.bot <$> d1s)
 
     commonT1s  = snd4 <$> commonTs
     commonT2s  = thd4 <$> commonTs
 
-    commonTs = -- tracePP "padUnion: compaTs on common parts" $
+    commonTs = 
+      {-tracePP "padUnion: compaTs on common parts" $ -}
       map (uncurry $ compareTs env) $ cmnPs
 
     -- To figure out the direction of the subtyping, we must take into account:
@@ -372,18 +390,20 @@ padUnion env t1 t2 =
     --   of the parts and join the subtyping relations)
     comSub     = mconcatS $ fth4 <$> commonTs
     
-    (cmnPs, d1s, d2s) = {- tracePP "padUnion: unionParts" $ -} unionParts env t1 t2
+    (cmnPs, d1s, d2s) =  {- tracePP "padUnion: unionParts" $ -} unionParts env t1 t2
 
 
 --------------------------------------------------------------------------------
 bkPaddedUnion :: (Eq r, Ord r, F.Reftable r, PP r) => 
-  Env (RType r) -> RType r -> RType r -> [(RType r, RType r)]
+  String -> Env (RType r) -> RType r -> RType r -> [(RType r, RType r)]
 --------------------------------------------------------------------------------
-bkPaddedUnion γ t1 t2 =
+bkPaddedUnion msg γ t1 t2 =
   zipWith check (bkUnion t1) (bkUnion t2)
   where
-    check t t' | equiv γ t t' = (t,t')
-               | otherwise    = errorstar "bkPaddedUnion"
+    check t t' 
+      | equiv γ t t' = (t,t')
+      | otherwise    = errorstar $ printf "bkPaddedUnion[%s]\n\t%s\nand\n\t%s" 
+                                     msg (ppshow t1) (ppshow t2) 
 
 
 
@@ -414,7 +434,7 @@ unionPartsWithEq ::  (Eq r, Ord r, F.Reftable r, PP r) =>
           -> RType r 
           -> ([(RType r, RType r)], [RType r], [RType r])
 --------------------------------------------------------------------------------
-unionPartsWithEq eq t1 t2 = (common t1s t2s, d1s, d2s)
+unionPartsWithEq equal t1 t2 = (common t1s t2s, d1s, d2s)
   where
     -- `common` does a "light" matching - which is determined by `equiv`. 
     -- Right now the only difference is in objects: 
@@ -425,18 +445,18 @@ unionPartsWithEq eq t1 t2 = (common t1s t2s, d1s, d2s)
     -- Also `common` returns aligned types - so no need to re-align them.
     (t1s, t2s) = sanityCheck $ mapPair bkUnion (t1, t2)
 
-    (d1s, d2s)  = distinct t1s t2s
+    (d1s, d2s) = distinct t1s t2s
 
     -- Compare the types based on the Equivalence relation and pair them up into
     -- Type structures that are common in both sides, and ...
     common xs ys | any null [xs,ys] = []
-    common xs ys | otherwise        = [(x,y) | x <- xs, y <- ys, x `eq` y ]
+    common xs ys | otherwise        = [(x,y) | x <- xs, y <- ys, x `equal` y ]
 
     -- ... type structures that are distinct in the two sides
     distinct xs [] = ([], xs)
     distinct [] ys = (ys, [])
-    distinct xs ys = ([x | x <- xs, not $ any (x `eq`) ys ],
-                      [y | y <- ys, not $ any (y `eq`) xs ])
+    distinct xs ys = ([x | x <- xs, not $ any (x `equal`) ys ],
+                      [y | y <- ys, not $ any (y `equal`) xs ])
 
     sanityCheck ([ ],[ ]) = errorstar "unionParts, called on too small input"
     sanityCheck ([_],[ ]) = errorstar "unionParts, called on too small input"
@@ -463,7 +483,7 @@ padObject γ (TObj bs1 r1) (TObj bs2 r2) =
   where
     -- Total direction
     direction = cmnDir &*& distDir d1s d2s
-    -- Direction from all the common keys  
+    -- Direction from all the common keys
     cmnDir    = mconcatP $ (\(_,(t,t')) -> fth4 $ compareTs γ t t') <$> cmn
     -- Direction from distinct keys
     distDir xs ys | null (xs ++ ys) = EqT
@@ -471,7 +491,7 @@ padObject γ (TObj bs1 r1) (TObj bs2 r2) =
                   | null ys         = SubT
                   | otherwise       = Nth
 
-    jbs' = (\(s,(t,t')) -> B s $ fst4 $ compareTs γ t t') <$> cmn ++ d1s ++ d2s 
+    jbs' = (\(s,(t,t')) -> B s $ fst4 $ compareTs γ t t') <$> cmn ++ d1s ++ d2s
     -- Bindings for 1st object
     b1s' = (\(s,(t,t')) -> B s $ snd4 $ compareTs γ t t') <$> cmn ++ d1s ++ d2s 
     -- Bindings for 2nd object
@@ -491,6 +511,20 @@ padObject γ (TObj bs1 r1) (TObj bs2 r2) =
 
 padObject _ _ _ = error "padObject: Cannot pad non-objects"
 
+
+-- | Break one level of padded objects
+
+--------------------------------------------------------------------------------
+bkPaddedObject :: (F.Reftable r, PP r) => RType r -> RType r -> [(RType r, RType r)]
+--------------------------------------------------------------------------------
+bkPaddedObject t1@(TObj xt1s _) t2@(TObj xt2s _) =
+  safeZipWith (printf "bkPaddedObject: %s vs %s" (ppshow t1) (ppshow t2)) checkB xt1s xt2s
+  where 
+    checkB b b' | b_sym b == b_sym b' = (b_type b, b_type b')
+    checkB _ _                        = 
+      errorstar "unimplemented: bkPaddedObject: cannot split these objects"
+bkPaddedObject _ _                    = 
+  errorstar "bkPaddedObject: can only break objects"
 
 
 -- | `padFun`
@@ -518,4 +552,70 @@ instance (PP a, PP b, PP c) => PP (a,b,c) where
 
 instance (PP a, PP b, PP c, PP d) => PP (a,b,c,d) where
   pp (a,b,c,d) = pp a <+>  pp b <+> pp c <+> pp d
+
+
+
+-- `zipType1` matches structurally equivalent parts of types @t1@ and @t2@:
+-- ∙ Keeping the the structure of @t1@
+-- ∙ Applying f on the respective refinements 
+-- ∙ f is commutative
+-- 
+-- E.g. zipType1 (number + { booliean | p } ) { number | v > 0 } meet = 
+--        { number | v > 0 } + { boolean | p } 
+
+zipType1 γ f t1 t2 = zipType2 γ f t2 t1
+ 
+
+
+-- This function @t2@ with the refinements from @t1@ by matching equivalent 
+-- parts of the two types.
+--------------------------------------------------------------------------------
+zipType2 :: (PP r, F.Reftable r) => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
+--------------------------------------------------------------------------------
+zipType2 γ f (TApp TUn ts r) (TApp TUn ts' r')  = 
+  TApp TUn (zipTypes γ f ts <$> ts') $ f r r'
+
+zipType2 γ f (TApp TUn ts _) t =  
+  zipTypes γ f ts t
+
+zipType2 γ f t (TApp TUn ts' r') =  
+  TApp TUn (zipTypes γ f [t] <$> ts') r'        -- The top-level refinement for t' should remain
+
+zipType2 γ f (TApp d@(TDef _) ts r) (TApp d'@(TDef _) ts' r') | d == d' =
+  TApp d' (zipWith (zipType2 γ f) ts ts') $ f r r'
+
+zipType2 γ f t@(TApp (TDef _) _ _) t' =
+  zipType2 γ f (snd $ unfoldSafe γ t) t'
+
+zipType2 γ f t t'@(TApp (TDef _) _ _) =
+  zipType2 γ f (snd $ unfoldSafe γ t) t'
+
+zipType2 _ f (TApp c [] r) (TApp c' [] r')    | c == c' = 
+  TApp c [] $ f r r'
+
+zipType2 _ f (TVar v r) (TVar v' r') | v == v' = TVar v $ f r r'
+
+zipType2 γ f (TFun xts t ih oh r) (TFun xts' t' ih' oh' r') = 
+  TFun (safeZipWith "zipType2:TFun" (zipBind2 γ f) xts xts') (zipType2 γ f t t') zih zoh $ f r r'
+  where zipHeaps h1 h2 = heapCombineWith (zipType2 γ f) [h1,h2]
+        zih            = zipHeaps ih ih'
+        zoh            = zipHeaps oh oh'
+
+zipType2 γ f (TObj bs r) (TObj bs' r') = TObj mbs $ f r r'
+  where
+    mbs = safeZipWith "zipType2:TObj" (zipBind2 γ f) (L.sortBy compB bs) (L.sortBy compB bs')
+    compB (B s _) (B s' _) = compare s s'
+
+zipType2 _ _ t t' = 
+  errorstar $ printf "BUG[zipType2]: mis-aligned types:\n%s\nwith\n%s" (ppshow t) (ppshow t')
+
+zipTypes γ f ts t = 
+  case filter (equiv γ t) ts of
+    [  ] -> t
+    [t'] -> zipType2 γ f t' t
+    _    -> errorstar "BUG[zipType]: mulitple equivalent types" 
+  
+
+zipBind2 γ f (B s t) (B s' t') | s == s' = B s $ zipType2 γ f t t' 
+zipBind2 _ _ _       _                   = errorstar "BUG[zipBind2]: mis-matching binders"
 

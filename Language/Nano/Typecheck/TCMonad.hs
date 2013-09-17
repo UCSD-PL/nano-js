@@ -1,7 +1,12 @@
-{- LANGUAGE TypeSynonymInstances      #-}
-{- LANGUAGE FlexibleInstances         #-}
-{- LANGUAGE NoMonomorphismRestriction #-}
-{- LANGUAGE ScopedTypeVariables       #-}
+{- LANGUAGE TypeSynonymInstances       #-}
+{- LANGUAGE FlexibleInstances          #-}
+{- LANGUAGE NoMonomorphismRestriction  #-}
+{- LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ImpredicativeTypes        #-}
+{-# LANGUAGE LiberalTypeSynonyms       #-}
+{-# LANGUAGE FlexibleContexts          #-}
 
 -- | This module has the code for the Type-Checker Monad. 
 
@@ -21,14 +26,15 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Freshness
   , freshTyArgs
   , freshLocation
+  , freshTVar
   , freshSubst
   , freshHeap
   , freshHeapVar
   , tick
 
   -- * Dot Access
-  , dotAccess
-  , dotAccessRef
+  -- , dotAccessRef
+  , safeDotAccess
 
   -- * Type definitions
   , getTDefs
@@ -53,6 +59,7 @@ module Language.Nano.Typecheck.TCMonad (
   , recordUnwindExpr
   , getUnwound
   , setUnwound
+  , addUnwound
   , withUnwound
   , pushUnwound
 
@@ -84,6 +91,7 @@ module Language.Nano.Typecheck.TCMonad (
   )  where 
 
 import           Text.Printf
+import           Language.ECMAScript3.PrettyPrint
 import           Control.Applicative            ((<$>))
 import           Control.Monad.State
 import           Control.Monad.Error
@@ -92,6 +100,7 @@ import qualified Language.Fixpoint.Types as F
 
 import           Language.Nano.Env
 import           Language.Nano.Misc             (unique, everywhereM', zipWith3M_)
+
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
@@ -105,6 +114,7 @@ import qualified Data.Map                       as M
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
 import           Data.List                      (find, partition, nub, sort, unzip4)
+import           Data.Traversable               (traverse)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
 import           Language.ECMAScript3.Parser    (SourceSpan (..))
@@ -114,50 +124,49 @@ import           Language.ECMAScript3.Syntax.Annotations
 
 import           Text.Parsec.Pos
 
--- import           Debug.Trace                      (trace)
+import           Debug.Trace                      (trace)
 import qualified System.Console.CmdArgs.Verbosity as V
 
 -------------------------------------------------------------------------------
 -- | Typechecking monad -------------------------------------------------------
 -------------------------------------------------------------------------------
 
-data TCState = TCS { 
+data TCState r = TCS {
                    -- Errors
                      tc_errss    :: ![(SourceSpan, String)]
-                   , tc_subst    :: !Subst
+                   , tc_subst    :: !(RSubst r)
                    , tc_cnt      :: !Int
                    -- Annotations
-                   , tc_anns     :: AnnInfo
-                   , tc_annss    :: [AnnInfo]
+                   , tc_anns     :: AnnInfo_ r
+                   , tc_annss    :: [AnnInfo_ r]
                    -- Heap bookkeeping
                    , tc_unwound  :: [(Location, Id SourceSpan)] 
-                   , tc_winds    :: M.Map SourceSpan [WindCall]
+                   , tc_winds    :: M.Map SourceSpan [WindCall r]
                    , tc_unwinds  :: M.Map SourceSpan [(Location, Id SourceSpan)]
                    -- Cast map: 
-                   , tc_casts    :: M.Map (Expression AnnSSA) (Cast Type)
-                   , tc_hcasts   :: M.Map (Expression AnnSSA) (Cast (Heap Type))
+                   , tc_casts    :: M.Map (Expression (AnnSSA_ r)) (Cast (RType r))
+                   , tc_hcasts   :: M.Map (Expression (AnnSSA_ r)) (Cast (RHeap r))
                    -- Function definitions
-                   , tc_defs     :: !(Env Type) 
+                   , tc_defs     :: !(Env (RType r))
                    , tc_fun      :: !(Maybe F.Symbol)
                    -- Type definitions
-                   , tc_tdefs    :: !(Env Type)
+                   , tc_tdefs    :: !(Env (RType r))
                    -- The currently typed expression 
-                   , tc_expr     :: Maybe (Expression AnnSSA)
-
+                   , tc_expr     :: Maybe (Expression (AnnSSA_ r))
                    -- Verbosiry
                    , tc_verb  :: V.Verbosity
                    }
 
-type TCM     = ErrorT String (State TCState)
-type WindCall = (Location, Id SourceSpan, Expression AnnSSA, Expression AnnSSA)
+type TCM r    = ErrorT String (State (TCState r))
+type WindCall r = (Location, Id SourceSpan, Expression (AnnSSA_ r), Expression (AnnSSA_ r))
 
 -------------------------------------------------------------------------------
-whenLoud :: TCM () -> TCM ()
+whenLoud :: TCM r () -> TCM r ()
 -------------------------------------------------------------------------------
 whenLoud  act = whenLoud' act $ return ()
 
 -------------------------------------------------------------------------------
-whenLoud' :: TCM a -> TCM a -> TCM a
+whenLoud' :: TCM r a -> TCM r a -> TCM r a
 -------------------------------------------------------------------------------
 whenLoud' loud other = do  v <- tc_verb <$> get
                            case v of
@@ -165,12 +174,12 @@ whenLoud' loud other = do  v <- tc_verb <$> get
                              _      -> other
 
 -------------------------------------------------------------------------------
-whenQuiet :: TCM () -> TCM ()
+whenQuiet :: TCM r () -> TCM r ()
 -------------------------------------------------------------------------------
 whenQuiet  act = whenQuiet' act $ return ()
 
 -------------------------------------------------------------------------------
-whenQuiet' :: TCM a -> TCM a -> TCM a
+whenQuiet' :: TCM r a -> TCM r a -> TCM r a
 -------------------------------------------------------------------------------
 whenQuiet' quiet other = do  v <- tc_verb <$> get
                              case v of
@@ -178,16 +187,15 @@ whenQuiet' quiet other = do  v <- tc_verb <$> get
                                _       -> other
 
 -------------------------------------------------------------------------------
-getTDefs :: TCM (Env Type)
+getTDefs :: TCM r (Env (RType r))
 -------------------------------------------------------------------------------
 getTDefs = tc_tdefs <$> get 
 
 -------------------------------------------------------------------------------
-getSubst :: TCM Subst
+getSubst :: TCM r (RSubst r)
 -------------------------------------------------------------------------------
 getSubst = tc_subst <$> get 
 
--- getCasts :: TCM (M.Map (Expression AnnSSA) Type)
 getCasts = getCastsF tc_casts
 
 getHCasts = getCastsF tc_hcasts
@@ -196,23 +204,23 @@ getCastsF f = do c <- f <$> get
                  return $ M.toList c
 
 -------------------------------------------------------------------------------
-setSubst   :: Subst -> TCM () 
+setSubst   :: (PP r, F.Reftable r) => RSubst r -> TCM r () 
 -------------------------------------------------------------------------------
 setSubst θ = modify $ \st -> st { tc_subst = θ }
 
 
 -------------------------------------------------------------------------------
-getFun     :: TCM (Maybe F.Symbol)
+getFun     :: TCM r (Maybe F.Symbol)
 -------------------------------------------------------------------------------
 getFun   = tc_fun <$> get
 
 -------------------------------------------------------------------------------
-setFun     :: F.Symbol -> TCM ()
+setFun     :: F.Symbol -> TCM r ()
 -------------------------------------------------------------------------------
 setFun f = modify $ \st -> st { tc_fun = Just f }
 
 -------------------------------------------------------------------------------
-extSubst :: [TVar] -> TCM ()
+extSubst :: (F.Reftable r, PP r) => [TVar] -> TCM r ()
 -------------------------------------------------------------------------------
 extSubst βs = getSubst >>= setSubst . (`mappend` θ')
   where 
@@ -220,24 +228,24 @@ extSubst βs = getSubst >>= setSubst . (`mappend` θ')
 
 
 -------------------------------------------------------------------------------
-tcError :: (IsLocated l) => l -> String -> TCM a
+tcError :: (IsLocated l) => l -> String -> TCM r a
 -------------------------------------------------------------------------------
 tcError l msg = throwError $ printf "TC-ERROR at %s : %s" (ppshow $ srcPos l) msg
 
 
 -------------------------------------------------------------------------------
-logError   :: SourceSpan -> String -> a -> TCM a
+logError   :: SourceSpan -> String -> a -> TCM r a
 -------------------------------------------------------------------------------
 logError l msg x = (modify $ \st -> st { tc_errss = (l,msg):(tc_errss st)}) >> return x
 
 
 -------------------------------------------------------------------------------
-freshTyArgs :: SourceSpan -> ([TVar], Type) -> TCM Type 
+freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r (RType r)
 -------------------------------------------------------------------------------
 freshTyArgs l (αs, t) 
   = (`apply` t) <$> freshSubst l αs
 
-freshSubst :: SourceSpan -> [TVar] -> TCM Subst
+freshSubst :: (PP r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
 freshSubst l αs
   = do
       fUnique αs
@@ -250,7 +258,7 @@ freshSubst l αs
 
 setTyArgs l βs 
   = do m <- tc_anns <$> get 
-  --      when (HM.member l m) $ tcError l "Multiple Type Args"
+       -- when (HM.member l m) $ tcError l "Multiple Type Args"
        addAnn l $ TypInst (tVar <$> βs)
 
 
@@ -258,100 +266,88 @@ setTyArgs l βs
 -- | Field access -------------------------------------------------------------
 -------------------------------------------------------------------------------
 
--- Returns a result type, a list of locations that have been unwound, 
--- and possibly a (fresh) heap that might have been unwound     
 -------------------------------------------------------------------------------
-dotAccessRef :: BHeap -> Id AnnSSA -> Type -> TCM (Maybe (Type, Type, [(Location,Type)], BHeap))
+safeDotAccess :: (Ord r, PP r, F.Reftable r, 
+                  Substitutable r (Fact_ r), Free (Fact_ r), 
+                  F.Symbolic s, PP s) =>
+  RHeap r -> s -> RType r -> TCM r [(Location, ObjectAccess r)]
 -------------------------------------------------------------------------------
-dotAccessRef _ _ (TApp TNull _ _) = return Nothing
+safeDotAccess σ f t@(TApp TUn ts _)  = 
+  do as         <- mapM (safeDotAccess σ f) ts
+     let tsas    = [ (t, l, a) | (t, (l,a)) <- zip ts (concat as) ]
+     let (ts',ls,as) = unzip3 tsas
+     e          <- fromJust <$> getExpr
+     e'         <- freshHeapVar (getAnnotation e) (printf "ptr(%s)__" (ppshow e))
+     castM e' t (mkUnion ts')
+     return $ zip ls as
+--      case lts of
+--        [] -> error "safeDotAccess: unsafe" 
+--        _  -> 
+-- safeDotAccess _ _ (TApp TNull _ _) = error "safeDotAccess: null"
 
-dotAccessRef σ f ref@(TApp (TRef l) _ _) = do 
-  r <- dotAccess f (heapRead l σ)
-  case r of 
-    Just (t, Just tuw,  Just σ') -> do
-         -- If something was unwound, the type
-         -- at l must have been an application
-         addUnwound (l, defAtLoc σ l)
-         return $ Just (ref, t, [(l, tuw)], σ')
-    Just (t, Nothing,  Nothing) -> return $ Just (ref, t, [], heapEmpty)
-    _                           -> return Nothing
-
-dotAccessRef σ f (TApp TUn ts _)     = do 
-  e   <- fromJust <$> getExpr
-  tfs <- mapM (dotAccessRef σ f) ts
-  let (ts', tfs') = unzip [(t,tf) | (t, Just tf) <- zip ts tfs]
-  castM e (mkUnion ts) (mkUnion ts')
-  case tfs' of
-    [] -> return Nothing
-    ps -> let (refs, rs, uwts, σs) = unzip4 ps 
-          in return $ Just (mkUnion refs, mkUnion rs, concat uwts, heapCombine σs)
-
-dotAccessRef _ _ t  = error $ "Can not dereference " ++ (ppshow t)
-
-defAtLoc σ l = go $ heapRead l σ                      
-  where go (TApp (TDef i) _ _) = i
-        go t                   = error $ "BUG: Somehow unwound " ++ (ppshow t)
-
+safeDotAccess σ f t 
+  = do ma <- safeDotAccess' σ f t
+       case ma of
+         Nothing     -> return []
+         Just (l,a)  -> case ac_unfold a of
+                          Just (i, _) -> addUnwound (l, i) >> return [(l, a)]
+                          _           -> return  [(l, a)] 
 -------------------------------------------------------------------------------
-dotAccess :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
+safeDotAccess' :: (Ord r, PP r, F.Reftable r, 
+                  Substitutable r (Fact_ r), Free (Fact_ r), 
+                  F.Symbolic s, PP s) =>
+  RHeap r -> s -> RType r -> TCM r (Maybe (Location, ObjectAccess r))
 -------------------------------------------------------------------------------
-dotAccess f   t@(TObj bs _) = 
-  return $ Just (maybe tUndef b_type $ find (match $ F.symbol f) bs, Nothing, Nothing)
-  where match s (B f _)  = s == f
+safeDotAccess' σ f (TApp (TRef l) _ _)
+  = do γ       <- getTDefs
+       e       <- fromJust <$> getExpr
+       e'      <- freshHeapVar (getAnnotation e) (printf "%s__" (ppshow e))
+       -- Get a list of all the possible types at locatioin "l"
+       -- including unfolded types and heaps, then freshen each
+       -- and join
+       case dotAccess γ f (heapRead l σ) of
+         Nothing -> return Nothing -- error "safeDotAccess: unsafe"
+         Just as -> do a <- joinAccess <$> traverse freshen as
+                       castM e' (heapRead l σ) (ac_cast a)
+                       return $ Just (l, a) 
+  where
+    safeUnfoldTy [(i,t)] = (i,t)
+    safeUnfoldTy _       = error $ "TBD: handle fancy unions"
+    joinAccess as = Access { ac_result = mkUnion $ ac_result <$> as
+                           , ac_cast   = mkUnion $ ac_cast   <$> as
+                           , ac_unfold = safeUnfoldTy <$> traverse ac_unfold as
+                           , ac_heap   = heapCombine  <$> traverse ac_heap as
+                           }
+    freshen a = case ac_heap a of
+                  Nothing -> return a
+                  Just σ  -> do (θ,_,σ') <- freshHeap σ
+                                return $ a { ac_result = apply θ  $  ac_result a
+                                           , ac_cast   = apply θ  $ ac_cast a
+                                           , ac_heap   = Just σ'
+                                           , ac_unfold = fmap (apply θ) <$> ac_unfold a
+                                           }
 
-dotAccess f t@(TApp c ts _ ) = go c
-  where  go TUn      = dotAccessUnion f ts
-         go TInt     = return $ Just (tUndef, Nothing, Nothing)
-         go TBool    = return $ Just (tUndef, Nothing, Nothing)
-         go TString  = return $ Just (tUndef, Nothing, Nothing)
-         go TUndef   = return   Nothing
-         go TNull    = return   Nothing
-         go (TDef _) = dotAccessDef f t
-         go TTop     = error "dotAccess top"
-         go TVoid    = error "dotAccess void"
-         go (TRef _)  = error "dotAccess ref"
+safeDotAccess' σ f _ = return Nothing
+    
 
-dotAccess _   t@(TFun _ _ _ _ _ ) = return $ Just (tUndef, Nothing, Nothing)
-dotAccess _ t               = error $ "dotAccess " ++ (ppshow t) 
-
-dotAccessDef :: Id AnnSSA -> Type -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
-dotAccessDef f t = do 
-  (σ,t')    <- unwindTC t
-  (θ',_,σ') <- freshHeap σ
-  da        <- dotAccess f $ apply θ' t'
-  case da of
-    Just (t,  Nothing, Nothing)  -> return $ Just (apply θ' t, Just $ apply θ' t', Just σ')
-    -- Do the next two even make sense?
-    -- Just (t, Just t'', Just σ'') -> return $ Just (t, Just t'', Just $ heapCombine[σ',σ''])
-    -- Just (t, Just t'', Nothing)  -> return $ Just (t, Just t'', Just σ')
-    _                            -> return da
-
-
--------------------------------------------------------------------------------
-dotAccessUnion :: Id AnnSSA -> [Type] -> TCM (Maybe (Type, Maybe Type, Maybe BHeap))
--------------------------------------------------------------------------------
-dotAccessUnion f ts = 
-  do  e              <- fromJust <$> getExpr
-      tfs            <- mapM (dotAccess f) ts
-      -- Gather all the types that do not throw errors, and the type of 
-      -- the accessed expression that yields them
-      let (ts', tfs') = unzip [(t,tf) | (t, Just tf) <- zip ts tfs]
-      castM e (mkUnion ts) (mkUnion ts')
-      case tfs' of
-        [] -> return Nothing
-        ps -> let (rs, ts, σs) = unzip3 ps 
-                  mt           = return $ mkUnion [t | Just t <- ts]
-                  mσ           = return $ heapCombine [σ | Just σ <- σs]
-              in return $ Just (mkUnion rs, mt, mσ)
-  
-      
+-- Access field @f@ of type @t@, adding a cast if needed to avoid errors.
+-- -------------------------------------------------------------------------------
+-- safeDotAccessObj :: (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
+--   Env (RType r) -> RHeap r -> s -> RType r -> TCM r [ObjectAccess r]
+-- -------------------------------------------------------------------------------
+-- safeDotAccessObj γ e f t
+--   = case dotAccess γ f t of 
+--       Just access -> castResults access >> return (ac_result access)-- castM e t t' >> return tf
+--       Nothing     -> error "safeDotAccess: unsafe"
+--   where
+--     castResults access = castM e t (ac_cast access)
 
 -------------------------------------------------------------------------------
 -- | Managing Annotations: Type Instantiations --------------------------------
 -------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------
-getAnns :: TCM AnnInfo  
+getAnns :: (Ord r, F.Reftable r, Substitutable r (Fact_ r)) => TCM r (AnnInfo_ r)
 -------------------------------------------------------------------------------
 getAnns = do θ     <- tc_subst <$> get
              m     <- tc_anns  <$> get
@@ -360,18 +356,19 @@ getAnns = do θ     <- tc_subst <$> get
              return m' 
 
 -------------------------------------------------------------------------------
-addAnn :: SourceSpan -> Fact -> TCM () 
+addAnn :: SourceSpan -> Fact_ r -> TCM r () 
 -------------------------------------------------------------------------------
 addAnn l f = modify $ \st -> st { tc_anns = inserts l f (tc_anns st) } 
 
 -------------------------------------------------------------------------------
-getAllAnns :: TCM [AnnInfo]  
+getAllAnns :: TCM r [AnnInfo_ r]  
 -------------------------------------------------------------------------------
 getAllAnns = tc_annss <$> get
 
 
 -------------------------------------------------------------------------------
-accumAnn :: (AnnInfo -> [(SourceSpan, String)]) -> TCM () -> TCM ()
+accumAnn :: (Ord r, F.Reftable r, Substitutable r (Fact_ r)) =>
+  (AnnInfo_ r -> [(SourceSpan, String)]) -> TCM r () -> TCM r ()
 -------------------------------------------------------------------------------
 accumAnn check act 
   = do m     <- tc_anns <$> get 
@@ -382,7 +379,7 @@ accumAnn check act
        modify $ \st -> st {tc_anns = m} {tc_annss = m' : tc_annss st}
 
 -------------------------------------------------------------------------------
-execute     :: V.Verbosity -> Nano z (RType r) -> TCM a -> Either [(SourceSpan, String)] a
+execute     ::  (PP r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCM r a -> Either [(SourceSpan, String)] a
 -------------------------------------------------------------------------------
 execute verb pgm act 
   = case runState (runErrorT act) $ initState verb pgm of 
@@ -390,26 +387,23 @@ execute verb pgm act
       (Right x, st) ->  applyNonNull (Right x) Left (reverse $ tc_errss st)
 
 
-initState :: V.Verbosity -> Nano z (RType r) -> TCState
-initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss tc_unwound tc_winds tc_unwinds
-                       tc_casts tc_hcasts tc_defs tc_fun tc_tdefs tc_expr tc_verb 
-  where
-    tc_errss    = []
-    tc_subst    = mempty 
-    tc_cnt      = 0
-    tc_anns     = HM.empty
-    tc_annss    = []
-    tc_unwound  = []
-    tc_winds    = M.empty
-    tc_unwinds  = M.empty
-    tc_casts    = M.empty
-    tc_hcasts   = M.empty
-    tc_defs     = envMap toType $ defs pgm
-    tc_fun      = Nothing
-    tc_tdefs    = envMap toType $ tDefs pgm
-    tc_expr     = Nothing
-    tc_verb     = verb
-
+initState :: (PP r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCState r
+initState verb pgm = TCS { tc_errss   = []
+                         , tc_subst   = mempty
+                         , tc_cnt     = 0
+                         , tc_anns    = HM.empty
+                         , tc_annss   = []
+                         , tc_unwound = []
+                         , tc_winds   = M.empty
+                         , tc_unwinds = M.empty
+                         , tc_casts   = M.empty
+                         , tc_hcasts  = M.empty
+                         , tc_defs    = defs pgm
+                         , tc_fun     = Nothing
+                         , tc_tdefs   = tDefs pgm
+                         , tc_expr    = Nothing
+                         , tc_verb    = verb
+                         }
 
 getDefType f 
   = do m <- tc_defs <$> get
@@ -419,22 +413,22 @@ getDefType f
        l   = srcPos f
 
 -------------------------------------------------------------------------------
-getUnwound :: TCM [(Location, Id SourceSpan)]
+getUnwound :: TCM r [(Location, Id SourceSpan)]
 -------------------------------------------------------------------------------
 getUnwound = tc_unwound <$> get
 
 -------------------------------------------------------------------------------
-setUnwound :: [(Location, Id SourceSpan)] -> TCM ()
+setUnwound :: [(Location, Id SourceSpan)] -> TCM r ()
 -------------------------------------------------------------------------------
 setUnwound ls = modify $ \st -> st { tc_unwound = ls }
 
 -------------------------------------------------------------------------------
-addUnwound :: (Location, Id SourceSpan) -> TCM ()
+addUnwound :: (Location, Id SourceSpan) -> TCM r ()
 -------------------------------------------------------------------------------
 addUnwound l = getUnwound >>= setUnwound . (l:)                                
 
 -----------------------------------------------------------------------------
-withUnwound  :: [(Location, Id SourceSpan)] -> TCM a -> TCM a
+withUnwound  :: [(Location, Id SourceSpan)] -> TCM r a -> TCM r a
 -----------------------------------------------------------------------------
 withUnwound uw action = 
   do  uwold  <- getUnwound 
@@ -444,7 +438,7 @@ withUnwound uw action =
       return $ r
 
 -----------------------------------------------------------------------------
-pushUnwound  :: TCM a -> TCM a
+pushUnwound  :: TCM r a -> TCM r a
 -----------------------------------------------------------------------------
 pushUnwound action = 
   do  uwold  <- getUnwound 
@@ -453,13 +447,13 @@ pushUnwound action =
       return $ r
 
 -------------------------------------------------------------------------------
-setExpr   :: Maybe (Expression AnnSSA) -> TCM () 
+setExpr   :: Maybe (Expression (AnnSSA_ r)) -> TCM r () 
 -------------------------------------------------------------------------------
 setExpr eo = modify $ \st -> st { tc_expr = eo }
 
 
 -------------------------------------------------------------------------------
-getExpr   :: TCM (Maybe (Expression AnnSSA))
+getExpr   :: TCM r (Maybe (Expression (AnnSSA_ r)))
 -------------------------------------------------------------------------------
 getExpr = tc_expr <$> get
 
@@ -467,14 +461,14 @@ getExpr = tc_expr <$> get
 -- | Generating Fresh Values ---------------------------------------------
 --------------------------------------------------------------------------
 
-tick :: TCM Int
+tick :: TCM r Int
 tick = do st    <- get 
           let n  = tc_cnt st
           put    $ st { tc_cnt = n + 1 }
           return n 
 
 class Freshable a where 
-  fresh :: a -> TCM a 
+  fresh :: a -> TCM r a
 
 -- instance Freshable TVar where 
 --   fresh _ = TV . F.intSymbol "T" <$> tick
@@ -482,10 +476,18 @@ class Freshable a where
 instance Freshable a => Freshable [a] where 
   fresh = mapM fresh
 
+freshTVar :: SourceSpan -> a -> TCM r (TVar)
 freshTVar l _ =  ((`TV` l). F.intSymbol "T") <$> tick
+
+-------------------------------------------------------------------------------
+freshLocation :: TCM r (Location)
+-------------------------------------------------------------------------------
 freshLocation = tick >>= \n -> return ("_?L" ++ show n)
 
-freshHeap :: BHeap -> TCM (Subst,Subst,BHeap)
+-------------------------------------------------------------------------------
+freshHeap :: (PP r, Ord r, F.Reftable r) => 
+  RHeap r -> TCM r (RSubst r,RSubst r,RHeap r)
+-------------------------------------------------------------------------------
 freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
                    return (θ, θ', apply θ h)
   where
@@ -496,7 +498,7 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
 
 -------------------------------------------------------------------------------
-freshHeapVar :: AnnSSA -> String -> TCM (Expression AnnSSA)
+freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))
 -------------------------------------------------------------------------------
 freshHeapVar l x
   = do n <- tick
@@ -510,31 +512,33 @@ freshHeapVar l x
 
 -- | Monadic unfolding
 -------------------------------------------------------------------------------
-unfoldFirstTC :: Type -> TCM Type
+unfoldFirstTC :: (PP r, F.Reftable r) => RType r -> TCM r (RType r)
 -------------------------------------------------------------------------------
 unfoldFirstTC t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 
 
 -------------------------------------------------------------------------------
-unfoldSafeTC :: Type -> TCM (BHeap, Type)
+unfoldSafeTC :: (PP r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r)
 -------------------------------------------------------------------------------
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
-recordWindExpr :: SourceSpan -> WindCall -> TCM ()
+recordWindExpr :: SourceSpan -> WindCall r -> TCM r ()
 -------------------------------------------------------------------------------
 recordWindExpr l p = modify $ \s -> s {
   tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
   }
 
 -------------------------------------------------------------------------------
-recordUnwindExpr :: SourceSpan -> (Location, Id SourceSpan) -> TCM ()
+recordUnwindExpr :: SourceSpan -> (Location, Id SourceSpan) -> TCM r ()
 -------------------------------------------------------------------------------
 recordUnwindExpr l p = modify $ \s -> s {
   tc_unwinds = M.insertWith (flip (++)) l [p] $ tc_unwinds s
   }
+
 -------------------------------------------------------------------------------
-unwindTC :: Type -> TCM (BHeap, Type)
+unwindTC :: (PP r, Ord r, F.Reftable r) =>
+  RType r -> TCM r (RHeap r, RType r)
 -------------------------------------------------------------------------------
 unwindTC = go heapEmpty
   where go σ t@(TApp (TDef _) _ _) = do
@@ -551,7 +555,8 @@ unwindTC = go heapEmpty
 --------------------------------------------------------------------------------
 
 ----------------------------------------------------------------------------------
-unifyHeapsM :: (IsLocated l) => l -> String -> BHeap -> BHeap -> TCM Subst
+unifyHeapsM :: (IsLocated l, Ord r, PP r, F.Reftable r) =>
+  l -> String -> RHeap r -> RHeap r -> TCM r (RSubst r)
 ----------------------------------------------------------------------------------
 unifyHeapsM l msg σ1 σ2 = do θ <- getSubst
                              γ <- getTDefs
@@ -562,7 +567,7 @@ unifyHeapsM l msg σ1 σ2 = do θ <- getSubst
                                  return θ'
 
 ----------------------------------------------------------------------------------
-unifyTypesM :: (IsLocated l) => l -> String -> [Type] -> [Type] -> TCM Subst
+unifyTypesM :: (IsLocated l, Ord r, PP r, F.Reftable r) => l -> String -> [RType r] -> [RType r] -> TCM r (RSubst r)
 ----------------------------------------------------------------------------------
 unifyTypesM l msg t1s t2s
   -- TODO: This check might be done multiple times
@@ -576,7 +581,8 @@ unifyTypesM l msg t1s t2s
                                       return θ'
 
 ----------------------------------------------------------------------------------
-safeHeapSubstM :: BHeap -> TCM BHeap
+safeHeapSubstM :: (Ord r, PP r, F.Reftable r) =>
+  RHeap r -> TCM r (RHeap r)
 ----------------------------------------------------------------------------------
 safeHeapSubstM σ = do
   θ <- getSubst
@@ -589,32 +595,34 @@ safeHeapSubstWithM f σ = do
   return $ safeHeapSubstWith f γ θ (Right <$> σ)
 
 ----------------------------------------------------------------------------------
---unifyTypeM :: (IsLocated l) => l -> String -> Expression AnnSSA -> Type -> Type -> TCM Subst
+unifyTypeM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l) =>
+  l -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r)
 ----------------------------------------------------------------------------------
 unifyTypeM l m e t t' = unifyTypesM l msg [t] [t']
   where 
     msg              = errorWrongType m e t t'
 
 ----------------------------------------------------------------------------------
-subTypeM :: Type -> Type -> TCM SubDirection
+subTypeM :: (Ord r, PP r, F.Reftable r) => RType r -> RType r -> TCM r SubDirection
 ----------------------------------------------------------------------------------
 subTypeM t t' 
   = do  θ            <- getTDefs 
         let (_,_,_,d) = compareTs θ t t'
-        return {- $ tracePP (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -} d
+        return {- $ tracePP (printf "subType: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -} d
 
 ----------------------------------------------------------------------------------
-subTypeM' :: (IsLocated l) => l -> Type -> Type -> TCM ()
+subTypeM' :: (IsLocated l, Ord r, PP r, F.Reftable r) => l -> RType r -> RType r -> TCM r ()
 ----------------------------------------------------------------------------------
 subTypeM' _ _ _  = error "unimplemented: subTypeM\'"
  
 ----------------------------------------------------------------------------------
-subTypesM :: [Type] -> [Type] -> TCM [SubDirection]
+subTypesM :: (Ord r, PP r, F.Reftable r) => [RType r] -> [RType r] -> TCM r [SubDirection]
 ----------------------------------------------------------------------------------
 subTypesM ts ts' = zipWithM subTypeM ts ts'
 
 ----------------------------------------------------------------------------------
-subHeapM :: Env Type -> BHeap -> BHeap -> TCM SubDirection                   
+subHeapM :: (Ord r, PP r, F.Reftable r) =>
+  Env (RType r) -> RHeap r -> RHeap r -> TCM r SubDirection                   
 ----------------------------------------------------------------------------------
 subHeapM γ σ1 σ2 
   = do let l1s       = sort $ heapLocs σ1
@@ -644,7 +652,7 @@ subHeapM γ σ1 σ2
 
 
 -----------------------------------------------------------------------------
-withExpr  :: Maybe (Expression AnnSSA) -> TCM a -> TCM a
+withExpr  :: Maybe (Expression (AnnSSA_ r)) -> TCM r a -> TCM r a
 -----------------------------------------------------------------------------
 withExpr e action = 
   do  eold  <- getExpr 
@@ -655,17 +663,18 @@ withExpr e action =
 
 
 --------------------------------------------------------------------------------
-castM     :: Expression AnnSSA -> Type -> Type -> TCM ()
+castM     :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
 castM e t t'    = subTypeM t t' >>= go
-  where go SupT = addDownCast e t'
-        go Rel  = addDownCast e t'
+  where go SupT = addDownCast e t t'
+        go Rel  = addDownCast e t t'
         go SubT = addUpCast e t'
         go EqT  = return ()
         go Nth  = addDeadCast e t'
 
 --------------------------------------------------------------------------------
-castHeapM :: Env Type -> Expression AnnSSA -> BHeap -> BHeap -> TCM ()
+castHeapM :: (Ord r, PP r, F.Reftable r) =>
+  Env (RType r) -> Expression (AnnSSA_ r) -> RHeap r -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
 castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
   where go SupT = addDownCastH e σ'
@@ -676,44 +685,51 @@ castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
 
 
 --------------------------------------------------------------------------------
-castsM    :: [Expression AnnSSA] -> [Type] -> [Type] -> TCM ()
+castsM    :: (Ord r, PP r, F.Reftable r) => [Expression (AnnSSA_ r)] -> [RType r] -> [RType r] -> TCM r ()
 --------------------------------------------------------------------------------
 castsM     = zipWith3M_ castM 
 
 
 --------------------------------------------------------------------------------
-addUpCast :: Expression AnnSSA -> Type -> TCM ()
+addUpCast :: (F.Reftable r, PP r) => Expression (AnnSSA_ r) -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
 addUpCast e t = modify $ \st -> st { tc_casts = M.insert e (UCST t) (tc_casts st) }
 
 --------------------------------------------------------------------------------
-addDownCast :: Expression AnnSSA -> Type -> TCM ()
+addDownCast :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
-addDownCast e t = modify $ \st -> st { tc_casts = M.insert e (DCST t) (tc_casts st) }
+-- addDownCast e _ cast = modify $ \st -> st { tc_casts = M.insert e (DCST cast) (tc_casts st) }
 
+  
+-- Down casts will not be k-vared later - so pass the refinements here!
+addDownCast e base cast = 
+  do  γ <- getTDefs
+      let cast' = zipType2 γ F.meet base cast    -- copy the refinements from the base type 
+          {-msg   =  printf "DOWN CAST ADDS: %s\ninstead of just:\n%s" (ppshow cast') (ppshow cast)-}
+      modify $ \st -> st { tc_casts = M.insert e (DCST $ {- trace msg -} cast') (tc_casts st) }
 
 --------------------------------------------------------------------------------
-addDeadCast :: Expression AnnSSA -> Type -> TCM ()
+addDeadCast :: Expression (AnnSSA_ r) -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
-addDeadCast e t = modify $ \st -> st { tc_casts = M.insert e (DC t) (tc_casts st) } 
+addDeadCast e t = modify $ \st -> st { tc_casts = M.insert e (DC t) (tc_casts st) }
 
 --------------------------------------------------------------------------------
-addUpCastH :: Expression AnnSSA -> BHeap -> TCM ()
+addUpCastH :: Expression (AnnSSA_ r) -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
 addUpCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (UCST σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
-addDownCastH :: Expression AnnSSA -> BHeap -> TCM ()
+addDownCastH :: Expression (AnnSSA_ r) -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
 addDownCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DCST σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
-addDeadCastH:: Expression AnnSSA -> BHeap -> TCM ()
+addDeadCastH:: Expression (AnnSSA_ r) -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
 addDeadCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DC σ) (tc_hcasts st) }
 
 --------------------------------------------------------------------------------
-patchPgmM :: (Typeable r, Data r) => Nano AnnSSA (RType r) -> TCM (Nano AnnSSA (RType r))
+patchPgmM :: (Data b, Typeable r) => b -> TCM r b
 --------------------------------------------------------------------------------
 patchPgmM pgm = 
   do  c    <- tc_casts <$> get
@@ -722,12 +738,12 @@ patchPgmM pgm =
       pgm' <- insertHeapCasts m pgm
       return $ fst $ runState (everywhereM' (mkM transform) pgm') (PS c hc)
 
-data PState = PS { m :: Casts, hm :: HCasts }
-type PM     = State PState
+data PState r = PS { m :: Casts_ r, hm :: HCasts_ r}
+type PM     r = State (PState r)
 
 insertHeapCasts m pgm = 
   return $ fst $ runState (everywhereM' (mkM go) pgm) (HS m)
-  where go :: Statement AnnSSA -> HSM (Statement AnnSSA)
+  where go :: Statement (AnnSSA_ r) -> HSM r (Statement (AnnSSA_ r))
         go s = do
           m <- em <$> get
           let l  = getAnnotation s
@@ -740,11 +756,11 @@ insertHeapCasts m pgm =
         buildWind a args = CallExpr a (VarRef a (Id a "@Wind")) $ windArgs a args
                                                
 
-data HState = HS { em :: M.Map SourceSpan [WindCall] }
-type HSM    = State HState
+data HState r = HS { em :: M.Map SourceSpan [WindCall r] }
+type HSM    r = State (HState r)
 
 --------------------------------------------------------------------------------
-transform :: Expression AnnSSA -> PM (Expression AnnSSA)
+transform :: Expression (AnnSSA_ r) -> PM r (Expression (AnnSSA_ r))
 --------------------------------------------------------------------------------
 transform e = 
   do  c  <- m <$> get
@@ -753,7 +769,7 @@ transform e =
       return $ patchExpr c hc e
 
 --------------------------------------------------------------------------------
-patchExpr :: Casts -> HCasts -> Expression AnnSSA -> Expression AnnSSA
+patchExpr :: Casts_ r -> HCasts_ r -> Expression (AnnSSA_ r) -> Expression (AnnSSA_ r)
 --------------------------------------------------------------------------------
 patchExpr m hm e = go a2 AssumeH $ go a1 Assume e
   where a1 = M.lookup e m

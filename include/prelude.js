@@ -74,7 +74,7 @@ function unwind(x) {
 
 
 /*************************************************************************/
-/************** Types for list Operators ******************************/
+/***************** Types for list Operators ******************************/
 /*************************************************************************/
 
 /*@ type list[A]  exists! l |-> list[A]. {  data : A, next : <l> + null } */
@@ -95,6 +95,13 @@ function unwind(x) {
 /*@ length   :: forall A. (xs:list [A]) => {v:number | ((v >= 0) && v = (len xs))}                */
 /*@ safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
 /*@ safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
+
+
+
+/*************************************************************************/
+/************************* Type Conversions ******************************/
+/*************************************************************************/
+/*@ sstring  :: forall A. (x: A) => string                                                         */
 
 
 
@@ -144,6 +151,7 @@ function unwind(x) {
 /*************************************************************************/
 
 /*@ measure ttag :: forall A. (A) => string                               */
+
 /*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
 
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
@@ -191,3 +199,4 @@ function unwind(x) {
 /*@ qualif Sub(v:number,x:number,y:number): v = x - y           */
 
 
+/*@ top_level :: () => void */

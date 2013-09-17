@@ -1,32 +1,37 @@
 Todo List
 =========
 
-0.  Scrape Qualifiers
+JS support / Features
+---------------------
 
-1.  Fix object accesses. Eg:
-      tc/pos/map-ref.js,
-      tc/pos/map.js,
+1.  prelude.js: restore refinemnets in logical negation
+
+2.  Encoding truthy, falsy, undefined, null etc.
+    Eg: tc/pos/obj02.js, tc/pos/union05.js
+
+3.  For/while loops
+
+4.  Prototyping
+
+
+Tool / Implementation
+---------------------
+1.  Scrape Qualifiers
 
 2.  Fix "Cannot handle ssaVarDECL" at "var foo;"
 
-3.  Encode subtyping rules for types like undefined, null etc. 
-    What happens with padding there?
-    Eg:
-      tc/pos/obj02.js,
-      tc/pos/union05.js
+3.  Do not add casts deep inside objects.
+    Eg: tc/pos/listmap02.js 
 
-4.  Do not add casts deep inside objects.
-    Eg:
-      tc/pos/listmap02.js 
+4.  Restore the check for unbounded type variables
 
-5.  Comparing objects with null causes upcasts that fail during constraint
-    genereation.
+5.  Multiple fixpoint bindings in the same environment
 
-6.  Spurious falsified k-vars:
-    liquid/pos/minindex02.js
+6.  Disallow type to have multiple tags
 
 
 Failing Tests
 -------------
-
+1.  Is "liquid/neg/minindex02-bug.js - line 5" indeed a bug?
+    Using new representation of lists.
 

@@ -41,6 +41,7 @@ import           Language.ECMAScript3.PrettyPrint
 dot        = Token.dot        lexer
 braces     = Token.braces     lexer
 plus       = Token.symbol     lexer "+"
+star       = Token.symbol     lexer "*"
 -- angles     = Token.angles     lexer
 
 ----------------------------------------------------------------------------------
@@ -82,12 +83,19 @@ xyP lP sepP rP
 
 bareTypeP :: Parser RefType 
 bareTypeP 
-  = do  ts <- bareTypeNoUnionP `sepBy1` plus
-        tr <- topP   -- unions have Top ref. type atm
-        case ts of
-          [ ] -> error "impossible"
-          [t] -> return t
-          _   -> return $ TApp TUn (sort ts) tr
+  =  try (do  ts <- bareTypeNoUnionP `sepBy1` plus
+              tr <- topP   -- unions have Top ref. type atm
+              case ts of
+                [ ] -> error "impossible"
+                [t] -> return t
+                _   -> return $ TApp TUn (sort ts) tr)
+         
+ <|> try (bRefP ( do  ts <- bareTypeNoUnionP `sepBy1` plus
+                      case ts of
+                        [ ] -> error "impossible"
+                        [_] -> error "bareTypeP parser BUG"
+                        _   -> return $ TApp TUn (sort ts) 
+                ))
 
 
 bareTypeNoUnionP
@@ -259,7 +267,8 @@ refasP  =  (try (brackets $ sepBy (RConc <$> predP) semi))
 -- embedP     = xyP upperIdP (reserved "as") fTyConP
  
 binderP :: Parser Symbol
-binderP =  try $ liftM stringSymbol (idP badc)
+binderP = try (stringSymbol <$> idP badc)
+      <|> try (star >> return (stringSymbol "*"))
       <|> liftM pwr (parens (idP bad))
       where idP p  = many1 (satisfy (not . p))
             badc c = (c == ':') ||  bad c
@@ -320,8 +329,8 @@ mkSpec xs = Nano { code   = Src []
                  , defs   = envEmpty
                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
                  , tDefs  = envFromList [b         | Type b <- xs]
-                 , quals  =             [q         | Qual q <- xs]  
-                 , invts  =             [Loc l' t  | Invt l t <- xs, let l' = srcPos l] 
+                 , quals  =             [q         | Qual q <- xs]
+                 , invts  =             [Loc l' t  | Invt l t <- xs, let l' = srcPos l]
                  }
 
 -- YUCK. Worst hack of all time.

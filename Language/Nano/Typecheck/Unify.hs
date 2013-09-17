@@ -17,9 +17,9 @@ module Language.Nano.Typecheck.Unify (
   ) where 
 
 -- import           Text.PrettyPrint.HughesPJ
--- import           Language.ECMAScript3.PrettyPrint
+import           Language.ECMAScript3.PrettyPrint
 import           Language.Fixpoint.Misc
--- import qualified Language.Fixpoint.Types as F
+import qualified Language.Fixpoint.Types as F
 import           Language.Nano.Errors 
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
@@ -46,7 +46,8 @@ import           Language.Nano.Misc (fst4)
 -- | Unify types @t@ and @t'@, using @θ@ as the current substitution and @env@
 -- as the current type definition environment.
 -----------------------------------------------------------------------------
-unify :: Env Type -> Subst -> Type -> Type -> Either String Subst
+unify :: (PP r, F.Reftable r, Ord r) => 
+  Env (RType r) -> RSubst r -> RType r -> RType r -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 unify _ θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
   Right $ if l1' == l2' then θ else θ'
@@ -64,13 +65,12 @@ unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) =
 unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)
   | d == d'                             = unifys env θ ts ts'
 
--- unify γ θ t@(TApp (TDef _) _ _) t'  = unify γ θ (snd $ unfoldSafe γ t) t'
--- unify γ θ t t'@(TApp (TDef _) _ _)  = unify γ θ t (snd $ unfoldSafe γ t')
+unify _  θ (TVar α _)     (TVar β _)    = varEql θ α β 
+unify _  θ (TVar α _)     t             = varAsn θ α t 
+unify _  θ t              (TVar α _)    = varAsn θ α t
 
--- TODO: fix                                          
-unify _ θ (TVar α _) (TVar β _) =  varEql θ α β
-unify _ θ (TVar α _) t          =  varAsn θ α t
-unify _ θ t          (TVar α _) =  varAsn θ α t
+-- unify env θ t@(TApp (TDef _) _ _) t'    = unify env θ (unfoldSafe env t) t'
+-- unify env θ t t'@(TApp (TDef _) _ _)    = unify env θ t (unfoldSafe env t')
 
 -- List[A] + Null `unif` List[T0] + Null => A `unif` T0
 -- TODO: make sure other nothing weird is going on with TVars,
@@ -126,7 +126,8 @@ unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
 unifEq γ t t'                     = equiv γ t t'
 
 -----------------------------------------------------------------------------
-unifys :: Env Type -> Subst -> [Type] -> [Type] -> Either String Subst
+unifys ::  (PP r, F.Reftable r, Ord r) =>  
+  Env (RType r) -> RSubst r -> [RType r] -> [RType r] -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 unifys env θ xs ys = {- tracePP msg $ -} unifys' env θ xs ys
    -- where
@@ -149,13 +150,14 @@ unifys' γ θ ts ts'
     safeJoin _                (Left l        )   = Left l
                                
 check (Su m _) (Su m' _) = vs == vs'
-  where vs  = (`M.lookup` m ) <$> ks
-        vs' = (`M.lookup` m') <$> ks
+  where vs  = map (toType <$>) $ (`M.lookup` m ) <$> ks
+        vs' = map (toType <$>) $ (`M.lookup` m') <$> ks
         ks  = M.keys $ M.intersection (clr tVar m) (clr tVar m')
         clr f = M.filterWithKey (\k v -> f k /= v)
 
 -----------------------------------------------------------------------------
-unifyHeaps :: Env Type -> Subst -> BHeap -> BHeap -> Either String Subst
+unifyHeaps :: (PP r, F.Reftable r, Ord r) => 
+  Env (RType r) -> RSubst r -> RHeap r -> RHeap r -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 unifyHeaps env θ σ1 σ2 = unifyHeaps' env (Right θ) bs1 bs2
   where
@@ -163,11 +165,9 @@ unifyHeaps env θ σ1 σ2 = unifyHeaps' env (Right θ) bs1 bs2
     bs2 = heapBinds σ2
     
 -----------------------------------------------------------------------------
-unifyHeaps' :: Env Type
-               -> Either String Subst
-               -> [(Location, Type)]
-               -> [(Location, Type)]
-               -> Either String Subst
+unifyHeaps' :: (PP r, F.Reftable r, Ord r) =>
+  Env (RType r) -> Either String (RSubst r) -> [(Location, RType r)]
+  -> [(Location, RType r)] -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 unifyHeaps' _ r@(Left _)  _   _   = r
 unifyHeaps' _ r           []  _   = r
@@ -179,8 +179,8 @@ unifyHeaps' γ r@(Right θ) bs1 bs2 =
     unifyHeaps' γ (unifys γ θ t1s t2s) bs1'' bs2''
   where
     ls        = L.nub $ ls1 ++ ls2
-    bs1'      = map (\(l,t) -> (apply θ l, t)) bs1
-    bs2'      = map (\(l,t) -> (apply θ l, t)) bs2
+    bs1'      = map (\(l,t) -> (apply θ l, apply θ t)) bs1
+    bs2'      = map (\(l,t) -> (apply θ l, apply θ t)) bs2
     ls1       = map fst bs1'
     ls2       = map fst bs2'
 
@@ -195,7 +195,8 @@ unifyHeaps' γ r@(Right θ) bs1 bs2 =
 
 
 -----------------------------------------------------------------------------
-varEql :: Subst -> TVar -> TVar -> Either String Subst
+varEql :: (PP r, F.Reftable r, Ord r) => 
+  RSubst r -> TVar -> TVar -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 varEql θ α β =  
   case varAsn θ α $ tVar β of
@@ -207,7 +208,8 @@ varEql θ α β =
 
 
 -----------------------------------------------------------------------------
-varAsn :: Subst -> TVar -> Type -> Either String Subst
+varAsn ::  (PP r, F.Reftable r, Ord r) => 
+  RSubst r -> TVar -> RType r -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 varAsn θ α t 
   -- Check if previous substs are sufficient 

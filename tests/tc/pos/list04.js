@@ -1,6 +1,7 @@
-/*@ next :: (x:<l>)/l |-> list[number] => <m> + null/l |-> { data: number, next:<m> + null } * m |-> list[number] */
+/*@ next :: (x:<l>)/l |-> list[number] => <l> + null/l |-> list[number] */
 function next(x) {
-  z    = x.next;
-  y    = x.next;
-  return x.next;
+  var z    = x.next;
+  // y    = x.next;
+  // r    = x.next;
+  return x;
 }

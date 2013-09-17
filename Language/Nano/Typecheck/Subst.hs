@@ -11,6 +11,7 @@ module Language.Nano.Typecheck.Subst (
   , Subst 
   , toList
   , fromList
+  , toSubst
 
   -- * Free Type Variables
   , Free (..)
@@ -21,12 +22,20 @@ module Language.Nano.Typecheck.Subst (
   -- * Unfolding
   , unfoldFirst, unfoldMaybe, unfoldSafe
   
+  -- * Accessing fields
+  , ObjectAccess(..)
+  , dotAccess
+  
 
   ) where 
 
 import           Text.PrettyPrint.HughesPJ
 import           Language.ECMAScript3.PrettyPrint
+import           Language.ECMAScript3.Syntax
+import           Language.ECMAScript3.Syntax.Annotations
+import           Language.ECMAScript3.Parser    (SourceSpan (..))
 import qualified Language.Fixpoint.Types as F
+import           Language.Fixpoint.Misc
 import           Language.Nano.Errors 
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
@@ -34,6 +43,8 @@ import           Language.Nano.Typecheck.Heaps
 
 import           Control.Applicative ((<$>))
 import qualified Data.HashSet as S
+import           Data.List                      (find)
+import           Data.Traversable               (traverse)
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid
 import           Text.Printf 
@@ -52,7 +63,9 @@ data RSubst r = Su { tySub  :: M.HashMap TVar (RType r)
 
 type Subst    = RSubst ()
 
--- TODO fix and rename
+toSubst :: RSubst r -> Subst
+toSubst (Su m lm) = Su (M.map toType m) lm
+
 toList        :: RSubst r -> [(TVar, RType r)]
 toList (Su m _) =  M.toList m 
 
@@ -128,14 +141,26 @@ instance Substitutable () Fact where
   apply θ (Assume  t )  = Assume  $ apply θ t
   apply θ (AssumeH  h)  = AssumeH $ apply θ h
 
+instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
+  apply _ x@(PhiVar _)  = x
+  apply θ (TypInst ts)  = TypInst $ apply θ ts
+  apply θ (Assume  t )  = Assume  $ apply θ t
+
+
 instance Free Fact where
+  free (PhiVar _)       = S.empty
+  free (TypInst ts)     = free ts
+  free (Assume t)       = free t
+  free (AssumeH h)      = free h
+
+instance Free (Fact_ r) where
   free (PhiVar _)       = S.empty
   free (TypInst ts)     = free ts
   free (Assume t)       = free t
   free (AssumeH h)      = free h
  
 ------------------------------------------------------------------------
--- appTy :: RSubst r -> RType r -> RType r
+-- appTy :: Subst_ r -> RType r -> RType r
 ------------------------------------------------------------------------
 appTy (Su _ m) (TApp (TRef l) t z)    = TApp (TRef $ M.lookupDefault l l m) t z
 appTy θ (TApp c ts z)                 = TApp c (apply θ ts) z 
@@ -194,4 +219,65 @@ unfoldMaybe _ t                           = Right (heapEmpty, t)
 unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> (RHeap r, RType r)
 -------------------------------------------------------------------------------
 unfoldSafe env = either error id . unfoldMaybe env
-                                            
+
+data ObjectAccess r = Access { ac_result :: RType r
+                             , ac_cast   :: RType r
+                             , ac_unfold :: Maybe (Id SourceSpan, RType r)
+                             , ac_heap   :: Maybe (RHeap r)
+                             } 
+                      
+accessNoUnfold t r = [Access { ac_result = r                      
+                             , ac_cast   = t
+                             , ac_unfold = Nothing
+                             , ac_heap   = Nothing 
+                             }
+                     ]
+
+
+-- Returns type to cast the current expression and the returned type
+-------------------------------------------------------------------------------
+dotAccess ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
+  Env (RType r) -> s -> RType r -> Maybe [ObjectAccess r]
+  -- (RType r, RType r)
+-------------------------------------------------------------------------------
+dotAccess _ f t@(TObj bs _) = 
+  do  case find (match $ F.symbol f) bs of
+        Just b -> Just $ accessNoUnfold t $ b_type b
+        _      -> case find (match $ F.stringSymbol "*") bs of
+                    Just b' -> Just $ accessNoUnfold t $ b_type b'
+                    _       -> Just $ accessNoUnfold t tUndef
+  where match s (B f _)  = s == f
+
+dotAccess γ f t@(TApp c ts _ ) = go c
+  where  go TUn      = dotAccessUnion γ f ts
+         go TInt     = Just $ accessNoUnfold t tUndef
+         go TBool    = Just $ accessNoUnfold t tUndef
+         go TString  = Just $ accessNoUnfold t tUndef
+         go TUndef   = Nothing
+         go TNull    = Nothing
+         go (TDef i) = dotAccessDef γ i f t -- dotAccess γ f $ unfoldSafe γ t
+         go TTop     = error "dotAccess top"
+         go TVoid    = error "dotAccess void"
+
+dotAccess _ _ t@(TFun _ _ _ _ _) = Just $ accessNoUnfold t tUndef
+dotAccess _ _ t               = error $ "dotAccess " ++ (ppshow t) 
+                                
+dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccess γ f t_unfold
+  where  
+    (σ_unfold, t_unfold) = unfoldSafe γ t
+    addUnfolded access = 
+      case (ac_heap access, ac_unfold access) of
+        (Just x, Just y) -> error $ (printf "BUG: already unfolded and got %s %s" (ppshow x) (ppshow y))
+        _                -> access { ac_heap   = Just σ_unfold
+                                   , ac_unfold = Just (i, t_unfold)
+                                   , ac_cast   = t
+                                   }
+
+-- Accessing the @x@ field of the union type with @ts@ as its parts, returns
+-- "Nothing" if accessing all parts return error, or "Just (ts, tfs)" if
+-- accessing @ts@ returns type @tfs@. @ts@ is useful for adding casts later on.
+-------------------------------------------------------------------------------
+dotAccessUnion ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
+  Env (RType r) -> s -> [RType r] -> Maybe [ObjectAccess r]  --  (RType r, RType r)
+-------------------------------------------------------------------------------
+dotAccessUnion γ f ts = concat <$> traverse (dotAccess γ f) ts

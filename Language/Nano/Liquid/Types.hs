@@ -48,6 +48,8 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
+  
+  , AnnTypeR
   ) where
 
 import           Data.Maybe             (fromMaybe) -- (catMaybes, , isJust)
@@ -73,7 +75,9 @@ import           Control.Applicative
 
 type RefType     = RType F.Reft
 type REnv        = Env RefType
-type NanoRefType = Nano AnnType RefType 
+type NanoRefType = Nano (AnnType_ F.Reft) RefType 
+
+type AnnTypeR    = AnnType_ F.Reft
 
 -------------------------------------------------------------------------------------
 -- | Constraint Generation Environment  ---------------------------------------------
@@ -205,6 +209,7 @@ rTypeSort t                    = error ("Type: " ++ ppshow t ++
 
 
 rTypeSortApp TInt [] = F.FInt
+rTypeSortApp TUn  _  = F.FApp (tconFTycon TUn) [] -- simplifying union sorts, the checks will have been done earlier
 rTypeSortApp c ts    = F.FApp (tconFTycon c) (rTypeSort <$> ts) 
 
 tconFTycon TInt      = F.intFTyCon
@@ -233,6 +238,7 @@ stripRTypeBase :: RType r -> Maybe r
 stripRTypeBase (TApp _ _ r) = Just r
 stripRTypeBase (TVar _ r)   = Just r
 stripRTypeBase (TFun _ _ _ _ r) = Just r
+stripRTypeBase (TObj _ r)   = Just r
 stripRTypeBase _            = Nothing
  
 ------------------------------------------------------------------------------------------

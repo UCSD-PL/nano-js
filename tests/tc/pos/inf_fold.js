@@ -2,7 +2,8 @@
 function fold(l,f,b) {
   var n = l.next;
   var d = l.data;
-  return fold(n, f, f(d,b));
+  var ret = fold(n, f, f(d,b));
+  return ret;
   // return fold(l.next, f, f(l.data,b));
 
 }

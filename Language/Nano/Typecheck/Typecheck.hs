@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE FlexibleContexts       #-}
 
 
 module Language.Nano.Typecheck.Typecheck (verifyFile, typeCheck) where 
@@ -49,7 +50,7 @@ import qualified System.Console.CmdArgs.Verbosity as V
 --------------------------------------------------------------------------------
 -- | Top-level Verifier 
 --------------------------------------------------------------------------------
-verifyFile :: FilePath -> IO (F.FixResult (SourceSpan, String))
+-- verifyFile :: FilePath -> IO (F.FixResult (SourceSpan, String))
 --------------------------------------------------------------------------------
 --verifyFile f = tc =<< parseNanoFromFile f
 --  where 
@@ -59,7 +60,7 @@ verifyFile :: FilePath -> IO (F.FixResult (SourceSpan, String))
 verifyFile f 
    = do nano    <- parseNanoFromFile f
         V.whenLoud $ donePhase FM.Loud "Parse"
-        {-putStrLn . render . pp $ nano-}
+        putStrLn . render . pp $ nano
         let nanoSsa = ssaTransform nano
         V.whenLoud $ donePhase FM.Loud "SSA Transform"
         V.whenLoud $ putStrLn . render . pp $ nanoSsa
@@ -73,8 +74,9 @@ verifyFile f
 
 -- TODO: CHECK HEAP WF
 -------------------------------------------------------------------------------
-typeCheck     :: (Data r, Typeable r, F.Reftable r) => V.Verbosity -> 
-                   Nano AnnSSA (RType r) -> (Nano AnnType (RType r))
+typeCheck ::
+  (Data r, Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  V.Verbosity -> Nano (AnnSSA_ r) (RType r) -> Nano (AnnType_ r) (RType r)
 -------------------------------------------------------------------------------
 typeCheck verb pgm = either crash id (execute verb pgm (tcAndPatch pgm))
   where
@@ -93,7 +95,7 @@ safe (Nano {code = Src fs})
 
 -------------------------------------------------------------------------------
 failCasts :: (Data r, Typeable r) => 
-  Bool -> Nano AnnSSA (RType r) -> F.FixResult (SourceSpan, String)
+              Bool -> Nano (AnnSSA_ r) (RType r) -> F.FixResult (SourceSpan, String)
 -------------------------------------------------------------------------------
 failCasts False (Nano {code = Src fs}) | not $ null csts = F.Unsafe csts
                                        | otherwise       = F.Safe
@@ -102,7 +104,7 @@ failCasts True   _                                       = F.Safe
     
 
 -------------------------------------------------------------------------------
-allCasts :: [FunctionStatement AnnSSA] -> [(AnnSSA, [Char])]
+allCasts :: (Data r, Typeable r) => [FunctionStatement (AnnSSA_ r)] -> [((AnnSSA_ r), [Char])]
 -------------------------------------------------------------------------------
 allCasts fs =  everything (++) ([] `mkQ` f) $ fs
   where f (DownCast l t)  = [(l, "DownCast: " ++ ppshow t)]
@@ -111,9 +113,6 @@ allCasts fs =  everything (++) ([] `mkQ` f) $ fs
         f _               = [ ]
 
 
--------------------------------------------------------------------------------
-printAnn :: AnnBare -> IO () 
--------------------------------------------------------------------------------
 printAnn (Ann l fs) = when (not $ null fs) $ putStrLn 
     $ printf "At %s: %s" (ppshow l) (ppshow fs)
 
@@ -122,8 +121,8 @@ printAnn (Ann l fs) = when (not $ null fs) $ putStrLn
 -------------------------------------------------------------------------------
 -- | The first argument true to tranform casted expressions e to Cast(e,T)
 -------------------------------------------------------------------------------
-tcAndPatch :: (Data r, Typeable r, F.Reftable r) => 
-    Nano AnnSSA (RType r) -> TCM (Nano  AnnSSA (RType r))
+-- tcAndPatch :: (Data r, Typeable r, F.Reftable r, PP r, Ord r) => 
+--     Nano (AnnSSA_ r) (RType r) -> TCM r (Nano (AnnSSA_ r) (RType r))
 -------------------------------------------------------------------------------
 tcAndPatch p = 
   do  checkTypeDefs p
@@ -149,7 +148,7 @@ tcAndPatch p =
 
 
 -------------------------------------------------------------------------------
-checkTypeDefs :: (Data r, Typeable r, F.Reftable r) => Nano AnnSSA (RType r) -> TCM ()
+checkTypeDefs :: (Data r, Typeable r, F.Reftable r) => Nano (AnnSSA_ r) (RType r) -> TCM r ()
 -------------------------------------------------------------------------------
 checkTypeDefs pgm = reportAll $ grep
   where 
@@ -169,10 +168,11 @@ checkTypeDefs pgm = reportAll $ grep
 
 
 -------------------------------------------------------------------------------
-tcNano :: (F.Reftable r) => Nano AnnSSA (RType r) -> TCM (Nano AnnType (RType r)) 
+tcNano :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  Nano (AnnSSA_ r) (RType r) -> TCM r (Nano (AnnType_ r) (RType r))
 -------------------------------------------------------------------------------
 tcNano p@(Nano {code = Src fs})
-  = do m     <- tcNano' $ toType <$> p 
+  = do m     <- tcNano' $ {- toType <$> -} p 
        return $ (trace "") $ p {code = Src $ (patchAnn m <$>) <$> fs}
     {-where-}
     {-  cachePP cache = render $-}
@@ -182,17 +182,17 @@ tcNano p@(Nano {code = Src fs})
 
 
 -------------------------------------------------------------------------------
-tcNano' :: Nano AnnSSA Type -> TCM AnnInfo  
+-- tcNano' :: Nano (AnnSSA_ r) (RType r) -> TCM r AnnInfo  
 -------------------------------------------------------------------------------
 tcNano' pgm@(Nano {code = Src fs}) 
   = do tcStmts (specs pgm, heapEmpty) fs
        M.unions <$> getAllAnns
 
-patchAnn              :: AnnInfo -> AnnSSA -> AnnType
+-- patchAnn              :: AnnInfo -> (AnnSSA_ r) -> (AnnType_ r)
 patchAnn m (Ann l fs) = Ann l $ sortNub $ (M.lookupDefault [] l m) ++ fs
 
 -------------------------------------------------------------------------------
--- | Type Check Environment ---------------------------------------------------
+-- | (RType r) Check Environment ---------------------------------------------------
 -------------------------------------------------------------------------------
 
 --   We define this alias as the "output" type for typechecking any entity
@@ -200,13 +200,12 @@ patchAnn m (Ann l fs) = Ann l $ sortNub $ (M.lookupDefault [] l m) ++ fs
 --   @Nothing@ means if we definitely hit a "return" 
 --   @Just γ'@ means environment extended with statement binders
 
-type TCEnv = Maybe (Env Type, BHeap)
+type TCEnv r = Maybe (Env (RType r), RHeap r)
 
 -------------------------------------------------------------------------------
 -- | TypeCheck Function -------------------------------------------------------
 -------------------------------------------------------------------------------
 
-tcFun    :: (Env Type, BHeap) -> FunctionStatement AnnSSA -> TCM TCEnv 
 tcFun (γ,_) (FunctionStmt l f xs body) 
   = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
        checkSigWellFormed l ts t σ σ'
@@ -275,7 +274,7 @@ validInst γ (l, ts)
 tVarId (TV a l) = Id l $ "TVAR$$" ++ F.symbolString a   
 
 --------------------------------------------------------------------------------
-tcSeq :: ((Env Type, BHeap) -> a -> TCM TCEnv) -> (Env Type, BHeap) -> [a] -> TCM TCEnv
+tcSeq :: ((Env (RType r), RHeap r) -> a -> TCM r (TCEnv r)) -> (Env (RType r), RHeap r) -> [a] -> TCM r (TCEnv r)
 --------------------------------------------------------------------------------
 
 tcSeq f             = foldM step . Just 
@@ -284,12 +283,14 @@ tcSeq f             = foldM step . Just
     step (Just (γ,σ)) x = f (γ,σ) x
 
 --------------------------------------------------------------------------------
-tcStmts :: (Env Type, BHeap) -> [Statement AnnSSA] -> TCM TCEnv
+tcStmts :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+            (Env (RType r), RHeap r) -> [Statement (AnnSSA_ r)] -> TCM r (TCEnv r)
 --------------------------------------------------------------------------------
 tcStmts = tcSeq tcStmt
 
 -------------------------------------------------------------------------------
-tcStmt :: (Env Type, BHeap) -> Statement AnnSSA -> TCM TCEnv  
+tcStmt  :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+            (Env (RType r), RHeap r) -> Statement (AnnSSA_ r) -> TCM r (TCEnv r)
 -------------------------------------------------------------------------------
 -- skip
 tcStmt' (γ,σ) (EmptyStmt _) 
@@ -303,6 +304,16 @@ tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LVar lx x) e))
 tcStmt' (γ,σ)  (ExprStmt _ (AssignExpr l OpAssign (LDot ld (VarRef _ x) f) e))   
   = do t <- varLookup γ l x
        tcDotAsgn (γ,σ) l t (Id ld f) e
+
+-- e1.x = e2
+-- @e3.x@ should have the exact same type with @e2@
+-- tcStmt' (γ,σ) (ExprStmt _ (AssignExpr l2 OpAssign (LDot l3 e3 x) e2))
+--   = do  t2 <- tcExpr γ e2 
+--         t3 <- tcExpr γ e3
+--         tx <- safeDotAccess x t2
+--         unifyTypeM l2 "DotRef" e2 t2 tx
+--         return $ Just (γ,σ)
+-- No strong updates allowed here - so return the same envirnment      
 
 -- e
 tcStmt' (γ,σ) (ExprStmt _ e)   
@@ -373,6 +384,59 @@ getFunHeaps γ
                             Nothing -> error "Unknown current typed function"
                             Just z  -> return $ fromJust $ bkFun z 
        return (σ_in, σ_out)
+
+windLocations (γ,σ) l = getUnwound >>= foldM (windLocation l) (γ,σ) . uwOrder σ
+
+windLocation l (γ,σ) (loc, tWind)
+  = do let σt       = restrictHeap [loc] σ
+       let σc       = foldl (flip heapDel) σ $ heapLocs σt
+       (_, _, t')  <- windType γ l loc tWind σt
+       σ           <- safeHeapSubstM (heapUpd loc t' σc)
+       uw          <- getUnwound
+       setUnwound $ (filter (not.(== loc).fst)) uw
+       return (γ,σ)
+
+windType γ l loc tWind@(Id _ i) σ 
+  = do t'         <- freshApp l tWind
+       (σe, t'')  <- unwindTC t'
+       et         <- freshHeapVar l ("wind<" ++ i ++ ">")
+       eh         <- freshHeapVar l ("wind<" ++ i ++ ">_heap")
+       let σ'      = heapAdd loc t'' σe
+       θ          <- unifyHeapsM l "Wind(heap)" σ σ'
+       let (σ1, σ2) = mapPair (apply θ) (σ, σ')
+       -- There may be newly created locations that need to get wound up at this point
+       let wls     = filter (needWind σ1) $ woundLocations σ2
+       (_,σ1')    <- (withUnwound wls $ windLocations (γ,σ1) l)
+       castHeapM γ eh σ1' σ2
+       recordWindExpr (ann l) (loc, tWind, et, eh)
+       return (θ,apply θ σe,apply θ t')
+  where 
+    needWind σ (l,t) = case L.lookup l $ woundLocations σ of
+                             Just t' -> F.symbol t /= F.symbol t'
+                             _       -> elem l $ heapLocs σ
+
+
+-- uwOrder :: RHeap r -> [(Location, Id SourceSpan)] -> [(Location, Id SourceSpan)]
+uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
+  -- For each unwound location l |-> t, record (l, locations referred to by t
+  -- build a graph of these dependencies and sort it, then fold locations
+  -- in that order
+  where deps      = map (\(l,i) ->((l,i),l,locs $ heapRead l σ)) ls
+        (g,v2e,_) = graphFromEdges deps
+
+freshApp l i@(Id _ x)
+  = do γ <- getTDefs
+       case envFindTy x γ of
+         Just (TBd (TD _ vs _ _ _ )) -> 
+           do -- vs' <- mapM (freshTVar (ann l)) vs
+              -- let θ = fromList $ zip vs (map tVar vs') 
+           -- do θ <- instSub (ann l) vs
+              -- let ts = (apply θ . tVar) <$> vs
+              -- error "foo" 
+              θ <- freshSubst (ann l) vs
+              return $ TApp (TDef i) (apply θ . tVar <$> vs) F.top
+         Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
+
 -- Compare locations in σ with σ_spec using the current θ.
 -- If a location exists in both and is wound up in σ_spec,
 -- then wind it up here.
@@ -380,21 +444,22 @@ windReturnValue (γ,σ) l σ_spec t
   = do θ         <- getSubst
        σ         <- safeHeapSubstM σ
        let wls    = woundLocations σ_spec
-       let tlocs  = apply θ $ locs t
+       let tlocs  = filter (`elem` heapLocs σ) $ apply θ $ locs t
        let uwls   = map (\l -> (l, L.lookup (apply θ l) wls)) tlocs
        let uwls'  = [(l,d) | (l, Just d) <- uwls, not . isWoundTy $ heapRead l σ]
-       foldM go (γ,σ) $ uwOrder σ uwls' 
-    where go (γ,σ) loc = windLocation l (γ,σ) loc
-          isWoundTy (TApp (TDef _) _ _) = True
-          isWoundTy _                   = False
+       withUnwound uwls' $ windLocations (γ,σ) l
 
-woundLocations σ_spec = [ p | Just p <- map go $heapBinds σ_spec ]
+isWoundTy (TApp (TDef _) _ _) = True
+isWoundTy _                   = False
+
+woundLocations σ_spec = [ p | Just p <- map go $ heapBinds σ_spec ]
   where
     go (l, (TApp (TDef d) _ _)) = Just (l, d)                       
     go _                        = Nothing
 
 -------------------------------------------------------------------------------
-tcVarDecl :: (Env Type, BHeap) -> VarDecl AnnSSA -> TCM TCEnv  
+tcVarDecl :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  (Env (RType r), RHeap r) -> VarDecl (AnnSSA_ r) -> TCM r (TCEnv r)
 -------------------------------------------------------------------------------
 
 tcVarDecl (γ,σ) (VarDecl l x (Just e)) 
@@ -404,7 +469,8 @@ tcVarDecl γ (VarDecl _ _ Nothing)
   = return $ Just γ
 
 ------------------------------------------------------------------------------------
-tcAsgn :: (Env Type, BHeap) -> AnnSSA -> Id AnnSSA -> Expression AnnSSA -> TCM TCEnv
+tcAsgn :: (PP r, Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) => 
+  (Env (RType r), RHeap r) -> (AnnSSA_ r) -> Id (AnnSSA_ r) -> Expression (AnnSSA_ r) -> TCM r (TCEnv r)
 ------------------------------------------------------------------------------------
 
 tcAsgn (γ,σ) _ x e 
@@ -412,22 +478,30 @@ tcAsgn (γ,σ) _ x e
        return $ Just (envAdds [(x, t)] γ, σ')
 
 ------------------------------------------------------------------------------------
-tcDotAsgn :: (Env Type, BHeap)
-          -> AnnSSA
-          -> Type 
-          -> Id AnnSSA
-          -> Expression AnnSSA
-          -> TCM TCEnv
+tcDotAsgn :: (PP r, Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  (Env (RType r), RHeap r)
+  -> (AnnSSA_ r)
+  -> (RType r)
+  -> Id (AnnSSA_ r)
+  -> Expression (AnnSSA_ r)
+  -> TCM r (TCEnv r)
 ------------------------------------------------------------------------------------
 tcDotAsgn (γ,σ) l x f e
-  = do (t,σ)                   <- tcExpr (γ,σ) e 
-       acc                     <- dotAccessRef σ f x
-       let (refs,_,newBinds,σt) = fromJust acc -- newBinds will contain the field f
-       let ls                   = locs refs 
-       let σ'                   = heapCombineWith (curry snd) [σ, heapFromBinds newBinds, σt]
-       ts'                      <- mapM (\loc -> updateField l (heapRead loc σ') f t) ls
-       let σ''                  = foldl (\σ (l,t) -> heapUpd l t σ) σ' (zip ls ts')
-       return $ Just (γ, σ'')
+  = do (t,σ)            <- tcExpr (γ,σ) e 
+       acc              <- safeDotAccess σ f x
+       let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
+       let ufs'          = [ (l,t) | (l, Just t) <- ufs ]
+       let σ'            = heapCombine [ σ | Just σ <- hs ]
+       let σ''           = heapCombineWith const [heapFromBinds ufs', σ', σ]
+       let ls            = locs x
+       ts'              <- mapM (\loc -> updateField l (heapRead loc σ'') f t) ls
+       return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ'' $ zip ls ts')
+
+-- tcAccess' σ t f = do acc  <- safeDotAccess σ f t
+--                      let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
+--                      let ufs' =             [ (l,t) | (l, Just t) <- ufs ]
+--                      let σ'   = heapCombine [ σ | Just σ <- hs ]
+--                      return $ tracePP "returning!" (mkUnion rs, heapCombineWith (curry fst) [heapFromBinds ufs', σ', σ])
 
 updateField _ (TObj bs r) (Id _ f) t = return $ TObj (scanUpdate bs) r
   where scanUpdate []     = [B (F.symbol f) t]
@@ -440,13 +514,15 @@ updateField l t            f       t' =
   tcError (ann l) $ (printf "Can not update %s.%s = %s" (ppshow f) (ppshow t) (ppshow t'))
 
 -------------------------------------------------------------------------------
-tcExpr :: (Env Type, BHeap) -> Expression AnnSSA -> TCM (Type, BHeap)
+tcExpr :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  (Env (RType r), RHeap r) -> Expression (AnnSSA_ r) -> TCM r (RType r, RHeap r)
 -------------------------------------------------------------------------------
 tcExpr (γ,σ) e = setExpr (Just e) >> (tcExpr' (γ,σ) e)
 
 
 -------------------------------------------------------------------------------
-tcExpr' :: (Env Type, BHeap) -> Expression AnnSSA -> TCM (Type, BHeap)
+tcExpr' :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
+  (Env (RType r), RHeap r) -> Expression (AnnSSA_ r) -> TCM r (RType r, RHeap r)
 -------------------------------------------------------------------------------
 
 tcExpr' (_,σ) (IntLit _ _)
@@ -461,8 +537,12 @@ tcExpr' (_,σ) (StringLit _ _)
 tcExpr' (_,σ) (NullLit _)
   = return (tNull, σ)
 
-tcExpr' (γ,σ) (VarRef l x)
-  = varLookup γ l x >>= return . (,σ)
+tcExpr' (γ,σ) e@(VarRef l x)
+  = do t  <- varLookup γ l x
+       mt <- tcVar (γ,σ) e t
+       case mt of 
+         Just r  -> return r
+         Nothing -> tcError (ann l) (printf "%s out of scope!" (ppshow x))
 
 tcExpr' (γ,σ) (PrefixExpr l o e)
   = tcCall (γ,σ) l o [e] (prefixOpTy o γ)
@@ -488,11 +568,42 @@ tcExpr' (γ,σ) (ObjectLit _ ps)
 tcExpr' (γ,σ) (DotRef l e i) 
   = tcAccess (γ,σ) l e i
 
+tcExpr' γ (BracketRef l e (StringLit _ s))
+  = tcAccess γ l e s
+
+{--- General case of dynamic key dictionary access-}
+{-tcExpr' γ (BracketRef l e1 e2)-}
+{-  = do  t2 <- tcExpr γ e2-}
+{-        unifyTypeM l "BracketRef" e2 t2 tString-}
+{-        tcAccess γ l e1 s-}
+
 tcExpr' _ e 
   = convertError "tcExpr" e
+    
+tcVar :: (Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r), PP r) => 
+  (Env (RType r), RHeap r) -> Expression (AnnSSA_ r) -> RType r -> TCM r (Maybe (RType r, RHeap r))
+
+tcVar (γ,σ) e t@(TApp (TRef loc) [] r)   
+  = if loc `elem` heapLocs σ then
+      return $ Just (t,σ)
+    else
+      return $ Nothing
+    
+tcVar (γ,σ) e t@(TApp TUn ts r)
+  = do ts' <- mapM (tcVar (γ,σ) e) ts 
+       case [ t | Just (t,_) <- ts' ] of
+         []   -> return Nothing
+         ts'  -> do let t' = mkUnion ts'
+                    castM e t t'
+                    return $ Just (t, σ)
+    
+tcVar (_,σ) e t = return $ Just (t,σ)                 
+        
+        
 
 ----------------------------------------------------------------------------------
-tcCall :: (PP fn) => (Env Type, BHeap) -> AnnSSA -> fn -> [Expression AnnSSA]-> Type -> TCM (Type, BHeap)
+tcCall :: (Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r), PP r, PP fn) => 
+  (Env (RType r), RHeap r) -> (AnnSSA_ r) -> fn -> [Expression (AnnSSA_ r)]-> (RType r) -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
 tcCall (γ,σ) l fn es ft
   = do  (_,ibs,σi,σo,ot) <- instantiate l fn ft
@@ -510,8 +621,7 @@ tcCall (γ,σ) l fn es ft
         castHeapM γ eh σ' σi
         checkDisjoint σo
         let σ_out = heapCombine [foldl (flip heapDel) σ' $ apply θ $ heapLocs σi, apply θ σo]
-        -- let σ_out         = heapCombineWith (curry snd) [σ', apply θ σo]
-        return $ (apply θ ot, σ_out)
+        return (apply θ ot, apply θ σ_out)
     where
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of
@@ -534,7 +644,8 @@ instantiate l fn ft
 
 
 ----------------------------------------------------------------------------------
-tcObject :: (Env Type, BHeap) -> [(Prop AnnSSA, Expression AnnSSA)] -> TCM (Type, BHeap)
+tcObject ::  (Ord r, F.Reftable r, PP r, Substitutable r (Fact_ r), Free (Fact_ r)) => 
+  (Env (RType r), RHeap r) -> [(Prop (AnnSSA_ r), Expression (AnnSSA_ r))] -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
 tcObject (γ,σ) bs 
   = do 
@@ -542,73 +653,34 @@ tcObject (γ,σ) bs
       let (ps, es) = unzip bs
       (ts,σ') <- foldM (tcExprs γ) ([],σ) es
       let bts =  zipWith B (map F.symbol ps) ts
-      let t   = TObj bts ()
+      let t   = TObj bts F.top 
       return (tRef l, heapAdd l t σ')
+-- =======
+--       bts <- zipWith B (map F.symbol ps) <$> mapM (tcExpr γ) es
+--       return $ TObj bts F.top
+-- >>>>>>> pvekris
 
 ----------------------------------------------------------------------------------
-windLocations :: (Env Type, BHeap) -> AnnSSA -> TCM (Env Type, BHeap)
-----------------------------------------------------------------------------------
-windLocations (γ,σ) l = getUnwound >>= foldM (windLocation l) (γ,σ) . uwOrder σ
-
-----------------------------------------------------------------------------------
-windLocation :: AnnSSA -> (Env Type, BHeap) -> (Location, Id SourceSpan) -> TCM (Env Type, BHeap)
-----------------------------------------------------------------------------------
-windLocation l (γ,σ) (loc, tWind)
-  = do let th       = heapRead loc σ
-       let ls       = locs th
-       let σt       = restrictHeap ls σ
-       let σc       = foldl (flip heapDel) σ $ heapLocs σt
-       (_, _, t')  <- windType γ l loc tWind th σt
-       σ           <- safeHeapSubstM (heapUpd loc t' σc)
-       uw          <- getUnwound
-       setUnwound $ (filter (not.(== loc).fst)) uw
-       return (γ,σ)
-
-windType γ l loc tWind@(Id _ i) t σ 
-  = do t'         <- freshApp l tWind
-       (σe, t'')  <- unwindTC t'
-       et         <- freshHeapVar l ("wind<" ++ i ++ ">")
-       eh         <- freshHeapVar l ("wind<" ++ i ++ ">_heap")
-       θ          <- unifyTypeM l "Wind" et t t''
-       θ          <- unifyHeapsM l "Wind(heap)" (apply θ σ) (apply θ σe)
-       castM et (apply θ t) (apply θ t'')
-       castHeapM γ eh (apply θ σ) (apply θ σe)
-       recordWindExpr (ann l) (loc, tWind, et, eh)
-       return (θ,σe,t')
-
-uwOrder :: BHeap -> [(Location, Id SourceSpan)] -> [(Location, Id SourceSpan)]
-uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
-  -- For each unwound location l |-> t, record (l, locations referred to by t
-  -- build a graph of these dependencies and sort it, then fold locations
-  -- in that order
-  where deps      = map (\(l,i) ->((l,i),l,locs $ heapRead l σ)) ls
-        (g,v2e,_) = graphFromEdges deps
-
-freshApp l i@(Id _ x)
-  = do γ <- getTDefs
-       case envFindTy x γ of
-         Just (TBd (TD _ vs _ _ _ )) -> 
-           do θ <- freshSubst (ann l) vs
-              let ts = apply θ . tVar <$> vs
-              return $ TApp (TDef i) ts F.top
-         _                           ->
-           error$ errorUnboundId "list" 
-
-----------------------------------------------------------------------------------
-tcAccess :: (Env Type, BHeap) -> AnnSSA -> Expression AnnSSA -> Id AnnSSA -> TCM (Type, BHeap)
+tcAccess ::  (Ord r, F.Reftable r, PP r, F.Symbolic s,
+              Substitutable r (Fact_ r), Free (Fact_ r), PP s) =>
+  (Env (RType r), RHeap r) -> (AnnSSA_ r) -> Expression (AnnSSA_ r) -> s -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
 tcAccess (γ,σ) _ e f = 
   do (r,σ') <- tcExpr (γ,σ) e
      tcAccess' σ' r f
+--   -- TODO: handle case of Nothing being returned from dotAccess
+--   tcExpr γ e >>= safeDotAccess f
+-- >>>>>>> pvekris
 
-tcAccess' σ (TApp TNull [] _) _ = return $ (tUndef, σ)
-tcAccess' σ t f = do acc                    <- dotAccessRef σ f t
-                     let (_,tr,newBinds,σt)  = fromJust acc
-                     let σ'                  = heapCombineWith (curry snd) [σ, heapFromBinds newBinds]
-                     return $ (tr, heapCombine [σ',σt])
+tcAccess' σ t f = do acc  <- safeDotAccess σ f t
+                     let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
+                     let ufs' =             [ (l,t) | (l, Just t) <- ufs ]
+                     let σ'   = heapCombine [ σ | Just σ <- hs ]
+                     return (mkUnion rs, heapCombineWith (curry fst) [heapFromBinds ufs', σ', σ])
 
 ----------------------------------------------------------------------------------
-envJoin :: AnnSSA -> (Env Type, BHeap) -> TCEnv -> TCEnv -> TCM TCEnv 
+envJoin :: (Ord r, F.Reftable r, PP r) =>
+  (AnnSSA_ r) -> (Env (RType r), RHeap r) -> TCEnv r -> TCEnv r -> TCM r (TCEnv r)
 ----------------------------------------------------------------------------------
 envJoin _ _ Nothing x           = return x
 envJoin _ _ x Nothing           = return x
@@ -624,7 +696,8 @@ envJoin' l (γ,_) (γ1,σ1) (γ2,σ2)
   
 
 ----------------------------------------------------------------------------------
-getPhiType :: Annot b SourceSpan -> (Env Type, BHeap) -> (Env Type, BHeap) -> Id SourceSpan-> TCM Type
+getPhiType ::  (Ord r, F.Reftable r, PP r) => 
+  Annot b SourceSpan -> (Env (RType r), RHeap r) -> (Env (RType r), RHeap r) -> Id SourceSpan-> TCM r (RType r)
 ----------------------------------------------------------------------------------
 getPhiType l (γ1,σ1) (γ2,σ2) x =
   case (envFindTy x γ1, envFindTy x γ2) of

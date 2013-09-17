@@ -13,6 +13,7 @@ import           Control.Applicative                ((<$>))
 
 import qualified Data.ByteString.Lazy               as B
 import qualified Data.HashMap.Strict                as M
+import           Data.Maybe                         (fromJust)
 
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
@@ -26,11 +27,12 @@ import           Language.Fixpoint.Interface        (solve)
 
 import           Language.Nano.CmdLine              (getOpts)
 import           Language.Nano.Errors
-import           Language.Nano.Misc
 import           Language.Nano.Types
+import           Language.Nano.Typecheck.TCMonad    (safeDotAccess)
 import qualified Language.Nano.Annots               as A
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Parse
+import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Typecheck  (typeCheck) 
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.SSA.SSA
@@ -55,7 +57,9 @@ verifyFile f =
 -- DEBUG VERSION 
 -- ssaTransform' x = tracePP "SSATX" $ ssaTransform x 
 
-reftypeCheck       :: Config -> FilePath -> Nano AnnType RefType -> IO (F.FixResult SourceSpan)
+--------------------------------------------------------------------------------
+reftypeCheck :: Config -> FilePath -> Nano AnnTypeR RefType -> IO (F.FixResult SourceSpan)
+--------------------------------------------------------------------------------
 reftypeCheck cfg f = solveConstraints f . generateConstraints cfg
 
 --------------------------------------------------------------------------------
@@ -98,13 +102,14 @@ generateConstraints cfg pgm = getCGInfo cfg pgm $ consNano pgm
 consNano     :: NanoRefType -> CGM ()
 --------------------------------------------------------------------------------
 consNano pgm@(Nano {code = Src fs}) 
-  = consStmts (initCGEnv pgm) fs >> return ()
+  =  
+    consStmts (initCGEnv pgm) fs >> return ()
 
   -- = forM_ fs . consFun =<< initCGEnv pgm
 initCGEnv pgm = CGE (specs pgm) F.emptyIBindEnv []
 
 --------------------------------------------------------------------------------
-consFun :: CGEnv -> FunctionStatement AnnType -> CGM CGEnv  
+consFun :: CGEnv -> Statement (AnnType_ F.Reft) -> CGM CGEnv
 --------------------------------------------------------------------------------
 consFun g (FunctionStmt l f xs body) 
   = do ft             <- {- tracePP msg <$> -} (freshTyFun g l f =<< getDefType f)
@@ -119,7 +124,7 @@ consFun g (FunctionStmt l f xs body)
 consFun _ _ = error "consFun called not with FunctionStmt"
 
 -----------------------------------------------------------------------------------
-envAddFun :: AnnType -> CGEnv -> Id AnnType -> [Id AnnType] -> RefType -> CGM CGEnv
+envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM CGEnv
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
   where  
@@ -142,12 +147,12 @@ renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
 --     tsym         = F.symbol t
 
 --------------------------------------------------------------------------------
-consStmts :: CGEnv -> [Statement AnnType]  -> CGM (Maybe CGEnv) 
+consStmts :: CGEnv -> [Statement AnnTypeR]  -> CGM (Maybe CGEnv) 
 --------------------------------------------------------------------------------
 consStmts = consSeq consStmt
 
 --------------------------------------------------------------------------------
-consStmt :: CGEnv -> Statement AnnType -> CGM (Maybe CGEnv) 
+consStmt :: CGEnv -> Statement AnnTypeR -> CGM (Maybe CGEnv) 
 --------------------------------------------------------------------------------
 
 -- | @consStmt g s@ returns the environment extended with binders that are
@@ -161,6 +166,17 @@ consStmt g (EmptyStmt _)
 -- x = e
 consStmt g (ExprStmt _ (AssignExpr _ OpAssign (LVar lx x) e))   
   = consAsgn g (Id lx x) e
+
+-- e1.x = e2
+-- @e3.x@ should have the exact same type with @e2@
+consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot _ e3 x) e2))
+  = do  (x2,g2) <- consExpr g e2
+        (x3,g3) <- consExpr g2 e3
+        let t2   = envFindTy x2 g2
+            t3   = envFindTy x3 g3
+        tx      <- dotAccessM x t3
+        withAlignedM (subTypeContainers' "DotRef-assign" l2 g3) t2 tx
+        return   $ Just g3
 
 -- e
 consStmt g (ExprStmt _ e)   
@@ -193,9 +209,13 @@ consStmt g (VarDeclStmt _ ds)
 
 -- return e 
 consStmt g (ReturnStmt l (Just e))
-  = do (xe, g') <- consExpr g e 
-       subType l g' (envFindTy xe g') (envFindReturn g')
-       return Nothing
+  = do  (xe, g') <- consExpr g e
+        let te    = envFindTy xe g'
+            rt    = envFindReturn g'
+        if isTop rt
+          then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
+          else withAlignedM (subTypeContainers' "Return" l g') te rt
+        return Nothing
 
 -- return
 consStmt _ (ReturnStmt _ Nothing)
@@ -211,7 +231,7 @@ consStmt _ s
 
 
 ------------------------------------------------------------------------------------
-consVarDecl :: CGEnv -> VarDecl AnnType -> CGM (Maybe CGEnv) 
+consVarDecl :: CGEnv -> VarDecl AnnTypeR -> CGM (Maybe CGEnv) 
 ------------------------------------------------------------------------------------
 
 consVarDecl g (VarDecl _ x (Just e)) 
@@ -221,14 +241,14 @@ consVarDecl g (VarDecl _ _ Nothing)
   = return $ Just g
 
 ------------------------------------------------------------------------------------
-consAsgn :: CGEnv -> Id AnnType -> Expression AnnType -> CGM (Maybe CGEnv) 
+consAsgn :: CGEnv -> Id AnnTypeR -> Expression AnnTypeR -> CGM (Maybe CGEnv) 
 ------------------------------------------------------------------------------------
 consAsgn g x e 
   = do (x', g') <- consExpr g e
        Just <$> envAdds [(x, envFindTy x' g')] g'
 
 ------------------------------------------------------------------------------------
-consExpr :: CGEnv -> Expression AnnType -> CGM (Id AnnType, CGEnv) 
+consExpr :: CGEnv -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv) 
 ------------------------------------------------------------------------------------
 
 -- | @consExpr g e@ returns a pair (g', x') where
@@ -259,11 +279,10 @@ consExpr g (NullLit l)
   = envAddFresh l tNull g
 
 consExpr g (VarRef i x)
-  = do addAnnot l x' $ envFindTy x g
-       return (x', g) 
+  = do addAnnot l x t
+       return ({- trace ("consExpr:VarRef" ++ ppshow x ++ " : " ++ ppshow t)-} x, g) 
     where 
-       x'  =  {- tracePP msg   -} x 
-       {-msg = printf "consExpr x = %s at %s" (ppshow x') (ppshow l)-}
+       t   = envFindTy x g
        l   = srcPos i
 
 consExpr g (PrefixExpr l o e)
@@ -278,87 +297,62 @@ consExpr g (CallExpr l e es)
 
 consExpr  g (DotRef l e i)
   = do  (x, g') <- consExpr g e
-        t       <- getBindingM i $ envFindTy x g'
-        case t of
-          Left  s  -> errorstar s
-          Right t' -> envAddFresh l t' g'
-       
+        consAccess l x g' i
+
+consExpr  g (BracketRef l e (StringLit _ s))
+  = do  (x, g') <- consExpr g e
+        consAccess l x g' s
+
 consExpr g (ObjectLit l ps) 
-  = do  (x, g') <- consObj l g ps
-        envAddFresh l (envFindTy x g') g'
+  = consObj l g ps
 
 consExpr _ e 
   = error $ (printf "consExpr: not handled %s" (ppshow e))
 
 
+---------------------------------------------------------------------------------------------
+consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated l, IsLocated x, PP s) =>
+              l -> x -> CGEnv -> s -> CGM (Id l, CGEnv)
+---------------------------------------------------------------------------------------------
+consAccess l x g i = dotAccessM i (envFindTy x g) >>= \t -> envAddFresh l t g
 
----------------------------------------------------------------------------------------------
-consUpCast :: CGEnv -> Id AnnType -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
----------------------------------------------------------------------------------------------
+dotAccessM f t = getTDefs >>= \γ -> return $ snd $ fromJust $ error "TBD" -- $ dotAccessRef γ f t
+
+       
+
+------------------------------------------------------------------------------------------
+consUpCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
+------------------------------------------------------------------------------------------
 consUpCast g x a e 
-  = do  γ         <- getTDefs
-        let tE'    = thd4 $ compareTs γ tE tU 
-        (x',g')   <- envAddFresh l tE' g 
-        return     $ (x', g')
-  where tE         = envFindTy x g 
-        tU         = rType $ head [ t | Assume t <- ann_fact a]
-        l          = getAnnotation e
+  = do  γ     <- getTDefs
+        let b' = fst $ alignTs γ b u
+        envAddFresh l b' g
+  where 
+    u          = rType $ head [ t | Assume t <- ann_fact a]
+    b          = envFindTy x g 
+    l          = getAnnotation e
       
 
+-- No fresh K-Vars here - instead keep refs from original type
 ---------------------------------------------------------------------------------------------
-consDownCast :: CGEnv -> Id AnnType -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
+consDownCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
 consDownCast g x a e 
-  = do  tdefs              <- getTDefs
-        let (_, tE', tC',_) = compareTs tdefs tE tC
-        let ts              = bkPaddedUnion tdefs tE' tC'
-        forM_ ts            $ castSubM g x l      -- Parts 
-        castSubM            g x l (tE', tC')      -- Top-level
-        (x', g')           <- envAddFresh l tC g
-        return              $ (x', g')
+  = do  γ   <- getTDefs
+        g'  <- envAdds [(x, tc)] g
+        withAlignedM (subTypeContainers' "Downcast" l g') te tc
+        envAddFresh l tc g'
     where 
-      tE              = envFindTy x g
-      tC              = rType $ head [ t | Assume t <- ann_fact a]
-      l               = getAnnotation e
+        tc   = head [ t | Assume t <- ann_fact a]
+        te   = envFindTy x g
+        l    = getAnnotation e
 
 
 ---------------------------------------------------------------------------------------------
-castSubM :: CGEnv -> Id AnnType -> AnnType -> (RefType, RefType) -> CGM () 
----------------------------------------------------------------------------------------------
-castSubM g x l (t1, t2) 
-  = do (g', t1', t2') <- fixBase g x $ {- tracePP "Calling fixbase on" -} (t1, t2)
-       {-let msg         = printf "Adding cast Sub: %s\n<:\n%s" (ppshow t1') (ppshow t2')-}
-       -- subType can be called directly at this point
-       subType l g' ({-trace msg -} t1') t2'
-
-
--- | fixBase converts:                                                  
---                         -----tE-----              -----tC-----       
--- g, x :: { v: U | r } |- { v: B | p }           <: { v: B | q }       
---              ^                                                       
---              |______Union                                            
---                                                                      
--- into:                                                                
---                                                                      
--- g, x :: { v: B | r } |- { v: B | p ∧ (v = x) } <: { v: B | q }       
--- --------g'----------    ----------tE'---------    ---- tC-----       
---                                                                      
----------------------------------------------------------------------------------------------
-fixBase :: CGEnv-> Id AnnType -> (RefType, RefType) -> CGM (CGEnv, RefType, RefType)
----------------------------------------------------------------------------------------------
-fixBase g x (tE, tC) =
-  do ttE     <- true tE
-     let rX'  = ttE `strengthen` rTypeReft (envFindTy x g)
-     g'      <- envAdds [(x, rX')] g
-     let ttE' = eSingleton ttE x 
-     return (g', ttE', tC)
-
-
----------------------------------------------------------------------------------------------
-consDeadCast :: CGEnv -> AnnType -> Expression AnnType -> CGM (Id AnnType, CGEnv)
+consDeadCast :: CGEnv -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
 consDeadCast g a e =
-  do  subType l g tru fls
+  do  subTypeContainers' "dead" l g tru fls
       envAddFresh l tC g
   where
     tC  = rType $ head [ t | Assume t <- ann_fact a]      -- the cast type
@@ -369,7 +363,7 @@ consDeadCast g a e =
 
 ---------------------------------------------------------------------------------------------
 consCall :: (PP a) 
-         => CGEnv -> AnnType -> a -> [Expression AnnType] -> RefType -> CGM (Id AnnType, CGEnv)
+         => CGEnv -> AnnTypeR -> a -> [Expression AnnTypeR] -> RefType -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
 
 --   1. Fill in @instantiate@ to get a monomorphic instance of @ft@ 
@@ -383,12 +377,12 @@ consCall g l _ es ft
   = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')    <- consScan consExpr g es
        let (su, ts') = renameBinds its xes
-       subTypes l g' xes ts'
-       envAddFresh l (F.subst su ot) g'
+       zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] ts'
+       envAddFresh l ({- tracePP "Ret Call Type" $ -} F.subst su ot) g'
      {-where -}
      {-  msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
-instantiate :: AnnType -> CGEnv -> RefType -> CGM RefType
+instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs tbody 
   where 
     (αs, tbody)   = bkAll t
@@ -396,7 +390,7 @@ instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs tbody
     {-msg           = printf "instantiate [%s] %s %s" (ppshow $ ann l) (ppshow αs) (ppshow tbody)-}
 
 
-getTypArgs :: AnnType -> [TVar] -> [Type] 
+getTypArgs :: AnnTypeR -> [TVar] -> [RefType] 
 getTypArgs l αs
   = case [i | TypInst i <- ann_fact l] of 
       [i] | length i == length αs -> i 
@@ -421,13 +415,14 @@ consSeq f           = foldM step . Just
 
 
 ---------------------------------------------------------------------------------
-consObj :: AnnType -> CGEnv -> [(Prop AnnType, Expression AnnType)] -> CGM (Id AnnType, CGEnv)
+consObj :: AnnTypeR -> CGEnv -> [(Prop AnnTypeR, Expression AnnTypeR)] -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------
 consObj l g pe = 
   do
     let (ps, es) = unzip pe
-    (xes, g')    <- consScan consExpr g es
-    let pxs = zipWith B (map F.symbol ps) $ map (\x -> envFindTy x g') xes
-    envAddFresh  l (TObj pxs F.top) g'
-    -- XXX What kind of refinements could we get here?
+    (xes, g')   <- consScan consExpr g es
+    let pxs      = zipWith B (map F.symbol ps) $ map (\x -> envFindTy x g') xes
+    let tob      = TObj pxs F.top
+    (i, g'')    <- envAddFresh  l tob g'
+    return       $ {- trace (printf "Adding: %s :: %s" (ppshow i) (ppshow tob)) -} (i,g'')
   
