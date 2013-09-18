@@ -28,9 +28,9 @@ import           Language.Fixpoint.Interface        (solve)
 import           Language.Nano.CmdLine              (getOpts)
 import           Language.Nano.Errors
 import           Language.Nano.Types
-import           Language.Nano.Typecheck.TCMonad    (safeDotAccess)
 import qualified Language.Nano.Annots               as A
 import           Language.Nano.Typecheck.Types
+import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Parse
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Typecheck  (typeCheck) 
@@ -106,7 +106,7 @@ consNano pgm@(Nano {code = Src fs})
     consStmts (initCGEnv pgm) fs >> return ()
 
   -- = forM_ fs . consFun =<< initCGEnv pgm
-initCGEnv pgm = CGE (specs pgm) F.emptyIBindEnv []
+initCGEnv pgm = CGE (specs pgm) heapEmpty F.emptyIBindEnv []
 
 --------------------------------------------------------------------------------
 consFun :: CGEnv -> Statement (AnnType_ F.Reft) -> CGM CGEnv
@@ -174,7 +174,7 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot _ e3 x) e2))
         (x3,g3) <- consExpr g2 e3
         let t2   = envFindTy x2 g2
             t3   = envFindTy x3 g3
-        tx      <- dotAccessM x t3
+        tx      <- dotAccessM (rheap g) x t3
         withAlignedM (subTypeContainers' "DotRef-assign" l2 g3) t2 tx
         return   $ Just g3
 
@@ -314,9 +314,13 @@ consExpr _ e
 consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated l, IsLocated x, PP s) =>
               l -> x -> CGEnv -> s -> CGM (Id l, CGEnv)
 ---------------------------------------------------------------------------------------------
-consAccess l x g i = dotAccessM i (envFindTy x g) >>= \t -> envAddFresh l t g
+consAccess l x g i = dotAccessM (rheap g) i (envFindTy x g) >>= \t -> envAddFresh l t g
 
-dotAccessM f t = getTDefs >>= \γ -> return $ snd $ fromJust $ error "TBD" -- $ dotAccessRef γ f t
+dotAccessM σ f (TApp TUn _ _) = error "TBD: access unions liquid"
+dotAccessM σ f t
+  = do γ <- getTDefs
+       let results = fromJust $ dotAccessRef (γ,σ) f t
+       return $ mkUnion $ ac_result <$> results
 
        
 
@@ -375,7 +379,7 @@ consCall :: (PP a)
 
 consCall g l _ es ft 
   = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
-       (xes, g')    <- consScan consExpr g es
+       (xes, g')         <- consScan consExpr g es
        let (su, ts') = renameBinds its xes
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] ts'
        envAddFresh l ({- tracePP "Ret Call Type" $ -} F.subst su ot) g'
@@ -392,9 +396,10 @@ instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs tbody
 
 getTypArgs :: AnnTypeR -> [TVar] -> [RefType] 
 getTypArgs l αs
-  = case [i | TypInst i <- ann_fact l] of 
-      [i] | length i == length αs -> i 
-      _                           -> errorstar $ bugMissingTypeArgs $ srcPos l
+  = error "TBD: getTypArgs"
+  -- = case [i | TypInst i <- ann_fact l] of 
+  --     [i] | length i == length αs -> i 
+  --     _                           -> errorstar $ bugMissingTypeArgs $ srcPos l
 
 ---------------------------------------------------------------------------------
 consScan :: (CGEnv -> a -> CGM (b, CGEnv)) -> CGEnv -> [a] -> CGM ([b], CGEnv)

@@ -24,16 +24,17 @@ module Language.Nano.Typecheck.TCMonad (
   , tcError
 
   -- * Freshness
-  , freshTyArgs
+  -- , freshTyArgs
+  , freshFun
+  , freshApp
   , freshLocation
   , freshTVar
-  , freshSubst
+  -- , freshSubst
   , freshHeap
   , freshHeapVar
   , tick
 
   -- * Dot Access
-  -- , dotAccessRef
   , safeDotAccess
 
   -- * Type definitions
@@ -224,7 +225,7 @@ extSubst :: (F.Reftable r, PP r) => [TVar] -> TCM r ()
 -------------------------------------------------------------------------------
 extSubst βs = getSubst >>= setSubst . (`mappend` θ')
   where 
-    θ'      = fromList $ zip βs (tVar <$> βs)
+    θ'      = fromLists (zip βs (tVar <$> βs)) []
 
 
 -------------------------------------------------------------------------------
@@ -240,6 +241,45 @@ logError l msg x = (modify $ \st -> st { tc_errss = (l,msg):(tc_errss st)}) >> r
 
 
 -------------------------------------------------------------------------------
+freshFun :: (PP r, PP fn, F.Reftable r) =>
+  AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, RType r)
+-------------------------------------------------------------------------------
+freshFun l fn ft
+  = do let bkft           =  bkAll ft
+       t'                <- freshTyArgs (srcPos l) (bkAll ft)
+       (ts,ibs,σi,σo :: RHeap r,ot) <- maybe err return $ bkFun t'
+       let ls             = nub $ heapLocs σi ++ heapLocs σo
+       ls'               <- mapM (const freshLocation') ls
+       let θl             = fromLists [] (zip ls ls') :: RSubst r
+       let (σi',σo')      = mapPair (apply θl) (σi, σo)
+       let ibs'           = apply θl <$> ibs
+       let ot'            = apply θl ot
+       addAnn (srcPos l) $ FunInst (zip (fst bkft) (tVar <$> ts)) (zip ls ls')
+       return (ts, ibs', σi', σo', ot')
+  where
+    err = logError (ann l) (errorNonFunction fn ft) tFunErr
+    
+freshApp l i@(Id _ d)
+  = do γ <- getTDefs
+       case envFindTy d γ of
+         Just (TBd (TD _ vs _ _ _)) -> freshen i vs
+         _                          -> err γ
+    where
+      err     γ    = logError (ann l) (errorUnboundIdEnv d γ) tErr
+      mkApp   i vs = TApp (TDef i) vs F.top
+      freshen i vs = do vs' <- mapM (freshTVar (ann l)) vs
+                        extSubst vs'
+                        return $ mkApp i $ tVar <$> vs'
+      
+
+-------------------------------------------------------------------------------
+freshLocation :: AnnSSA_ r -> TCM r Location
+-------------------------------------------------------------------------------
+freshLocation l = do loc <- freshLocation' 
+                     addAnn (srcPos l) $ LocInst loc
+                     return loc
+       
+-------------------------------------------------------------------------------
 freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r (RType r)
 -------------------------------------------------------------------------------
 freshTyArgs l (αs, t) 
@@ -250,16 +290,16 @@ freshSubst l αs
   = do
       fUnique αs
       βs        <- mapM (freshTVar l) αs
-      setTyArgs l βs
+      -- setTyArgs l βs
       extSubst βs 
-      return     $ fromList $ zip αs (tVar <$> βs)
+      return     $ fromLists (zip αs (tVar <$> βs)) []
     where
       fUnique xs = when (not $ unique xs) $ logError l errorUniqueTypeParams ()
 
-setTyArgs l βs 
-  = do m <- tc_anns <$> get 
-       -- when (HM.member l m) $ tcError l "Multiple Type Args"
-       addAnn l $ TypInst (tVar <$> βs)
+-- setTyArgs l βs 
+--   = do m <- tc_anns <$> get 
+--        when (HM.member l m) $ tcError l "Multiple Type Args"
+--        addAnn l $ TypInst (tVar <$> βs)
 
 
 -------------------------------------------------------------------------------
@@ -280,10 +320,6 @@ safeDotAccess σ f t@(TApp TUn ts _)  =
      e'         <- freshHeapVar (getAnnotation e) (printf "ptr(%s)__" (ppshow e))
      castM e' t (mkUnion ts')
      return $ zip ls as
---      case lts of
---        [] -> error "safeDotAccess: unsafe" 
---        _  -> 
--- safeDotAccess _ _ (TApp TNull _ _) = error "safeDotAccess: null"
 
 safeDotAccess σ f t 
   = do ma <- safeDotAccess' σ f t
@@ -298,14 +334,14 @@ safeDotAccess' :: (Ord r, PP r, F.Reftable r,
                   F.Symbolic s, PP s) =>
   RHeap r -> s -> RType r -> TCM r (Maybe (Location, ObjectAccess r))
 -------------------------------------------------------------------------------
-safeDotAccess' σ f (TApp (TRef l) _ _)
+safeDotAccess' σ f t@(TApp (TRef l) _ _)
   = do γ       <- getTDefs
        e       <- fromJust <$> getExpr
        e'      <- freshHeapVar (getAnnotation e) (printf "%s__" (ppshow e))
        -- Get a list of all the possible types at locatioin "l"
        -- including unfolded types and heaps, then freshen each
        -- and join
-       case dotAccess γ f (heapRead l σ) of
+       case dotAccessRef (γ,σ) f t of
          Nothing -> return Nothing -- error "safeDotAccess: unsafe"
          Just as -> do a <- joinAccess <$> traverse freshen as
                        castM e' (heapRead l σ) (ac_cast a)
@@ -329,19 +365,6 @@ safeDotAccess' σ f (TApp (TRef l) _ _)
 
 safeDotAccess' σ f _ = return Nothing
     
-
--- Access field @f@ of type @t@, adding a cast if needed to avoid errors.
--- -------------------------------------------------------------------------------
--- safeDotAccessObj :: (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
---   Env (RType r) -> RHeap r -> s -> RType r -> TCM r [ObjectAccess r]
--- -------------------------------------------------------------------------------
--- safeDotAccessObj γ e f t
---   = case dotAccess γ f t of 
---       Just access -> castResults access >> return (ac_result access)-- castM e t t' >> return tf
---       Nothing     -> error "safeDotAccess: unsafe"
---   where
---     castResults access = castM e t (ac_cast access)
-
 -------------------------------------------------------------------------------
 -- | Managing Annotations: Type Instantiations --------------------------------
 -------------------------------------------------------------------------------
@@ -480,11 +503,6 @@ freshTVar :: SourceSpan -> a -> TCM r (TVar)
 freshTVar l _ =  ((`TV` l). F.intSymbol "T") <$> tick
 
 -------------------------------------------------------------------------------
-freshLocation :: TCM r (Location)
--------------------------------------------------------------------------------
-freshLocation = tick >>= \n -> return ("_?L" ++ show n)
-
--------------------------------------------------------------------------------
 freshHeap :: (PP r, Ord r, F.Reftable r) => 
   RHeap r -> TCM r (RSubst r,RSubst r,RHeap r)
 -------------------------------------------------------------------------------
@@ -493,9 +511,11 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
   where
     nilSub           = (mempty,mempty)
     freshen (θ,θ') l =
-          do l' <- freshLocation
+          do l' <- freshLocation'
              return $ (mappend θ  (Su HM.empty (HM.singleton l l')),
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
+
+freshLocation' = tick >>= \n -> return ("_?L" ++ show n)
 
 -------------------------------------------------------------------------------
 freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))

@@ -75,6 +75,7 @@ import           Control.Applicative
 
 type RefType     = RType F.Reft
 type REnv        = Env RefType
+type RefHeap     = RHeap F.Reft
 type NanoRefType = Nano (AnnType_ F.Reft) RefType 
 
 type AnnTypeR    = AnnType_ F.Reft
@@ -88,14 +89,15 @@ data CGEnv
         -- TODO: add opts 
         --opts   :: OptionConf
           renv   :: !(Env RefType) -- ^ bindings in scope 
+        , rheap  :: !RefHeap      
         , fenv   :: F.IBindEnv     -- ^ fixpoint bindings
         , guards :: ![F.Pred]      -- ^ branch target conditions  
         }
 
-emptyCGEnv = CGE {-[] -} envEmpty F.emptyIBindEnv []
+emptyCGEnv = CGE {-[] -} envEmpty heapEmpty F.emptyIBindEnv []
 
 instance PP CGEnv where
-  pp (CGE {-_ -} re _ gs) = vcat [pp re, pp gs] 
+  pp (CGE {-_ -} re rh _ gs) = vcat [pp re, pp rh, pp gs] 
 
 ----------------------------------------------------------------------------
 -- | Constraint Information ------------------------------------------------

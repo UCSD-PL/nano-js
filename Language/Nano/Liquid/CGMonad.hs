@@ -395,7 +395,7 @@ freshTyFun' g l _ t b
 freshTyInst l g αs τs tbody
   = do ts    <- mapM (freshTy "freshTyInst") τs
        _     <- mapM (wellFormed l g) ts
-       let θ  = fromList $ zip αs ts
+       let θ  = fromLists (zip αs ts) []
        return $  {- tracePP msg $ -} apply θ tbody
     {-where-}
     {-   msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)-}
@@ -652,7 +652,7 @@ splitC' (Sub g i (TAll α1 t1) (TAll α2 t2))
   | otherwise   
   = splitC $ Sub g i t1 t2' 
   where 
-    θ   = fromList [(α2, tVar α1 :: RefType)]
+    θ   = fromLists [(α2, tVar α1 :: RefType)] []
     t2' = apply θ t2
 
 ---------------------------------------------------------------------------------------

@@ -3,14 +3,15 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Language.Nano.Typecheck.Subst ( 
   
   -- * Substitutions
     RSubst (..)
   , Subst 
-  , toList
-  , fromList
+  , toLists
+  , fromLists
   , toSubst
 
   -- * Free Type Variables
@@ -24,8 +25,7 @@ module Language.Nano.Typecheck.Subst (
   
   -- * Accessing fields
   , ObjectAccess(..)
-  , dotAccess
-  
+  , dotAccessRef
 
   ) where 
 
@@ -43,10 +43,11 @@ import           Language.Nano.Typecheck.Heaps
 
 import           Control.Applicative ((<$>))
 import qualified Data.HashSet as S
-import           Data.List                      (find)
+import           Data.List                      (find, intersect)
 import           Data.Traversable               (traverse)
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid
+import           Data.Maybe
 import           Text.Printf 
 -- import           Debug.Trace
 -- import           Language.Nano.Misc (mkEither)
@@ -66,11 +67,11 @@ type Subst    = RSubst ()
 toSubst :: RSubst r -> Subst
 toSubst (Su m lm) = Su (M.map toType m) lm
 
-toList        :: RSubst r -> [(TVar, RType r)]
-toList (Su m _) =  M.toList m 
+toLists  :: RSubst r -> ([(TVar, RType r)], [(Location,Location)])
+toLists (Su m lm) =  (M.toList m, M.toList lm)
 
-fromList      :: [(TVar, RType r)] -> RSubst r
-fromList      = flip Su M.empty . M.fromList 
+fromLists :: [(TVar, RType r)] -> [(Location,Location)] -> RSubst r
+fromLists l1 l2 = Su (M.fromList l1) (M.fromList l2)
 
 -- | Substitutions form a monoid; not commutative
 
@@ -136,26 +137,31 @@ instance Free (RType r) where
   free (TBd (TD _ α h t _ ))= foldr S.delete (free t) α
 
 instance Substitutable () Fact where
-  apply _ x@(PhiVar _)  = x
-  apply θ (TypInst ts)  = TypInst $ apply θ ts
-  apply θ (Assume  t )  = Assume  $ apply θ t
-  apply θ (AssumeH  h)  = AssumeH $ apply θ h
+  apply _ x@(PhiVar _)    = x
+  apply θ (FunInst ts ls) = FunInst (map (apply θ <$>) ts) (map (apply θ <$>) ls)
+  apply θ (LocInst l)     = LocInst (apply θ l)
+  apply θ (Assume  t)     = Assume  $ apply θ t
+  apply θ (AssumeH h)     = AssumeH $ apply θ h
 
 instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
-  apply _ x@(PhiVar _)  = x
-  apply θ (TypInst ts)  = TypInst $ apply θ ts
-  apply θ (Assume  t )  = Assume  $ apply θ t
+  apply _ x@(PhiVar _)    = x
+  apply θ (FunInst ts ls) = FunInst (map (apply θ <$>) ts) (map (apply θ <$>) ls)
+  apply θ (LocInst l)     = LocInst (apply θ l)
+  apply θ (Assume  t)     = Assume  $ apply θ t
+  apply θ (AssumeH h)     = AssumeH $ apply θ h
 
 
 instance Free Fact where
   free (PhiVar _)       = S.empty
-  free (TypInst ts)     = free ts
+  free (FunInst ts _)   = free . snd . unzip $ ts
+  free (LocInst _)      = S.empty
   free (Assume t)       = free t
   free (AssumeH h)      = free h
 
 instance Free (Fact_ r) where
   free (PhiVar _)       = S.empty
-  free (TypInst ts)     = free ts
+  free (FunInst ts _)   = free . snd . unzip $ ts
+  free (LocInst _)      = S.empty
   free (Assume t)       = free t
   free (AssumeH h)      = free h
  
@@ -186,7 +192,7 @@ unfoldFirst env t = go t
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _) = 
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs _ bd _ )) -> apply (fromList $ zip vs acts) bd
+        Just (TBd (TD _ vs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
         _                            -> error $ errorUnboundId id
     go (TApp c a r)            = TApp c (go <$> a) r
     go t@(TVar _ _ )           = t
@@ -206,7 +212,7 @@ unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromList $ zip vs acts
+        Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
                                                 in (apply θ h, apply θ bd)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
@@ -233,14 +239,22 @@ accessNoUnfold t r = [Access { ac_result = r
                              }
                      ]
 
-
 -- Returns type to cast the current expression and the returned type
 -------------------------------------------------------------------------------
-dotAccess ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
+dotAccessRef ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
+  (Env (RType r), RHeap r) -> s -> RType r -> Maybe [ObjectAccess r]
+-------------------------------------------------------------------------------
+dotAccessRef (γ,σ) f (TApp (TRef l) _ _)
+  = dotAccessBase γ f (heapRead l σ)
+
+dotAccessRef (γ,σ) f _ = Nothing
+
+-------------------------------------------------------------------------------
+dotAccessBase ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
   Env (RType r) -> s -> RType r -> Maybe [ObjectAccess r]
   -- (RType r, RType r)
 -------------------------------------------------------------------------------
-dotAccess _ f t@(TObj bs _) = 
+dotAccessBase _ f t@(TObj bs _) = 
   do  case find (match $ F.symbol f) bs of
         Just b -> Just $ accessNoUnfold t $ b_type b
         _      -> case find (match $ F.stringSymbol "*") bs of
@@ -248,7 +262,7 @@ dotAccess _ f t@(TObj bs _) =
                     _       -> Just $ accessNoUnfold t tUndef
   where match s (B f _)  = s == f
 
-dotAccess γ f t@(TApp c ts _ ) = go c
+dotAccessBase γ f t@(TApp c ts _ ) = go c
   where  go TUn      = dotAccessUnion γ f ts
          go TInt     = Just $ accessNoUnfold t tUndef
          go TBool    = Just $ accessNoUnfold t tUndef
@@ -259,10 +273,10 @@ dotAccess γ f t@(TApp c ts _ ) = go c
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
 
-dotAccess _ _ t@(TFun _ _ _ _ _) = Just $ accessNoUnfold t tUndef
-dotAccess _ _ t               = error $ "dotAccess " ++ (ppshow t) 
+dotAccessBase _ _ t@(TFun _ _ _ _ _) = Just $ accessNoUnfold t tUndef
+dotAccessBase _ _ t               = error $ "dotAccessBase " ++ (ppshow t) 
                                 
-dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccess γ f t_unfold
+dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccessBase γ f t_unfold
   where  
     (σ_unfold, t_unfold) = unfoldSafe γ t
     addUnfolded access = 
@@ -280,4 +294,4 @@ dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccess γ f t_unfold
 dotAccessUnion ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
   Env (RType r) -> s -> [RType r] -> Maybe [ObjectAccess r]  --  (RType r, RType r)
 -------------------------------------------------------------------------------
-dotAccessUnion γ f ts = concat <$> traverse (dotAccess γ f) ts
+dotAccessUnion γ f ts = concat <$> traverse (dotAccessBase γ f) ts

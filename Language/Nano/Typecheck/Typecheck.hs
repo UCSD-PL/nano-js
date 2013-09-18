@@ -397,12 +397,12 @@ windLocation l (γ,σ) (loc, tWind)
        return (γ,σ)
 
 windType γ l loc tWind@(Id _ i) σ 
-  = do t'         <- freshApp l tWind
-       (σe, t'')  <- unwindTC t'
+  = do t'         <- tracePP "generated t'" <$> freshApp l tWind
+       (σe, t'')  <- tracePP "unwind" <$> unwindTC t'
        et         <- freshHeapVar l ("wind<" ++ i ++ ">")
        eh         <- freshHeapVar l ("wind<" ++ i ++ ">_heap")
        let σ'      = heapAdd loc t'' σe
-       θ          <- unifyHeapsM l "Wind(heap)" σ σ'
+       θ          <- unifyHeapsM l "Wind(heap)" (tracePP "unify sig" σ) (tracePP "unify sig'" σ')
        let (σ1, σ2) = mapPair (apply θ) (σ, σ')
        -- There may be newly created locations that need to get wound up at this point
        let wls     = filter (needWind σ1) $ woundLocations σ2
@@ -424,18 +424,19 @@ uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
   where deps      = map (\(l,i) ->((l,i),l,locs $ heapRead l σ)) ls
         (g,v2e,_) = graphFromEdges deps
 
-freshApp l i@(Id _ x)
-  = do γ <- getTDefs
-       case envFindTy x γ of
-         Just (TBd (TD _ vs _ _ _ )) -> 
-           do -- vs' <- mapM (freshTVar (ann l)) vs
-              -- let θ = fromList $ zip vs (map tVar vs') 
-           -- do θ <- instSub (ann l) vs
-              -- let ts = (apply θ . tVar) <$> vs
-              -- error "foo" 
-              θ <- freshSubst (ann l) vs
-              return $ TApp (TDef i) (apply θ . tVar <$> vs) F.top
-         Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
+-- freshApp l i@(Id _ x)
+--   = do γ <- getTDefs
+--        case envFindTy x γ of
+--          Just (TBd (TD _ vs _ _ _ )) -> 
+         -- Create a fresh application of the type x
+  --          do -- vs' <- mapM (freshTVar (ann l)) vs
+  --             -- let θ = fromList $ zip vs (map tVar vs') 
+  --          -- do θ <- instSub (ann l) vs
+  --             -- let ts = (apply θ . tVar) <$> vs
+  --             -- error "foo" 
+  --             θ <- freshSubst (ann l) vs
+  --             return $ TApp (TDef i) (apply θ . tVar <$> vs) F.top
+  --        Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
 
 -- Compare locations in σ with σ_spec using the current θ.
 -- If a location exists in both and is wound up in σ_spec,
@@ -489,19 +490,13 @@ tcDotAsgn :: (PP r, Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ 
 tcDotAsgn (γ,σ) l x f e
   = do (t,σ)            <- tcExpr (γ,σ) e 
        acc              <- safeDotAccess σ f x
-       let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
-       let ufs'          = [ (l,t) | (l, Just t) <- ufs ]
-       let σ'            = heapCombine [ σ | Just σ <- hs ]
-       let σ''           = heapCombineWith const [heapFromBinds ufs', σ', σ]
+       let (rs,σ')       = unpackAccess σ acc
        let ls            = locs x
-       ts'              <- mapM (\loc -> updateField l (heapRead loc σ'') f t) ls
-       return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ'' $ zip ls ts')
-
--- tcAccess' σ t f = do acc  <- safeDotAccess σ f t
---                      let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
---                      let ufs' =             [ (l,t) | (l, Just t) <- ufs ]
---                      let σ'   = heapCombine [ σ | Just σ <- hs ]
---                      return $ tracePP "returning!" (mkUnion rs, heapCombineWith (curry fst) [heapFromBinds ufs', σ', σ])
+       ts'              <- mapM (updHeapField σ' t) ls
+       return $ Just (γ, heapCombineWith const [heapFromBinds $ zip ls ts', σ])
+       -- return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ' $ zip ls ts')
+  where  
+    updHeapField σ t loc = updateField l (heapRead loc σ) f t
 
 updateField _ (TObj bs r) (Id _ f) t = return $ TObj (scanUpdate bs) r
   where scanUpdate []     = [B (F.symbol f) t]
@@ -562,8 +557,8 @@ tcExpr' (γ,σ) (CallExpr l e es)
   = do (t, σ')  <- tcExpr (γ,σ) e
        tcCall (γ, σ') l e es t
 
-tcExpr' (γ,σ) (ObjectLit _ ps) 
-  = tcObject (γ,σ) ps
+tcExpr' (γ,σ) (ObjectLit l ps) 
+  = tcObject (γ,σ) l ps
 
 tcExpr' (γ,σ) (DotRef l e i) 
   = tcAccess (γ,σ) l e i
@@ -606,7 +601,7 @@ tcCall :: (Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r), PP r,
   (Env (RType r), RHeap r) -> (AnnSSA_ r) -> fn -> [Expression (AnnSSA_ r)]-> (RType r) -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
 tcCall (γ,σ) l fn es ft
-  = do  (_,ibs,σi,σo,ot) <- instantiate l fn ft
+  = do  (_,ibs,σi,σo,ot) <- freshFun l fn ft
         let its           = b_type <$> ibs
         -- Typecheck argument
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
@@ -631,34 +626,17 @@ tcCall (γ,σ) l fn es ft
 tcExprs γ (ts,σ) e = do (t,σ') <- tcExpr (γ,σ) e
                         return (ts ++ [t], σ')
 
-instantiate l fn ft 
-  = do t' <-  {- tracePP "new Ty Args" <$> -} freshTyArgs (srcPos l) (bkAll ft)
-       (ts,ibs,σi,σo,ot) <- maybe err return $ bkFun t'
-       (θi,_,σi')        <- freshHeap σi
-       (θo,_,σo')        <- freshHeap (apply θi σo)
-       let θ              = θi `mappend` θo
-       return $ (ts, map (apply θ) ibs, apply θo σi', σo', apply θ ot)
-    where
-       err = logError (ann l) (errorNonFunction fn ft) tFunErr
-
-
-
 ----------------------------------------------------------------------------------
 tcObject ::  (Ord r, F.Reftable r, PP r, Substitutable r (Fact_ r), Free (Fact_ r)) => 
-  (Env (RType r), RHeap r) -> [(Prop (AnnSSA_ r), Expression (AnnSSA_ r))] -> TCM r (RType r, RHeap r)
+  (Env (RType r), RHeap r) -> AnnSSA_ r -> [(Prop (AnnSSA_ r), Expression (AnnSSA_ r))] -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
-tcObject (γ,σ) bs 
-  = do 
-      l <- freshLocation
-      let (ps, es) = unzip bs
-      (ts,σ') <- foldM (tcExprs γ) ([],σ) es
-      let bts =  zipWith B (map F.symbol ps) ts
-      let t   = TObj bts F.top 
-      return (tRef l, heapAdd l t σ')
--- =======
---       bts <- zipWith B (map F.symbol ps) <$> mapM (tcExpr γ) es
---       return $ TObj bts F.top
--- >>>>>>> pvekris
+tcObject (γ,σ) l bs 
+  = do loc          <- freshLocation l
+       let (ps, es)  = unzip bs
+       (ts,σ')      <- foldM (tcExprs γ) ([],σ) es
+       let bts       =  zipWith B (map F.symbol ps) ts
+       let t         = TObj bts F.top 
+       return (tRef loc, heapAdd loc t σ')
 
 ----------------------------------------------------------------------------------
 tcAccess ::  (Ord r, F.Reftable r, PP r, F.Symbolic s,
@@ -668,15 +646,30 @@ tcAccess ::  (Ord r, F.Reftable r, PP r, F.Symbolic s,
 tcAccess (γ,σ) _ e f = 
   do (r,σ') <- tcExpr (γ,σ) e
      tcAccess' σ' r f
---   -- TODO: handle case of Nothing being returned from dotAccess
---   tcExpr γ e >>= safeDotAccess f
--- >>>>>>> pvekris
 
-tcAccess' σ t f = do acc  <- safeDotAccess σ f t
-                     let (rs, hs, ufs) = unzip3 [(ac_result a, ac_heap a, (l, snd <$> ac_unfold a)) | (l, a) <- acc]
-                     let ufs' =             [ (l,t) | (l, Just t) <- ufs ]
-                     let σ'   = heapCombine [ σ | Just σ <- hs ]
-                     return (mkUnion rs, heapCombineWith (curry fst) [heapFromBinds ufs', σ', σ])
+tcAccess' σ t f = do acc          <- safeDotAccess σ f t
+                     let (rs, σ')  = unpackAccess σ acc
+                     return (rs, σ')
+
+-- After accessing a field on the heap, unpack the results and:
+--   1. Return the result of the access
+--   2. Update unfolded locations AND add new locations
+-------------------------------------------------------------------------------
+unpackAccess :: (Ord r, F.Reftable r) => 
+  (RHeap r) -> [(Location, ObjectAccess r)] -> (RType r, RHeap r)
+-------------------------------------------------------------------------------
+unpackAccess σ acc
+  = if ckDisjoint ls ls' then
+       (mkUnion rs, heapCombineWith const [σ_unfold, σ_new, σ])
+    else  
+       error "BUG: Access resulted in non-disjoint new heap!"
+  where
+    (ls, ls')       = mapPair heapLocs (σ,σ_new)
+    ckDisjoint l l' = L.intersect l l' == []
+    σ_new           = heapCombine   $ catMaybes hs 
+    σ_unfold        = heapFromBinds $ [ (l,t) | (l, Just t) <-  ufs ]
+    (rs, hs, ufs)   = unzip3 $ unpk <$> acc
+    unpk (l,a)      = (ac_result a, ac_heap a, (l, snd <$> ac_unfold a))
 
 ----------------------------------------------------------------------------------
 envJoin :: (Ord r, F.Reftable r, PP r) =>

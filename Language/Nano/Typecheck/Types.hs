@@ -46,6 +46,7 @@ module Language.Nano.Typecheck.Types (
   -- * Regular Types
   , Type
   , BHeap
+  , RHeap
   , TBody (..)
   , TVar (..)
   , TCon (..)
@@ -147,7 +148,7 @@ data TCon
   = TInt                   
   | TBool                
   | TString
-  | TVoid              
+  | TVoid             
   | TTop
   | TRef Location
   | TDef  (Id SourceSpan)
@@ -529,7 +530,8 @@ ppTC TUndef           = text "Undefined"
 
 data Fact_  r
   = PhiVar  !(Id SourceSpan) 
-  | TypInst ![RType r]
+  | FunInst ![(TVar,RType r)] ![(Location,Location)]
+  | LocInst !Location
   | Assume  !(RType r)
   | AssumeH !(RHeap r)
   | Unwind  !Location
@@ -563,16 +565,18 @@ instance IsLocated (Annot a SourceSpan) where
   srcPos = ann
 
 instance PP Fact where
-  pp (PhiVar x)   = text "phi"  <+> pp x
-  pp (TypInst ts) = text "inst" <+> pp ts 
-  pp (Assume t)   = text "assume" <+> pp t
-  pp (AssumeH h)  = text "assume heap" <+> pp h
+  pp (PhiVar x)       = text "phi"  <+> pp x
+  pp (FunInst ts θ)   = text "inst" <+> pp ts <+> text " " <+> pp θ
+  pp (LocInst l)      = text "loc inst" <+> pp l
+  pp (Assume t)       = text "assume" <+> pp t
+  pp (AssumeH h)      = text "assume heap" <+> pp h
 
 instance (F.Reftable r, PP r) => PP (Fact_ r) where
-  pp (PhiVar x)   = text "phi"  <+> pp x
-  pp (TypInst ts) = text "inst" <+> pp ts 
-  pp (Assume t)   = text "assume" <+> pp t
-  pp (AssumeH h)  = text "assume heap" <+> pp h
+  pp (PhiVar x)     = text "phi"  <+> pp x
+  pp (FunInst ts θ) = text "inst" <+> pp ts <+> text " " <+> pp θ
+  pp (LocInst l)    = text "loc inst" <+> pp l 
+  pp (Assume t)     = text "assume" <+> pp t
+  pp (AssumeH h)    = text "assume heap" <+> pp h
 
 instance (F.Reftable r, PP r) => PP (AnnInfo_ r) where
   pp             = vcat . (ppB <$>) . M.toList 
