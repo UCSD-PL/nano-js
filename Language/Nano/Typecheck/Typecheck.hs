@@ -211,9 +211,8 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        checkSigWellFormed l ts t σ σ'
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
-       setFun (F.symbol f)
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
-         do q              <- tcStmts (γ'',σ) body
+         do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
             checkLocSubs θ σ'
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
@@ -379,11 +378,10 @@ tcStmt' _ s
 tcStmt (γ,σ) s = tcStmt' (γ,σ) s
 
 getFunHeaps γ
-  = do Just f             <- getFun
-       (_,_,σ_in,σ_out,_) <- case envFindTy f γ of 
-                            Nothing -> error "Unknown current typed function"
-                            Just z  -> return $ fromJust $ bkFun z 
-       return (σ_in, σ_out)
+  = do f <- getFun
+       case envFindTy f γ of
+         Nothing -> error "Unknown current typed function"
+         Just z  -> return $ fromJust $ funHeaps z
 
 windLocations (γ,σ) l = getUnwound >>= foldM (windLocation l) (γ,σ) . uwOrder σ
 

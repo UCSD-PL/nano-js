@@ -39,6 +39,7 @@ module Language.Nano.Typecheck.Types (
 
   -- * Deconstructing Types
   , bkFun
+  , funHeaps
   , bkAll
   , bkUnion, rUnion, rTypeR, setRTypeR
   , noUnion, unionCheck
@@ -46,7 +47,6 @@ module Language.Nano.Typecheck.Types (
   -- * Regular Types
   , Type
   , BHeap
-  , RHeap
   , TBody (..)
   , TVar (..)
   , TCon (..)
@@ -212,7 +212,7 @@ bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'
              return        (αs, xts, h, h', t'')
-         
+
 bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
 bkArr _                   = Nothing
 
@@ -222,6 +222,10 @@ bkAll t              = go [] t
     go αs (TAll α t) = go (α : αs) t
     go αs t          = (reverse αs, t)
 
+funHeaps :: RType r -> Maybe (RHeap r, RHeap r)
+funHeaps = (stripHeaps =<<) . bkFun
+  where
+    stripHeaps (_,_,σ,σ',_) = return (σ,σ')
 
 ---------------------------------------------------------------------------------
 mkUnion :: (Ord r, Eq r, F.Reftable r) => [RType r] -> RType r

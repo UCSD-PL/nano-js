@@ -20,6 +20,9 @@ module Language.Nano.Liquid.CGMonad (
 
   -- * Get Defined Types
   , getTDefs
+    
+  -- * Get Current Function
+  , getFun, withFun
 
   -- * Throw Errors
   , cgError      
@@ -35,6 +38,7 @@ module Language.Nano.Liquid.CGMonad (
   -- * Environment API
   , envAddFresh
   , envAdds
+  , envAddsHeap
   , envAddReturn
   , envAddGuard
   , envFindTy, envFindTy'
@@ -45,6 +49,7 @@ module Language.Nano.Liquid.CGMonad (
   -- * Add Subtyping Constraints
   , subTypes, subTypes', subType, subType'
   , subTypeContainers, subTypeContainers'
+  , subTypeHeaps
   , alignTsM, withAlignedM
 
   , addInvariant
@@ -58,6 +63,8 @@ module Language.Nano.Liquid.CGMonad (
   ) where
 
 import           Data.Maybe                     (fromMaybe)
+import           Data.List
+import           Data.Ord
 import           Data.Monoid                    (mempty)
 import qualified Data.HashMap.Strict            as M
 
@@ -70,6 +77,7 @@ import qualified Language.Nano.Annots           as A
 import qualified Language.Nano.Env              as E
 import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Types 
+import           Language.Nano.Typecheck.Heaps 
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
@@ -123,7 +131,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv (defs pgm) (tDefs pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -153,6 +161,20 @@ getTDefs :: CGM (E.Env RefType)
 ---------------------------------------------------------------------------------------
 getTDefs  = cg_tdefs <$> get
 
+---------------------------------------------------------------------------------------
+getFun :: CGM F.Symbol
+---------------------------------------------------------------------------------------
+getFun = cg_fun <$> get >>= maybe err return
+  where err = error "BUG: no current function!"
+        
+---------------------------------------------------------------------------------------
+withFun :: F.Symbol -> CGM a -> CGM a
+---------------------------------------------------------------------------------------
+withFun f m = do fOld <- cg_fun <$> get
+                 modify $ \st -> st { cg_fun = Just f }
+                 r <- m
+                 modify $ \st -> st { cg_fun = fOld }
+                 return r
 
 
 -- | Get binding from object type
@@ -207,6 +229,7 @@ measureEnv   = fmap rTypeSortedReft . E.envSEnv . consts
 
 data CGState 
   = CGS { binds    :: F.BindEnv            -- ^ global list of fixpoint binders
+        , cg_fun   :: !(Maybe F.Symbol)    -- ^ current function
         , cg_defs  :: !(E.Env RefType)     -- ^ type sigs for all defined functions
         , cg_tdefs :: !(E.Env RefType)     -- ^ type definitions
         , cs       :: ![SubC]              -- ^ subtyping constraints
@@ -250,6 +273,15 @@ envAdds xts' g
                    { fenv = F.insertsIBindEnv is (fenv g) }
     where 
        (xs,ts) = unzip xts'
+
+---------------------------------------------------------------------------------------
+envAddsHeap   :: (IsLocated l) => l -> [(Location, RefType)] -> CGEnv -> CGM CGEnv
+---------------------------------------------------------------------------------------
+envAddsHeap l lts g
+  = do xs  <- mapM (const $ freshId l) ls
+       xts <- zip xs <$> mapM addInvariant ts
+       return $ g { rheap = tracePP "envAddsHeap" $ heapCombineWith const [heapFromBinds $ zip ls ts, rheap g] }
+  where (ls,ts) = unzip lts
 
 
 addFixpointBind :: (F.Symbolic x) => (x, RefType) -> CGM F.BindId
@@ -448,6 +480,21 @@ subType l g t1 t2 =
 -- A more verbose version
 subType' msg l g t1 t2 = 
   subType l g (trace (printf "SubType[%s]:\n\t%s\n\t%s" msg (ppshow t1) (ppshow t2)) t1) t2
+
+-------------------------------------------------------------------------------
+subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
+-------------------------------------------------------------------------------
+subTypeHeaps l g σ1 σ2 = 
+  do when diffLength errLength
+     when diffLocs   errLocs
+     let bothBs = mapPair (sortBy (comparing fst)) (heapBinds σ1, heapBinds σ2)
+     uncurry (zipWithM_ (subTypeContainers l g)) (mapPair (map snd) bothBs)
+  where 
+    diffLength = length (heapLocs σ1) /= length (heapLocs σ2)
+    diffLocs   = not $ all (`elem` heapLocs σ2) $ heapLocs σ1
+    errLength  = error "BUG: differently sized heaps – should have been fixed in TC phase"
+    errLocs    = error $ "BUG: heaps with different locs - should have been fixed in TC phase:"
+                         ++ ppshow σ1 ++ "\n" ++ ppshow σ2
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -751,12 +798,14 @@ bsplitC g ci t1 t2
 ---------------------------------------------------------------------------------------
 splitW :: WfC -> CGM [FixWfC]
 ---------------------------------------------------------------------------------------
-splitW (W g i (TFun ts t _ _ _)) 
+splitW (W g i (TFun ts t h h' _)) 
   = do let bws = bsplitW g t i
        g'     <- envTyAdds i ts g 
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]
        ws'    <-            splitW (W g' i t)
-       return  $ bws ++ ws ++ ws'
+       ws''   <- concatMapM splitW $ W g' i <$> heapTypes h
+       ws'''  <- concatMapM splitW $ W g' i <$> heapTypes h'
+       return  $ bws ++ ws ++ ws' ++ ws'' ++ ws'''
 
 splitW (W g i (TAll _ t)) 
   = splitW (W g i t)

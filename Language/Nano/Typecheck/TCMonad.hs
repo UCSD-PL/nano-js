@@ -46,7 +46,7 @@ module Language.Nano.Typecheck.TCMonad (
   , safeHeapSubstWithM
 
   -- * Functions
-  , getFun, setFun
+  , getFun, withFun
 
   -- * Annotations
   , accumAnn
@@ -211,14 +211,19 @@ setSubst θ = modify $ \st -> st { tc_subst = θ }
 
 
 -------------------------------------------------------------------------------
-getFun     :: TCM r (Maybe F.Symbol)
+getFun     :: TCM r (F.Symbol)
 -------------------------------------------------------------------------------
-getFun   = tc_fun <$> get
+getFun   = tc_fun <$> get >>= maybe err return
+  where err = error "BUG: no current function!"
 
 -------------------------------------------------------------------------------
-setFun     :: F.Symbol -> TCM r ()
+withFun     :: F.Symbol -> TCM r a -> TCM r a
 -------------------------------------------------------------------------------
-setFun f = modify $ \st -> st { tc_fun = Just f }
+withFun f m = do fOld <- tc_fun <$> get
+                 modify $ \st -> st { tc_fun = Just f }
+                 r <- m
+                 modify $ \st -> st { tc_fun = fOld }
+                 return r
 
 -------------------------------------------------------------------------------
 extSubst :: (F.Reftable r, PP r) => [TVar] -> TCM r ()

@@ -112,12 +112,13 @@ initCGEnv pgm = CGE (specs pgm) heapEmpty F.emptyIBindEnv []
 consFun :: CGEnv -> Statement (AnnType_ F.Reft) -> CGM CGEnv
 --------------------------------------------------------------------------------
 consFun g (FunctionStmt l f xs body) 
-  = do ft             <- {- tracePP msg <$> -} (freshTyFun g l f =<< getDefType f)
+  = do ft             <- tracePP "fresh ft" <$> (freshTyFun g l f =<< getDefType f)
        g'             <- envAdds [(f, ft)] g 
        g''            <- envAddFun l g' f xs ft
-       gm             <- consStmts g'' body
-       maybe (return ()) (\g -> subType l g tVoid (envFindReturn g'')) gm
-       return g'
+       withFun (F.symbol f) $
+         do gm <- consStmts g'' body
+            maybe (return ()) (\g -> subType l g tVoid (envFindReturn g'')) gm
+            return g'
     {-where -}
     {-   msg = printf "freshTyFun f = %s" (ppshow f)-}
 
@@ -126,12 +127,13 @@ consFun _ _ = error "consFun called not with FunctionStmt"
 -----------------------------------------------------------------------------------
 envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM CGEnv
 -----------------------------------------------------------------------------------
-envAddFun l g f xs ft = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g) 
+envAddFun l g f xs ft = envAdds tyBinds =<< envAdds (varBinds xs ts') =<< (return $ envAddReturn f t' g') 
   where  
-    (αs, yts, h, h', t) = mfromJust "envAddFun" $ bkFun ft
+    g'                  = g { rheap = F.subst su h }
+    (αs, yts, h, h', t) = mfromJust "envAddFun" $ bkFun $ tracePP "ft" ft
     tyBinds             = [(Loc (srcPos l) α, tVar α) | α <- αs]
     varBinds            = safeZip "envAddFun"
-    (su, ts')           = renameBinds yts xs 
+    (su, ts')           = tracePP "renameBinds" <$> renameBinds (tracePP "yts" yts) (tracePP "xs" xs)
     t'                  = F.subst su t
 
 renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
@@ -208,18 +210,19 @@ consStmt g (VarDeclStmt _ ds)
   = consSeq consVarDecl g ds
 
 -- return e 
-consStmt g (ReturnStmt l (Just e))
+consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
         let te    = envFindTy xe g'
             rt    = envFindReturn g'
+        consReturnHeap g r
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
           else withAlignedM (subTypeContainers' "Return" l g') te rt
         return Nothing
 
 -- return
-consStmt _ (ReturnStmt _ Nothing)
-  = return Nothing 
+consStmt g r@(ReturnStmt _ Nothing)
+  = consReturnHeap g r >> return Nothing 
 
 -- function f(x1...xn){ s }
 consStmt g s@(FunctionStmt _ _ _ _)
@@ -229,6 +232,12 @@ consStmt g s@(FunctionStmt _ _ _ _)
 consStmt _ s 
   = errorstar $ "consStmt: not handled " ++ ppshow s
 
+consReturnHeap g (ReturnStmt l _)
+  = do (_,σ) <- getFunHeaps g l
+       subTypeHeaps l g (tracePP "rheap g" (rheap g)) (tracePP "σ" σ)
+       
+getFunHeaps g l
+  = (fromJust . funHeaps . flip envFindTy g) <$> getFun
 
 ------------------------------------------------------------------------------------
 consVarDecl :: CGEnv -> VarDecl AnnTypeR -> CGM (Maybe CGEnv) 
@@ -428,6 +437,9 @@ consObj l g pe =
     (xes, g')   <- consScan consExpr g es
     let pxs      = zipWith B (map F.symbol ps) $ map (\x -> envFindTy x g') xes
     let tob      = TObj pxs F.top
-    (i, g'')    <- envAddFresh  l tob g'
-    return       $ {- trace (printf "Adding: %s :: %s" (ppshow i) (ppshow tob)) -} (i,g'')
-  
+    let tptr     = TApp (TRef loc) [] F.top
+    (i, g'')    <- envAddFresh l tptr g'
+    g'''        <- envAddsHeap l [(loc,tob)] g''
+    return       $ {- trace (printf "Adding: %s :: %s" (ppshow i) (ppshow tob)) -} (i,g''')
+  where          
+    loc = head [ l | LocInst l <- ann_fact l]

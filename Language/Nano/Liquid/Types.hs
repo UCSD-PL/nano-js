@@ -8,6 +8,7 @@ module Language.Nano.Liquid.Types (
   
   -- * Refinement Types and Environments
     RefType 
+  , RefHeap
   , REnv
   , NanoRefType
 
@@ -254,6 +255,12 @@ instance (F.Reftable r, F.Subable r) => F.Subable (RType r) where
   subst su    = emapReft (F.subst  . F.substExcept su) []
   subst1 t su = emapReft (\xs r -> F.subst1Except xs r su) [] t
 
+instance (F.Reftable r, F.Subable r) => F.Subable (RHeap r) where
+  syms        = concatMap F.syms . heapTypes
+  substa      = fmap . F.substa
+  substf f    = fmap (F.substf f)
+  subst su    = fmap (F.subst su)
+
 ------------------------------------------------------------------------------------------
 -- | Traversals over @RType@ -------------------------------------------------------------
 ------------------------------------------------------------------------------------------
@@ -314,9 +321,10 @@ efoldReft :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> r -> a -> a) -> F.
 efoldReft _ f γ z (TVar _ r)          = f γ r z
 efoldReft g f γ z t@(TApp _ ts r)     = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
 efoldReft g f γ z (TAll _ t)          = efoldReft g f γ z t
-efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z (b_type <$> xts)) t  
+efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z ts) t  
   where 
     γ'                                = foldr (efoldExt g) γ xts
+    ts                                = (b_type <$> xts) ++ heapTypes h ++ heapTypes h'
 efoldReft g f γ z (TObj xts r)        = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
   where 
     γ'                                = foldr (efoldExt g) γ xts
