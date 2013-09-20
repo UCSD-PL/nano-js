@@ -16,7 +16,7 @@ function foo () {
   }
   
   var ff = obj.f;
-    return 3;
-//  return ff(obj.a);
+  var r  = ff(obj.a);
+  return r;
 
 }

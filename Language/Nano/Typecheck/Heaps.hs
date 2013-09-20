@@ -28,6 +28,7 @@ module Language.Nano.Typecheck.Heaps (
   , heapBinds
   , heapTypes
   , heapMem
+  , heapSplit
 
   ) where
 
@@ -37,6 +38,7 @@ import qualified Data.HashSet            as S
 import           Data.Generics                   
 import           Data.Maybe                 (catMaybes, isJust, fromJust)
 import           Data.Typeable              ()
+import           Data.List
 
 import           Text.Printf
 import           Text.PrettyPrint.HughesPJ 
@@ -105,3 +107,15 @@ heapTypes = map snd . heapBinds
 
 heapMem :: Location -> Heap t -> Bool
 heapMem l (H h) = M.member l h
+
+-- Get a list of locations:                        
+--   (only in σ1, both σ1 and σ2, only in σ2)          
+heapSplit :: Heap t -> Heap t -> ([Location],[Location],[Location])
+heapSplit σ1 σ2           
+  = (only1, nub $ both1 ++ both2, only2)
+    where 
+      l1s = heapLocs σ1
+      l2s = heapLocs σ2
+      (both1,only1) = partition (`elem` l2s) l1s
+      (both2,only2) = partition (`elem` l1s) l2s
+

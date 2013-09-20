@@ -170,15 +170,23 @@ consStmt g (ExprStmt _ (AssignExpr _ OpAssign (LVar lx x) e))
   = consAsgn g (Id lx x) e
 
 -- e1.x = e2
--- @e3.x@ should have the exact same type with @e2@
-consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot _ e3 x) e2))
-  = do  (x2,g2) <- consExpr g e2
-        (x3,g3) <- consExpr g2 e3
-        let t2   = envFindTy x2 g2
-            t3   = envFindTy x3 g3
-        tx      <- dotAccessM (rheap g) x t3
-        withAlignedM (subTypeContainers' "DotRef-assign" l2 g3) t2 tx
-        return   $ Just g3
+consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
+  = do (x2,g2) <- consExpr g e2
+       (x3,g3) <- consExpr g2 e3
+       consAccess l x3 g3 x
+       let tref = tracePP "1" $ envFindTy x3 g3
+           tsto = tracePP "2" $ envFindTy x2 g3
+           ls   = locs tref
+           σ'   = foldl (\σ l -> heapUpd l tsto σ) (rheap g) ls
+       return $ Just g3 { rheap = σ' }
+  -- @e3.x@ should have the exact same type with @e2@
+  -- = do  (x2,g2) <- consExpr g e2
+  --       (x3,g3) <- consExpr g2 e3
+  --       let t2   = envFindTy x2 g2
+  --           t3   = envFindTy x3 g3
+  --       tx      <- dotAccessM (rheap g) x t3
+  --       withAlignedM (subTypeContainers' "DotRef-assign" l2 g3) t2 tx
+  --       return   $ Just g3
 
 -- e
 consStmt g (ExprStmt _ e)   
@@ -214,10 +222,10 @@ consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
         let te    = envFindTy xe g'
             rt    = envFindReturn g'
-        consReturnHeap g r
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
           else withAlignedM (subTypeContainers' "Return" l g') te rt
+        -- consReturnHeap g' r
         return Nothing
 
 -- return
@@ -353,11 +361,11 @@ consDownCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (
 consDownCast g x a e 
   = do  γ   <- getTDefs
         g'  <- envAdds [(x, tc)] g
-        withAlignedM (subTypeContainers' "Downcast" l g') te tc
+        withAlignedM (subTypeContainers' "Downcast" l g) te tc
         envAddFresh l tc g'
     where 
-        tc   = head [ t | Assume t <- ann_fact a]
-        te   = envFindTy x g
+        tc   = tracePP "tc" $ head [ t | Assume t <- ann_fact a]
+        te   = tracePP "te" $ envFindTy x g
         l    = getAnnotation e
 
 
@@ -387,19 +395,21 @@ consCall :: (PP a)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
 consCall g l _ es ft 
-  = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+  = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> tracePP "ft" <$> instantiate l g ft
        (xes, g')         <- consScan consExpr g es
-       let (su, ts') = renameBinds its xes
-       zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] ts'
-       envAddFresh l ({- tracePP "Ret Call Type" $ -} F.subst su ot) g'
+       let (su, ts') = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
+       zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') (tracePP "es" [envFindTy x g' | x <- xes]) $ tracePP "ts'" ts'
+       envAddFresh l (tracePP "Ret Call Type" $ F.subst su ot) g'
      {-where -}
      {-  msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
-instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs tbody 
+instantiate l g t = {-  tracePP msg  <$>  -} freshTyInst l g αs τs $ tracePP "tbody" $ apply θl tbody
   where 
-    (αs, tbody)   = bkAll t
-    τs            = getTypArgs l αs 
+    (αs, tbody) = bkAll $ tracePP "t" $ t
+    τs          = map snd ts
+    θl          = fromLists [] ls :: RSubst F.Reft
+    (ts,ls)     = tracePP "FunInst" $ head [ (ts,ls) | FunInst ts ls <- ann_fact l ]
     {-msg           = printf "instantiate [%s] %s %s" (ppshow $ ann l) (ppshow αs) (ppshow tbody)-}
 
 

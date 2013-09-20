@@ -428,9 +428,9 @@ freshTyInst l g αs τs tbody
   = do ts    <- mapM (freshTy "freshTyInst") τs
        _     <- mapM (wellFormed l g) ts
        let θ  = fromLists (zip αs ts) []
-       return $  {- tracePP msg $ -} apply θ tbody
-    {-where-}
-    {-   msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)-}
+       return $   tracePP msg $  apply θ tbody
+    where
+       msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
 
 -- | Instantiate Fresh Type (at Phi-site) 
 ---------------------------------------------------------------------------------------
@@ -492,7 +492,8 @@ subTypeHeaps l g σ1 σ2 =
   where 
     diffLength = length (heapLocs σ1) /= length (heapLocs σ2)
     diffLocs   = not $ all (`elem` heapLocs σ2) $ heapLocs σ1
-    errLength  = error "BUG: differently sized heaps – should have been fixed in TC phase"
+    errLength  = error $ "BUG: differently sized heaps – should have been fixed in TC phase:"
+                         ++ ppshow σ1 ++ "\n" ++ ppshow σ2
     errLocs    = error $ "BUG: heaps with different locs - should have been fixed in TC phase:"
                          ++ ppshow σ1 ++ "\n" ++ ppshow σ2
 
@@ -570,8 +571,8 @@ subTypeContainers l g t1 t2 = subType l g t1 t2
 
 
 subTypeContainers' msg l g t1 t2 = 
-  subTypeContainers l g ({-trace (printf "subTypeContainers[%s]:\n\t%s\n\t%s" 
-                                msg (ppshow t1) (ppshow t2)) -} t1) t2
+  subTypeContainers l g (tracePP (printf "subTypeContainers[%s]:\n\t%s\n\t%s" 
+                                msg (ppshow t1) (ppshow t2)) t1) t2
 
 
 -------------------------------------------------------------------------------

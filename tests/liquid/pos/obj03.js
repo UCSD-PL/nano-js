@@ -5,15 +5,16 @@ function inc(n) {
   return n + 1;
 }
 
-var obj = {
-  a: 5,
-  b: "String",
-  oo: { n: 6 }
-
-}
-
 /*@ foo :: ({ number | true } ) => {  } */
 function foo (n) {
+
+  var obj = {
+    a: 5,
+    b: "String",
+    oo: { n: 6 }
+  
+  }
+
   
   return obj.oo;
 

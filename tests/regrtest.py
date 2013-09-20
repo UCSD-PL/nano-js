@@ -86,6 +86,7 @@ class Config (rtest.TestConfig):
 parser = optparse.OptionParser()
 parser.add_option("-t", "--threads", dest="threadcount", default=1, type=int, help="spawn n threads")
 parser.add_option("-o", "--opts", dest="opts", default="", type=str, help="additional arguments to nanojs")
+parser.add_option("-d", "--dir", dest="dir", default="", type=str, help="directory in which to run tests"
 parser.disable_interspersed_args()
 options, args = parser.parse_args()
 

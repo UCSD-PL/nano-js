@@ -114,7 +114,7 @@ import qualified Data.HashMap.Strict            as HM
 import qualified Data.Map                       as M
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
-import           Data.List                      (find, partition, nub, sort, unzip4)
+import           Data.List                      (find, partition, nub, sort, unzip4, intersect)
 import           Data.Traversable               (traverse)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
@@ -250,8 +250,8 @@ freshFun :: (PP r, PP fn, F.Reftable r) =>
   AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 -------------------------------------------------------------------------------
 freshFun l fn ft
-  = do let bkft           =  bkAll ft
-       t'                <- freshTyArgs (srcPos l) (bkAll ft)
+  = do let bkft           =  tracePP "bkft" $ bkAll ft
+       (τs,t')          <- tracePP "t'" <$> freshTyArgs (srcPos l) bkft
        (ts,ibs,σi,σo :: RHeap r,ot) <- maybe err return $ bkFun t'
        let ls             = nub $ heapLocs σi ++ heapLocs σo
        ls'               <- mapM (const freshLocation') ls
@@ -259,7 +259,7 @@ freshFun l fn ft
        let (σi',σo')      = mapPair (apply θl) (σi, σo)
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
-       addAnn (srcPos l) $ FunInst (zip (fst bkft) (tVar <$> ts)) (zip ls ls')
+       addAnn (srcPos l) $ FunInst (zip (tracePP "fst bkft" (fst bkft)) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
@@ -285,10 +285,10 @@ freshLocation l = do loc <- freshLocation'
                      return loc
        
 -------------------------------------------------------------------------------
-freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r (RType r)
+freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r ([RType r],RType r)
 -------------------------------------------------------------------------------
 freshTyArgs l (αs, t) 
-  = (`apply` t) <$> freshSubst l αs
+  = (`apply` (tVar <$> αs,t)) <$> freshSubst l αs
 
 freshSubst :: (PP r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
 freshSubst l αs
@@ -652,24 +652,42 @@ subHeapM :: (Ord r, PP r, F.Reftable r) =>
 subHeapM γ σ1 σ2 
   = do let l1s       = sort $ heapLocs σ1
        let l2s       = sort $ heapLocs σ2
-       let envLocs   = concat [locs t | (Id _ s, t) <- envToList γ, s /= F.symbolString returnSymbol]
-       let ls        = nub $ envLocs ++ l1s
-       let σ2'       = restrictHeap ls σ2
-       let (com,sup) = partition (`heapMem` σ1) $ heapLocs σ2' 
-       let dir       = case filter (`elem` ls) sup of
-                          [] -> if l1s == l2s then EqT else SubT
-                          _  -> SupT
-       ds <- uncurry subTypesM $ mapPair (readTs com) (σ1, σ2')
-       return $ foldl (&*&) dir ds
+       when (l1s /= l2s) $ error "BUG: non-normalized heaps in subHeapM"
+       ds <- uncurry subTypesM $ mapPair (readTs $ nub l1s) (σ1, σ2)
+       return $ foldl (&*&) EqT ds
+  where readTs ls σ = map (`heapRead` σ) ls
+          
+normalizeHeaps γ e σ1 σ2       
+  = do castEnvLocs (getAnnotation e) γ l2s
+       return $ mapPair (buildHeap both) (σ1, σ2)
+  where
+    buildHeap ls σ   = heapFromBinds . filter (flip elem ls.fst) . heapBinds $ σ
+    (l1s, both, l2s) = heapSplit σ1 σ2
+    
+castEnvLocs a γ ls 
+  = mapM_ (castLocs ls) xs
+    where 
+      xs = [ (VarRef a (Id a s),t) | (Id _ s, t) <- envToList γ
+                            , F.symbol s /= returnSymbol
+                            , locs t `intersect` ls /= [] ]
+      castLocs ls (e,t) = 
+        case filterTypeLs ls t of
+          Nothing -> addDeadCast e t
+          Just t' -> addDownCast e t t'
 
-       -- let ls        = nub ((concatMap (locs.snd) $ envToList γ) ++ heapLocs σ)
-       -- let (com,sup) = partition (`heapMem` σ) $ heapLocs σ' 
-       -- let dir       =  case filter (`elem` ls) sup of
-       --                    [] -> if sup == [] then EqT else SubT
-       --                    _  -> SupT
-       -- ds <- uncurry subTypesM $ mapPair (readTs com) (σ,σ')
-       -- return $ foldl (&*&) dir ds
-    where readTs ls σ = map (`heapRead` σ) ls
+filterTypeLs ls t@(TApp (TRef l) _ _)                
+  | l `elem` ls = Nothing
+  | otherwise   = Just t
+
+filterTypeLs ls t@(TApp TUn ts _)
+  = if ts' == [] then Nothing else Just $ mkUnion ts'
+  where ts' = [ t | Just t <- filterTypeLs ls <$> ts ]
+        
+filterTypeLs ls t@(TObj bs r)
+  = Just $ TObj [ B b t | (b, Just t) <- zip (b_sym <$> bs) bs' ] r
+  where bs' = filterTypeLs ls . b_type <$> bs
+        
+filterTypeLs _ t = Just $ tracePP "OK" t        
 
 --------------------------------------------------------------------------------
 --  cast Helpers ---------------------------------------------------------------
@@ -691,8 +709,8 @@ withExpr e action =
 castM     :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
 castM e t t'    = subTypeM t t' >>= go
-  where go SupT = addDownCast e t t'
-        go Rel  = addDownCast e t t'
+  where go SupT = addDownCast e (tracePP "t from" t) (tracePP "t to" t')
+        go Rel  = addDownCast e (tracePP "t from" t) (tracePP "t to" t')
         go SubT = addUpCast e t'
         go EqT  = return ()
         go Nth  = addDeadCast e t'
@@ -701,12 +719,14 @@ castM e t t'    = subTypeM t t' >>= go
 castHeapM :: (Ord r, PP r, F.Reftable r) =>
   Env (RType r) -> Expression (AnnSSA_ r) -> RHeap r -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
-castHeapM γ e σ σ' = subHeapM γ σ σ' >>= go
-  where go SupT = addDownCastH e σ'
-        go Rel  = addDownCastH e σ'
-        go SubT = addUpCastH e σ'
+castHeapM γ e σ1 σ2
+  = do (σ1',σ2') <- normalizeHeaps γ e (tracePP "σ1" σ1) (tracePP "σ2" σ2)
+       subHeapM γ σ1' σ2' >>= go
+  where go SupT = addDownCastH e σ2
+        go Rel  = addDownCastH e σ2
+        go SubT = addUpCastH e σ2
         go EqT  = return ()
-        go Nth  = addDeadCastH e σ'
+        go Nth  = addDeadCastH e σ2
 
 
 --------------------------------------------------------------------------------

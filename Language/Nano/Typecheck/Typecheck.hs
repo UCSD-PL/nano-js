@@ -599,7 +599,7 @@ tcCall :: (Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r), PP r,
   (Env (RType r), RHeap r) -> (AnnSSA_ r) -> fn -> [Expression (AnnSSA_ r)]-> (RType r) -> TCM r (RType r, RHeap r)
 ----------------------------------------------------------------------------------
 tcCall (γ,σ) l fn es ft
-  = do  (_,ibs,σi,σo,ot) <- freshFun l fn ft
+  = do  (_,ibs,σi,σo,ot) <- freshFun l fn (tracePP "ft" ft)
         let its           = b_type <$> ibs
         -- Typecheck argument
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
