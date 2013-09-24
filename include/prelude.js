@@ -160,6 +160,7 @@ function unwind(x) {
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
+/*@ invariant {v:<l>       | ttag(v) = "reference"} */
 
 
 /*************************************************************************/

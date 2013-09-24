@@ -5,7 +5,7 @@ function inc(n) {
   return n + 1;
 }
 
-/*@ foo :: ({ number | true } ) => {  } */
+/*@ foo :: ({ number | true } )/emp => <l>/l |-> {  } */
 function foo (n) {
 
   var obj = {

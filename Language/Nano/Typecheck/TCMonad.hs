@@ -57,6 +57,7 @@ module Language.Nano.Typecheck.TCMonad (
   , unfoldSafeTC
   , unwindTC
   , recordWindExpr
+  , recordingUnwind
   , recordUnwindExpr
   , getUnwound
   , setUnwound
@@ -105,16 +106,18 @@ import           Language.Nano.Misc             (unique, everywhereM', zipWith3M
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
+import           Language.Nano.Typecheck.WindFuns
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Unify
 import           Language.Nano.Errors
+import           Data.Function                  (on)                  
 import           Data.Monoid                  
 import qualified Data.HashMap.Strict            as HM
 import qualified Data.Map                       as M
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
-import           Data.List                      (find, partition, nub, sort, unzip4, intersect)
+import           Data.List                      (find, partition, nub, sort, unzip4, intersect, deleteFirstsBy)
 import           Data.Traversable               (traverse)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
@@ -141,9 +144,10 @@ data TCState r = TCS {
                    , tc_anns     :: AnnInfo_ r
                    , tc_annss    :: [AnnInfo_ r]
                    -- Heap bookkeeping
-                   , tc_unwound  :: [(Location, Id SourceSpan)] 
+                   , tc_unwound  :: [(Location, Id SourceSpan, RSubst r)] 
                    , tc_winds    :: M.Map SourceSpan [WindCall r]
                    , tc_unwinds  :: M.Map SourceSpan [(Location, Id SourceSpan)]
+                   , tc_heapexps :: M.Map SourceSpan [Expression (AnnSSA_ r)]
                    -- Cast map: 
                    , tc_casts    :: M.Map (Expression (AnnSSA_ r)) (Cast (RType r))
                    , tc_hcasts   :: M.Map (Expression (AnnSSA_ r)) (Cast (RHeap r))
@@ -159,7 +163,7 @@ data TCState r = TCS {
                    }
 
 type TCM r    = ErrorT String (State (TCState r))
-type WindCall r = (Location, Id SourceSpan, Expression (AnnSSA_ r), Expression (AnnSSA_ r))
+type WindCall r = (Location, Id SourceSpan)
 
 -------------------------------------------------------------------------------
 whenLoud :: TCM r () -> TCM r ()
@@ -264,17 +268,19 @@ freshFun l fn ft
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
     
+freshApp :: (F.Reftable r, PP r) => AnnSSA_ r -> Id SourceSpan -> TCM r (RSubst r, RType r) 
 freshApp l i@(Id _ d)
   = do γ <- getTDefs
        case envFindTy d γ of
          Just (TBd (TD _ vs _ _ _)) -> freshen i vs
          _                          -> err γ
     where
-      err     γ    = logError (ann l) (errorUnboundIdEnv d γ) tErr
+      err     γ    = logError (ann l) (errorUnboundIdEnv d γ) (mempty, tErr)
       mkApp   i vs = TApp (TDef i) vs F.top
       freshen i vs = do vs' <- mapM (freshTVar (ann l)) vs
                         extSubst vs'
-                        return $ mkApp i $ tVar <$> vs'
+                        let tVs = tVar <$> vs'
+                        return (fromLists (zip vs tVs) [], mkApp i tVs)
       
 
 -------------------------------------------------------------------------------
@@ -331,7 +337,7 @@ safeDotAccess σ f t
        case ma of
          Nothing     -> return []
          Just (l,a)  -> case ac_unfold a of
-                          Just (i, _) -> addUnwound (l, i) >> return [(l, a)]
+                          Just (i, θ, _) -> addUnwound (l, i, θ) >> return [(l, a)]
                           _           -> return  [(l, a)] 
 -------------------------------------------------------------------------------
 safeDotAccess' :: (Ord r, PP r, F.Reftable r, 
@@ -343,7 +349,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
   = do γ       <- getTDefs
        e       <- fromJust <$> getExpr
        e'      <- freshHeapVar (getAnnotation e) (printf "%s__" (ppshow e))
-       -- Get a list of all the possible types at locatioin "l"
+       -- Get a list of all the possible types at location "l"
        -- including unfolded types and heaps, then freshen each
        -- and join
        case dotAccessRef (γ,σ) f t of
@@ -352,7 +358,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
                        castM e' (heapRead l σ) (ac_cast a)
                        return $ Just (l, a) 
   where
-    safeUnfoldTy [(i,t)] = (i,t)
+    safeUnfoldTy [u] = u
     safeUnfoldTy _       = error $ "TBD: handle fancy unions"
     joinAccess as = Access { ac_result = mkUnion $ ac_result <$> as
                            , ac_cast   = mkUnion $ ac_cast   <$> as
@@ -362,11 +368,12 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
     freshen a = case ac_heap a of
                   Nothing -> return a
                   Just σ  -> do (θ,_,σ') <- freshHeap σ
-                                return $ a { ac_result = apply θ  $  ac_result a
+                                return $ a { ac_result = apply θ  $ ac_result a
                                            , ac_cast   = apply θ  $ ac_cast a
                                            , ac_heap   = Just σ'
-                                           , ac_unfold = fmap (apply θ) <$> ac_unfold a
+                                           , ac_unfold = appUf θ <$> ac_unfold a
                                            }
+    appUf θ (l,θ',t) = (l, θ' `mappend` θ, apply θ t)
 
 safeDotAccess' σ f _ = return Nothing
     
@@ -425,6 +432,7 @@ initState verb pgm = TCS { tc_errss   = []
                          , tc_winds   = M.empty
                          , tc_unwinds = M.empty
                          , tc_casts   = M.empty
+                         , tc_heapexps= M.empty
                          , tc_hcasts  = M.empty
                          , tc_defs    = defs pgm
                          , tc_fun     = Nothing
@@ -441,28 +449,28 @@ getDefType f
        l   = srcPos f
 
 -------------------------------------------------------------------------------
-getUnwound :: TCM r [(Location, Id SourceSpan)]
+getUnwound :: TCM r [(Location, Id SourceSpan, RSubst r)]
 -------------------------------------------------------------------------------
 getUnwound = tc_unwound <$> get
 
 -------------------------------------------------------------------------------
-setUnwound :: [(Location, Id SourceSpan)] -> TCM r ()
+setUnwound :: [(Location, Id SourceSpan, RSubst r)] -> TCM r ()
 -------------------------------------------------------------------------------
 setUnwound ls = modify $ \st -> st { tc_unwound = ls }
 
 -------------------------------------------------------------------------------
-addUnwound :: (Location, Id SourceSpan) -> TCM r ()
+addUnwound :: (Location, Id SourceSpan, RSubst r) -> TCM r ()
 -------------------------------------------------------------------------------
 addUnwound l = getUnwound >>= setUnwound . (l:)                                
 
 -----------------------------------------------------------------------------
-withUnwound  :: [(Location, Id SourceSpan)] -> TCM r a -> TCM r a
+withUnwound  :: [(Location, Id SourceSpan, RSubst r)] -> TCM r a -> TCM r a
 -----------------------------------------------------------------------------
 withUnwound uw action = 
   do  uwold  <- getUnwound 
       setUnwound uw 
       r     <- action 
-      setUnwound uw
+      setUnwound uwold
       return $ r
 
 -----------------------------------------------------------------------------
@@ -527,10 +535,10 @@ freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))
 -------------------------------------------------------------------------------
 freshHeapVar l x
   = do n <- tick
-       return $ newVar n idStr
-       -- let v = newVar n idStr
-       -- modify $ \st -> st { tc_heapExps = M.insertWith (flip (++)) (srcPos l) [v] $ tc_heapExps st }
-       -- return v
+       -- return $ newVar n idStr
+       let v = newVar n idStr
+       -- modify $ \st -> st { tc_heapexps = M.insertWith (flip (++)) (srcPos l) [v] $ tc_heapexps st }
+       return v
   where
     newVar n str = VarRef l (Id l (str ++ "_" ++ show n))
     idStr        = printf "%s__%d:%d" x (sourceLine . sp_begin $ srcPos l) (sourceLine . sp_end $ srcPos l)
@@ -543,37 +551,62 @@ unfoldFirstTC t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 
 
 -------------------------------------------------------------------------------
-unfoldSafeTC :: (PP r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r)
+unfoldSafeTC :: (PP r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
-recordWindExpr :: SourceSpan -> WindCall r -> TCM r ()
+recordWindExpr :: (PP r, F.Reftable r) => 
+  SourceSpan -> WindCall r -> RSubst r -> TCM r ()
 -------------------------------------------------------------------------------
-recordWindExpr l p = modify $ \s -> s {
-  tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
-  }
+recordWindExpr l p@(loc,t) θ 
+  = addWind >> addAnn (srcPos l) windInst
+  where
+    θ'       = θ `mappend` (fromLists [] [(windLoc, loc)])
+    windInst = uncurry FunInst $ toLists θ'
+    addWind  = modify $ \s -> s {
+      tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
+      }
 
 -------------------------------------------------------------------------------
-recordUnwindExpr :: SourceSpan -> (Location, Id SourceSpan) -> TCM r ()
+recordingUnwind :: (PP r, Ord r, F.Reftable r) => 
+  SourceSpan -> TCM r a -> TCM r a
 -------------------------------------------------------------------------------
-recordUnwindExpr l p = modify $ \s -> s {
-  tc_unwinds = M.insertWith (flip (++)) l [p] $ tc_unwinds s
-  }
+recordingUnwind l action
+  = do uw  <- tc_unwound <$> get
+       r   <- action
+       uw' <- tc_unwound <$> get
+       mapM_ (recordUnwindExpr l) (uw' `diff` uw)
+       return r
+  where
+    diff = deleteFirstsBy ((==) `on` fst3)
+
+-------------------------------------------------------------------------------
+-- recordUnwindExpr :: (PP r, F.Reftable r) => SourceSpan -> (Location, Id SourceSpan) -> TCM r ()
+-------------------------------------------------------------------------------
+recordUnwindExpr l p@(loc, id, θi) 
+  = addUnwind >> addAnn (srcPos l) unwindInst 
+  where 
+    θ          = θi `mappend` fromLists [] [(windLoc, loc)]
+    unwindInst = uncurry FunInst $ toLists θ 
+    addUnwind  = modify $ \s -> s {
+      tc_unwinds = M.insertWith (flip (++)) l [(loc,id)] $ tc_unwinds s
+      }
 
 -------------------------------------------------------------------------------
 unwindTC :: (PP r, Ord r, F.Reftable r) =>
-  RType r -> TCM r (RHeap r, RType r)
+  RType r -> TCM r (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
-unwindTC = go heapEmpty
-  where go σ t@(TApp (TDef _) _ _) = do
-          (σu, tu)  <- unfoldSafeTC t
-          (θ,_,σu') <- freshHeap σu
-          let σ' = heapCombine [σu',σ]
+unwindTC = go heapEmpty mempty
+  where go σ θ' t@(TApp (TDef _) _ _) = do
+          (σu, tu, θ'') <- unfoldSafeTC t
+          (θ''',_,σu') <- freshHeap σu
+          let θ = θ' `mappend` θ'' `mappend` θ'''
+              σ' = heapCombine [σu',σ]
           case tu of
-            t'@(TApp (TDef _) _ _) -> go σ' (apply θ t')
-            _                      -> return (σ', apply θ tu)
-        go _ _ = error "unwind of a non-TDef"
+            t'@(TApp (TDef _) _ _) -> go σ' θ (apply θ t')
+            _                      -> return (σ', apply θ tu, θ)
+        go _ _ _ = error "unwind of a non-TDef"
 
 --------------------------------------------------------------------------------
 --  Unification and Subtyping --------------------------------------------------
@@ -657,8 +690,8 @@ subHeapM γ σ1 σ2
        return $ foldl (&*&) EqT ds
   where readTs ls σ = map (`heapRead` σ) ls
           
-normalizeHeaps γ e σ1 σ2       
-  = do castEnvLocs (getAnnotation e) γ l2s
+normalizeHeaps γ l σ1 σ2       
+  = do castEnvLocs l γ l2s
        return $ mapPair (buildHeap both) (σ1, σ2)
   where
     buildHeap ls σ   = heapFromBinds . filter (flip elem ls.fst) . heapBinds $ σ
@@ -717,16 +750,17 @@ castM e t t'    = subTypeM t t' >>= go
 
 --------------------------------------------------------------------------------
 castHeapM :: (Ord r, PP r, F.Reftable r) =>
-  Env (RType r) -> Expression (AnnSSA_ r) -> RHeap r -> RHeap r -> TCM r ()
+  Env (RType r) -> AnnSSA_ r -> RHeap r -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
-castHeapM γ e σ1 σ2
-  = do (σ1',σ2') <- normalizeHeaps γ e (tracePP "σ1" σ1) (tracePP "σ2" σ2)
-       subHeapM γ σ1' σ2' >>= go
-  where go SupT = addDownCastH e σ2
-        go Rel  = addDownCastH e σ2
-        go SubT = addUpCastH e σ2
-        go EqT  = return ()
-        go Nth  = addDeadCastH e σ2
+castHeapM γ l σ1 σ2
+  = do (σ1',σ2') <- normalizeHeaps γ l (tracePP "σ1" σ1) (tracePP "σ2" σ2)
+       e <- freshHeapVar l "$$heap"
+       subHeapM γ σ1' σ2' >>= go e
+  where go e SupT = addDownCastH e σ2
+        go e Rel  = addDownCastH e σ2
+        go e SubT = addUpCastH e σ2
+        go _ EqT  = return ()
+        go e Nth  = addDeadCastH e σ2
 
 
 --------------------------------------------------------------------------------
@@ -777,31 +811,50 @@ addDeadCastH e σ = modify $ \st -> st { tc_hcasts = M.insert e (DC σ) (tc_hcas
 patchPgmM :: (Data b, Typeable r) => b -> TCM r b
 --------------------------------------------------------------------------------
 patchPgmM pgm = 
-  do  c    <- tc_casts <$> get
-      hc   <- tc_hcasts <$> get
-      m    <- tc_winds <$> get
-      pgm' <- insertHeapCasts m pgm
+  do  c        <- tc_casts    <$> get
+      hc       <- tc_hcasts   <$> get
+      winds    <- tc_winds    <$> get
+      unwinds  <- tc_unwinds  <$> get
+      hexs <- tc_heapexps <$> get
+      pgm' <- heapPatchPgm winds unwinds hexs pgm
       return $ fst $ runState (everywhereM' (mkM transform) pgm') (PS c hc)
 
 data PState r = PS { m :: Casts_ r, hm :: HCasts_ r}
 type PM     r = State (PState r)
 
-insertHeapCasts m pgm = 
-  return $ fst $ runState (everywhereM' (mkM go) pgm) (HS m)
+heapPatchPgm winds unwinds hm pgm = 
+  return $ fst $ runState (everywhereM' (mkM go) pgm) (HS winds unwinds hm)
   where go :: Statement (AnnSSA_ r) -> HSM r (Statement (AnnSSA_ r))
         go s = do
-          m <- em <$> get
-          let l  = getAnnotation s
-          let ws = M.findWithDefault [] (ann l) m
-          let es = map (buildWind l) ws 
-          put . HS $ M.delete (ann l) m
-          return $ if length es == 0 then s else BlockStmt l (map (ExprStmt l) es ++ [s])
-        -- 
-        windArgs a (l, (Id _ d), et, eh) = [StringLit a l, VarRef a (Id a d), et, eh]
-        buildWind a args = CallExpr a (VarRef a (Id a "@Wind")) $ windArgs a args
-                                               
+          wm   <- hs_winds   <$> get
+          uwm  <- hs_unwinds <$> get
+          expm <- hs_expmap  <$> get
+          let l     = getAnnotation $ s
+              ws    = M.findWithDefault [] (ann l) wm
+              uws   = M.findWithDefault [] (ann l) uwm
+          modify $ \s -> s { hs_winds   = M.delete (ann l) wm
+                           , hs_unwinds = M.delete (ann l) uwm
+                           , hs_expmap  = M.delete (ann l) expm
+                           }
+          return $ case (ws, uws) of
+                     ([],[])  -> s
+                     ([],uws) -> buildWindCalls True  unwindFunName uws s
+                     (ws,[])  -> buildWindCalls False windFunName   ws  s
 
-data HState r = HS { em :: M.Map SourceSpan [WindCall r] }
+buildWindCalls pre fn ws s 
+  = patchStmt pre windStmts s 
+  where 
+    windStmts                 = map (buildWind l) ws
+    l                         = getAnnotation s
+    buildWind a (l, (Id _ d)) = ExprStmt a $ CallExpr a (VarRef a (fn $ Id a d)) []
+    
+patchStmt _   ws (ReturnStmt l' e) = BlockStmt l' $ ws ++ [ReturnStmt l' e]
+patchStmt pre ws (BlockStmt l' ss) = BlockStmt l' $ if pre then ws ++ ss else ss ++ ws
+patchStmt pre ws s                 = BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
+
+data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
+                   , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])
+                   , hs_expmap  :: !(M.Map SourceSpan [Expression (AnnSSA_ r)]) }
 type HSM    r = State (HState r)
 
 --------------------------------------------------------------------------------

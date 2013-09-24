@@ -297,7 +297,10 @@ addInvariant   :: RefType -> CGM RefType
 ---------------------------------------------------------------------------------------
 addInvariant t           = ((`tx` t) . invs) <$> get
   where 
-    tx i t@(TApp tc _ _) = maybe t (strengthen t . rTypeReft . val) $ M.lookup tc i
+    -- HACK!!
+    fixRef (TRef _)      = TRef "l"
+    fixRef tc            = tc
+    tx i t@(TApp tc _ _) = maybe t (strengthen t . rTypeReft . val) $ M.lookup (fixRef tc) i
     tx _ t               = t 
 
 
@@ -400,10 +403,27 @@ envJoin' l g g1 g2
 
         zipWithM_ (subTypeContainers l g1') [envFindTy x g1' | x <- xs] ts
         zipWithM_ (subTypeContainers l g2') [envFindTy x g2' | x <- xs] ts
+       
+        g'  <- joinHeaps l γ g' g1' g2'
 
-        return g'
+        tracePP (printf "joined %s and %s" (ppshow (rheap g1')) (ppshow (rheap g2'))) (rheap g') `seq`return g'
 
-
+joinHeaps l γ g g1 g2
+  = do let (σ1,σ2)        = mapPair rheap (g1,g2)
+           (one,both,two) = heapSplit σ1 σ2
+           (t1s,t2s)      = unzip $ [mapPair (heapRead loc) (σ1,σ2) | loc <- both]
+           σ1'            = restrictHeap one σ1
+           σ2'            = restrictHeap two σ2
+           t4             = zipWith (compareTs γ) t1s t2s
+           --
+       ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
+       _                 <- mapM (wellFormed l g) ts
+       let σ'             = heapCombineWith const [heapFromBinds (zip both ts), σ2', σ1']
+       -- Subtype the common heap locations
+       zipWithM_ (subTypeContainers l g1) (map snd4 t4) ts
+       zipWithM_ (subTypeContainers l g2) (map thd4 t4) ts
+       return $ g { rheap = σ' }
+           
 ---------------------------------------------------------------------------------------
 -- | Fresh Templates ------------------------------------------------------------------
 ---------------------------------------------------------------------------------------
@@ -428,7 +448,7 @@ freshTyInst l g αs τs tbody
   = do ts    <- mapM (freshTy "freshTyInst") τs
        _     <- mapM (wellFormed l g) ts
        let θ  = fromLists (zip αs ts) []
-       return $   tracePP msg $  apply θ tbody
+       return $ tracePP msg $  apply θ tbody
     where
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
 
@@ -485,17 +505,32 @@ subType' msg l g t1 t2 =
 subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2 = 
-  do when diffLength errLength
-     when diffLocs   errLocs
-     let bothBs = mapPair (sortBy (comparing fst)) (heapBinds σ1, heapBinds σ2)
-     uncurry (zipWithM_ (subTypeContainers l g)) (mapPair (map snd) bothBs)
+  do -- Don't need these here I guess?
+     -- TC phase *should* insert all casts
+     -- to make sure heap subtyping is legit
+     -- when diffLength errLength
+     -- when diffLocs   errLocs
+     let (_,ls,_) = heapSplit σ1 σ2
+     forM_ ls $ subTypeLoc 
+     -- let bothBs  = mapPair (sortBy (comparing fst)) (heapBinds σ1, heapBinds σ2)
+     -- uncurry (zipWithM_ (subTypeContainers l g)) (mapPair (map snd) bothBs)
   where 
+    subTypeLoc loc = subTypeField {- subTypeContainers -} l g (heapRead loc σ1) (heapRead loc σ2)
     diffLength = length (heapLocs σ1) /= length (heapLocs σ2)
     diffLocs   = not $ all (`elem` heapLocs σ2) $ heapLocs σ1
     errLength  = error $ "BUG: differently sized heaps – should have been fixed in TC phase:"
                          ++ ppshow σ1 ++ "\n" ++ ppshow σ2
     errLocs    = error $ "BUG: heaps with different locs - should have been fixed in TC phase:"
                          ++ ppshow σ1 ++ "\n" ++ ppshow σ2
+    
+subTypeField l g =  withAlignedM (subTypeContainers l g)
+  -- do γ <- getTDefs
+     -- case tracePP "subTypeField" $ fth4 $ compareTs γ t1 t2 of
+     --   Nth -> subTypeContainers' "dead" l g tTop (tTop `strengthen` F.predReft F.PFalse)
+     --   _   -> withAlignedM (subTypeContainers l g) t1 t2
+
+         
+  
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -597,7 +632,7 @@ unfoldFirstCG t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 -------------------------------------------------------------------------------
 unfoldSafeCG :: RefType -> CGM RefType
 -------------------------------------------------------------------------------
-unfoldSafeCG   t = getTDefs >>= \γ -> return $ snd $ unfoldSafe γ t
+unfoldSafeCG   t = getTDefs >>= \γ -> return $ snd3 $ unfoldSafe γ t
 
 
 ---------------------------------------------------------------------------------------

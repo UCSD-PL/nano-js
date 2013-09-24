@@ -177,9 +177,9 @@ appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) ls) t
 appTy θ@(Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
 
 appTyFun θ ts t h h' r =
-  TFun (apply θ ts) (apply θ t) (fmap go h) (fmap go h') r
-      where go = appTy θ
-
+  TFun (apply θ ts) (apply θ t) (go h) (go h') r
+      where go            = heapFromBinds . map appBind . heapBinds 
+            appBind (l,t) = (apply θ l, apply θ t)
 -- | Unfold the FIRST TDef at any part of the type @t@.
 -------------------------------------------------------------------------------
 unfoldFirst :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
@@ -208,27 +208,27 @@ unfoldFirst env t = go t
 
 -- TODO: Make sure toplevel refinements are the same.
 -------------------------------------------------------------------------------
-unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RHeap r, RType r)
+unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                in (apply θ h, apply θ bd)
+                                                in (apply θ h, apply θ bd, θ)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
-unfoldMaybe _ t                           = Right (heapEmpty, t)
+unfoldMaybe _ t                           = Right (heapEmpty, t, mempty)
 
 
 -- | Force a successful unfolding
 -------------------------------------------------------------------------------
-unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> (RHeap r, RType r)
+unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldSafe env = either error id . unfoldMaybe env
 
 data ObjectAccess r = Access { ac_result :: RType r
                              , ac_cast   :: RType r
-                             , ac_unfold :: Maybe (Id SourceSpan, RType r)
+                             , ac_unfold :: Maybe (Id SourceSpan, RSubst r, RType r)
                              , ac_heap   :: Maybe (RHeap r)
                              } 
                       
@@ -278,12 +278,12 @@ dotAccessBase _ _ t               = error $ "dotAccessBase " ++ (ppshow t)
                                 
 dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccessBase γ f t_unfold
   where  
-    (σ_unfold, t_unfold) = unfoldSafe γ t
-    addUnfolded access = 
+    (σ_unfold, t_unfold, θ_unfold) = unfoldSafe γ t
+    addUnfolded access             = 
       case (ac_heap access, ac_unfold access) of
-        (Just x, Just y) -> error $ (printf "BUG: already unfolded and got %s %s" (ppshow x) (ppshow y))
+        (Just x, Just y) -> error $ (printf "BUG: already unfolded and got %s %s" (ppshow x) (ppshow (fst3 y, thd3 y)))
         _                -> access { ac_heap   = Just σ_unfold
-                                   , ac_unfold = Just (i, t_unfold)
+                                   , ac_unfold = Just (i, θ_unfold, t_unfold)
                                    , ac_cast   = t
                                    }
 

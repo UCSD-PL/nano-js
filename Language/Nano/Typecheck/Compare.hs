@@ -585,10 +585,10 @@ zipType2 γ f (TApp d@(TDef _) ts r) (TApp d'@(TDef _) ts' r') | d == d' =
   TApp d' (zipWith (zipType2 γ f) ts ts') $ f r r'
 
 zipType2 γ f t@(TApp (TDef _) _ _) t' =
-  zipType2 γ f (snd $ unfoldSafe γ t) t'
+  zipType2 γ f (snd3 $ unfoldSafe γ t) t'
 
 zipType2 γ f t t'@(TApp (TDef _) _ _) =
-  zipType2 γ f (snd $ unfoldSafe γ t) t'
+  zipType2 γ f (snd3 $ unfoldSafe γ t) t'
 
 zipType2 _ f (TApp c [] r) (TApp c' [] r')    | c == c' = 
   TApp c [] $ f r r'

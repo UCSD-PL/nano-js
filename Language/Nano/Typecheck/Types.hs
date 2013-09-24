@@ -30,6 +30,7 @@ module Language.Nano.Typecheck.Types (
   , ofType
   , strengthen 
   , strengthenContainers 
+  , updateField
 
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
@@ -226,6 +227,20 @@ funHeaps :: RType r -> Maybe (RHeap r, RHeap r)
 funHeaps = (stripHeaps =<<) . bkFun
   where
     stripHeaps (_,_,σ,σ',_) = return (σ,σ')
+---------------------------------------------------------------------------------
+updateField :: (Ord r, Eq r, F.Reftable r) =>
+  RType r -> F.Symbol -> RType r -> RType r
+---------------------------------------------------------------------------------
+updateField t f (TObj bs r) = TObj (scanUpdate bs) r
+  where scanUpdate []     = [B f t]
+        scanUpdate (b:bs) = if b_sym b == f then
+                              (B (b_sym b) t):bs
+                            else
+                              b:scanUpdate bs
+
+updateField t' f t =
+  errorstar $ (printf "Can not update %s.%s = %s" (ppshow t) (ppshow f) (ppshow t'))
+
 
 ---------------------------------------------------------------------------------
 mkUnion :: (Ord r, Eq r, F.Reftable r) => [RType r] -> RType r
