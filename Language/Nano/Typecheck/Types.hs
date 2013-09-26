@@ -548,13 +548,13 @@ ppTC TUndef           = text "Undefined"
 --   @Expression@ type, but are tucking them in using the @a@ parameter.
 
 data Fact_  r
-  = PhiVar  !(Id SourceSpan) 
-  | FunInst ![(TVar,RType r)] ![(Location,Location)]
-  | LocInst !Location
-  | Assume  !(RType r)
-  | AssumeH !(RHeap r)
-  | Unwind  !Location
-  | Wind    !(Location, Id SourceSpan, Id SourceSpan, Id SourceSpan)
+  = PhiVar     !(Id SourceSpan) 
+  | FunInst    ![(TVar,RType r)] ![(Location,Location)]
+  | WindInst   !Location !(Id SourceSpan) ![(TVar,RType r)] ![(Location,Location)]
+  | UnwindInst !Location !(Id SourceSpan) ![(Location,Location)]
+  | LocInst    !Location
+  | Assume     !(RType r)
+  | AssumeH    !(RHeap r)
     deriving (Eq, Ord, Show, Data, Typeable)
 
 type Fact = Fact_ ()
@@ -583,12 +583,20 @@ instance Eq (Annot a SourceSpan) where
 instance IsLocated (Annot a SourceSpan) where 
   srcPos = ann
 
+
 instance PP Fact where
   pp (PhiVar x)       = text "phi"  <+> pp x
   pp (FunInst ts θ)   = text "inst" <+> pp ts <+> text " " <+> pp θ
   pp (LocInst l)      = text "loc inst" <+> pp l
   pp (Assume t)       = text "assume" <+> pp t
   pp (AssumeH h)      = text "assume heap" <+> pp h
+  pp (WindInst l i αs ls) = pp l
+                        <+> pp αs
+                        <+> pp ls
+                        <+> text "↦" <+> pp i
+                        <+> text "↦" <+> pp i
+  pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
+  
 
 instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (PhiVar x)     = text "phi"  <+> pp x
@@ -596,6 +604,11 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (LocInst l)    = text "loc inst" <+> pp l 
   pp (Assume t)     = text "assume" <+> pp t
   pp (AssumeH h)    = text "assume heap" <+> pp h
+  pp (WindInst l i αs ls) = pp l
+                        <+> pp αs
+                        <+> pp ls
+                        <+> text "↦" <+> pp i
+  pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
 
 instance (F.Reftable r, PP r) => PP (AnnInfo_ r) where
   pp             = vcat . (ppB <$>) . M.toList 
@@ -606,8 +619,9 @@ instance (PP a, PP b) => PP (Annot b a) where
   pp (Ann x ys) = text "Annot: " <+> pp x <+> pp ys
 
 isAsm  :: Fact -> Bool
-isAsm  (Assume _) = True
-isAsm  _          = False
+isAsm  (Assume _)  = True
+isAsm  (AssumeH _) = True
+isAsm  _           = False
 
 -----------------------------------------------------------------------
 -- | Primitive / Base Types -------------------------------------------

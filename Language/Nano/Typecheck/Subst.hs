@@ -142,6 +142,9 @@ instance Substitutable () Fact where
   apply θ (LocInst l)     = LocInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
+  apply θ (WindInst l t αs ls) =
+    WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
+  apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
 
 instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply _ x@(PhiVar _)    = x
@@ -149,14 +152,19 @@ instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply θ (LocInst l)     = LocInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
+  apply θ (WindInst l t αs ls) =
+    WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
+  apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
 
 
 instance Free Fact where
-  free (PhiVar _)       = S.empty
-  free (FunInst ts _)   = free . snd . unzip $ ts
-  free (LocInst _)      = S.empty
-  free (Assume t)       = free t
-  free (AssumeH h)      = free h
+  free (PhiVar _)         = S.empty
+  free (FunInst ts _)     = free . snd . unzip $ ts
+  free (LocInst _)        = S.empty
+  free (Assume t)         = free t
+  free (AssumeH h)        = free h
+  free (WindInst _ _ ts _) = free. snd . unzip $ ts
+  free (UnwindInst _ _ _)  = S.empty
 
 instance Free (Fact_ r) where
   free (PhiVar _)       = S.empty
@@ -164,6 +172,8 @@ instance Free (Fact_ r) where
   free (LocInst _)      = S.empty
   free (Assume t)       = free t
   free (AssumeH h)      = free h
+  free (WindInst _ _ ts _) = free. snd . unzip $ ts
+  free (UnwindInst _ _ _)  = S.empty
  
 ------------------------------------------------------------------------
 -- appTy :: Subst_ r -> RType r -> RType r

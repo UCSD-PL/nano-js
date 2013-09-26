@@ -14,6 +14,7 @@ import           Control.Applicative                ((<$>))
 import qualified Data.ByteString.Lazy               as B
 import qualified Data.HashMap.Strict                as M
 import           Data.Maybe                         (fromJust)
+import           Data.Monoid
 
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
@@ -242,7 +243,17 @@ consStmt g r@(ReturnStmt _ Nothing)
 -- function f(x1...xn){ s }
 consStmt g s@(FunctionStmt _ _ _ _)
   = Just <$> consFun g s
+    
+consStmt g (WindAll l _)    
+  = Just <$> foldM (consWind l) g ws
+  where
+    ws = [ (l,t,fromLists αs ls) | WindInst l t αs ls <- ann_fact l ]
 
+consStmt g (UnwindAll l _)    
+  = Just <$> foldM (consUnwind l) g ws
+  where
+    ws = [ (l,t,fromLists [] ls) | UnwindInst l t ls <- ann_fact l ]
+    
 -- OTHER (Not handled)
 consStmt _ s 
   = errorstar $ "consStmt: not handled " ++ ppshow s
@@ -416,7 +427,7 @@ consCall g l _ es ft
        (xes, g')         <- consScan consExpr g es
        let (su, ts') = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') (tracePP "es" [envFindTy x g' | x <- xes]) $ tracePP "ts'" ts'
-       -- g''               <- stHeaps l g' h h'
+       -- g'               <- stHeaps l g' h h'
        subTypeHeaps l g' (rheap g') h
        let g'' = g' { rheap = heapCombine [foldl (flip heapDel) (rheap g) $ heapLocs h, h'] }
        tracePP "output heap" (rheap g'') `seq` envAddFresh l (F.subst su ot) g''
@@ -477,3 +488,35 @@ consObj l g pe =
     return       $ {- trace (printf "Adding: %s :: %s" (ppshow i) (ppshow tob)) -} (i,g''')
   where          
     loc = head [ l | LocInst l <- ann_fact l]
+    
+---------------------------------------------------------------------------------
+consWind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
+---------------------------------------------------------------------------------
+consWind l g (m, ty, θ) = 
+  do 
+    (σw, tw, t) <- freshTyWind g l θ ty
+    tracePP (printf "Subtyping %s/%s <: %s/%s" (ppshow (rheap g)) (ppshow (heapRead m (rheap g))) (ppshow σw) (ppshow tw)) ()`seq`subTypeWind l g σw (heapRead m (rheap g)) tw
+    let ls = heapLocs $ restrictHeap [m] (rheap g)
+    return $ g { rheap = heapAdd m t $ heapDiff (rheap g) ls }
+    where
+      heapDiff σ ls = foldl (flip heapDel) σ ls
+
+---------------------------------------------------------------------------------
+consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
+---------------------------------------------------------------------------------
+consUnwind l g (m, ty, θl) =
+  do 
+    (σ,t,αs) <- envFindTyDef ty
+    let θ = θl `mappend` fromLists (zip αs vs) []
+    return $ g { rheap = heapCombine [ heapUpd m (apply θ t) (rheap g)
+                                     , apply θ σ
+                                     ]
+               }
+  where 
+    vs = case heapRead m (rheap g) of
+           TApp _ vs _  -> vs
+           _            -> error "BUG: unwound something bad!"
+    
+    
+
+

@@ -562,8 +562,7 @@ recordWindExpr :: (PP r, F.Reftable r) =>
 recordWindExpr l p@(loc,t) θ 
   = addWind >> addAnn (srcPos l) windInst
   where
-    θ'       = θ `mappend` (fromLists [] [(windLoc, loc)])
-    windInst = uncurry FunInst $ toLists θ'
+    windInst = uncurry (WindInst loc t) $ toLists θ
     addWind  = modify $ \s -> s {
       tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
       }
@@ -587,8 +586,7 @@ recordingUnwind l action
 recordUnwindExpr l p@(loc, id, θi) 
   = addUnwind >> addAnn (srcPos l) unwindInst 
   where 
-    θ          = θi `mappend` fromLists [] [(windLoc, loc)]
-    unwindInst = uncurry FunInst $ toLists θ 
+    unwindInst = UnwindInst loc id (snd $ toLists θi)
     addUnwind  = modify $ \s -> s {
       tc_unwinds = M.insertWith (flip (++)) l [(loc,id)] $ tc_unwinds s
       }
@@ -830,27 +828,45 @@ heapPatchPgm winds unwinds hm pgm =
           uwm  <- hs_unwinds <$> get
           expm <- hs_expmap  <$> get
           let l     = getAnnotation $ s
-              ws    = M.findWithDefault [] (ann l) wm
-              uws   = M.findWithDefault [] (ann l) uwm
-          modify $ \s -> s { hs_winds   = M.delete (ann l) wm
-                           , hs_unwinds = M.delete (ann l) uwm
-                           , hs_expmap  = M.delete (ann l) expm
+              ws    = lookupStmt l wm
+              uws   = lookupStmt l uwm
+          modify $ \s -> s { hs_winds   = clearAnnot l wm
+                           , hs_unwinds = clearAnnot l uwm
+                           , hs_expmap  = clearAnnot l expm
                            }
           return $ case (ws, uws) of
                      ([],[])  -> s
-                     ([],uws) -> buildWindCalls True  unwindFunName uws s
-                     (ws,[])  -> buildWindCalls False windFunName   ws  s
+                     ([],uws) -> buildWindCalls True  UnwindAll uws s
+                     (ws,[])  -> buildWindCalls False WindAll   ws  s
+                     -- ([],uws) -> buildWindCalls True  unwindFunName uws s
+                     -- (ws,[])  -> buildWindCalls False windFunName   ws  s
+                     _        -> error $ errorSameLoc s
+        clearAnnot l = M.delete (ann l)
+        lookupStmt l = M.findWithDefault [] (ann l)
+        errorSameLoc s = (printf "BUG: wind and unwind at %s" (ppshow s))
 
 buildWindCalls pre fn ws s 
   = patchStmt pre windStmts s 
   where 
-    windStmts                 = map (buildWind l) ws
+    display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
+    windStmts                 = [fn l $ map display ws] -- map (buildWind l) ws
     l                         = getAnnotation s
-    buildWind a (l, (Id _ d)) = ExprStmt a $ CallExpr a (VarRef a (fn $ Id a d)) []
+    -- buildWind a (l, (Id _ d)) = ExprStmt a $ CallExpr a (VarRef a (fn $ Id a d)) []
     
-patchStmt _   ws (ReturnStmt l' e) = BlockStmt l' $ ws ++ [ReturnStmt l' e]
-patchStmt pre ws (BlockStmt l' ss) = BlockStmt l' $ if pre then ws ++ ss else ss ++ ws
-patchStmt pre ws s                 = BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
+patchStmt _   ws (ReturnStmt l e)     = 
+  BlockStmt l $ ws ++ [ReturnStmt l e]
+
+patchStmt pre ws (BlockStmt l ss)     = 
+  BlockStmt l $ if pre then ws ++ ss else ss ++ ws
+
+patchStmt pre ws (IfStmt l e s1 s2)   = 
+  IfStmt l e s1 (patchStmt pre ws s2)
+                                      
+patchStmt pre ws (IfSingleStmt l e s) = 
+  IfStmt l e s (BlockStmt l ws)                                      
+
+patchStmt pre ws s                    = 
+  BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])

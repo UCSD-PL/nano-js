@@ -31,6 +31,7 @@ module Language.Nano.Liquid.CGMonad (
   , freshTyFun
   , freshTyInst
   , freshTyPhis
+  , freshTyWind
 
   -- * Freshable
   , Freshable (..)
@@ -42,6 +43,7 @@ module Language.Nano.Liquid.CGMonad (
   , envAddReturn
   , envAddGuard
   , envFindTy, envFindTy'
+  , envFindTyDef
   , envToList
   , envFindReturn
   , envJoin
@@ -50,6 +52,7 @@ module Language.Nano.Liquid.CGMonad (
   , subTypes, subTypes', subType, subType'
   , subTypeContainers, subTypeContainers'
   , subTypeHeaps
+  , subTypeWind
   , alignTsM, withAlignedM
 
   , addInvariant
@@ -258,7 +261,7 @@ cgError l msg = throwError $ printf "CG-ERROR at %s : %s" (ppshow $ srcPos l) ms
 envAddFresh :: (IsLocated l) => l -> RefType -> CGEnv -> CGM (Id l, CGEnv) 
 ---------------------------------------------------------------------------------------
 envAddFresh l t g 
-  = do x  <- {- tracePP ("envAddFresh " ++ ppshow t) <$> -} freshId l
+  = do x  <- tracePP ("envAddFresh " ++ ppshow t) <$> freshId l
        g' <- envAdds [(x, t)] g
        return (x, g')
 
@@ -280,7 +283,7 @@ envAddsHeap   :: (IsLocated l) => l -> [(Location, RefType)] -> CGEnv -> CGM CGE
 envAddsHeap l lts g
   = do xs  <- mapM (const $ freshId l) ls
        xts <- zip xs <$> mapM addInvariant ts
-       return $ g { rheap = tracePP "envAddsHeap" $ heapCombineWith const [heapFromBinds $ zip ls ts, rheap g] }
+       return $ g { rheap = heapCombineWith const [heapFromBinds $ zip ls ts, rheap g] }
   where (ls,ts) = unzip lts
 
 
@@ -336,7 +339,15 @@ envAddGuard x b g = g { guards = guard b x : guards g }
     --   where
     --     vEqX x    = F.PAtom F.Eq (F.eVar v) x
                            
-                    
+---------------------------------------------------------------------------------------
+envFindTyDef  :: Id SourceSpan -> CGM (RefHeap, RefType, [TVar])
+---------------------------------------------------------------------------------------
+envFindTyDef ty
+  = do γ <- getTDefs
+       case E.envFindTy ty γ of
+         Just (TBd t) -> 
+           return (td_heap t, td_body t, td_args t)
+         Nothing -> error "BARF!!!"
 ---------------------------------------------------------------------------------------
 envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
 ---------------------------------------------------------------------------------------
@@ -406,7 +417,7 @@ envJoin' l g g1 g2
        
         g'  <- joinHeaps l γ g' g1' g2'
 
-        tracePP (printf "joined %s and %s" (ppshow (rheap g1')) (ppshow (rheap g2'))) (rheap g') `seq`return g'
+        return g'
 
 joinHeaps l γ g g1 g2
   = do let (σ1,σ2)        = mapPair rheap (g1,g2)
@@ -427,7 +438,7 @@ joinHeaps l γ g g1 g2
 ---------------------------------------------------------------------------------------
 -- | Fresh Templates ------------------------------------------------------------------
 ---------------------------------------------------------------------------------------
-
+       
 -- | Instantiate Fresh Type (at Function-site)
 ---------------------------------------------------------------------------------------
 freshTyFun :: (IsLocated l) => CGEnv -> l -> Id AnnTypeR -> RefType -> CGM RefType 
@@ -451,6 +462,24 @@ freshTyInst l g αs τs tbody
        return $ tracePP msg $  apply θ tbody
     where
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
+
+-- | Instantiate Frehs Type (at Wind-site)
+--------------------------------------------------------------------------------------
+freshTyWind :: (IsLocated l) => 
+               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan -> CGM (RefHeap, RefType, RefType)
+---------------------------------------------------------------------------------------
+freshTyWind g l θ ty
+  = do (σ,t,vs)    <- envFindTyDef ty
+       let (αs,ls) = toLists θ
+       αs'         <- mapM freshSubst αs
+       let θ'      = fromLists αs' ls
+       return (apply θ' σ, apply θ' t, mkApp (apply θ' . tVar <$> vs))
+    where 
+      mkApp vs         = TApp (TDef ty) vs F.top
+      freshSubst (α,τ) = do τ <- freshTy "freshTyWind" τ
+                            _ <- wellFormed l g τ
+                            return (α,τ)
+          
 
 -- | Instantiate Fresh Type (at Phi-site) 
 ---------------------------------------------------------------------------------------
@@ -609,6 +638,18 @@ subTypeContainers' msg l g t1 t2 =
   subTypeContainers l g (tracePP (printf "subTypeContainers[%s]:\n\t%s\n\t%s" 
                                 msg (ppshow t1) (ppshow t2)) t1) t2
 
+
+alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
+  getTDefs >>= return . (\γ -> map fixup $ bkPaddedUnion msg γ u1 u2)
+  where
+    (r1, r2)       = mapPair rTypeR (u1, u2)
+    fix t b v 
+      | v == b     = rTypeValueVar t
+      | otherwise  = v
+    rr t r         = F.substa (fix t b) r where F.Reft (b,_) = r
+    fixup (t1, t2) = (t1 `strengthen` rr t1 r1, t2 `strengthen` rr t2 r2)
+ 
+alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
 -------------------------------------------------------------------------------
 alignTsM :: RefType -> RefType -> CGM (RefType, RefType)
@@ -826,6 +867,55 @@ bsplitC g ci t1 t2
     r1 = rTypeSortedReft t1
     r2 = rTypeSortedReft t2
 
+{-            
+   Winding up the heap: 
+     Σ = Σ₁ * Σ₂ * l ↦ T@{ ... xᵢ:Tᵢ ... }
+   Into
+     Σ = Σ₁' * l ↦ C[α...]
+   Where
+     C[α...] = ∃! Σ₂' . l ↦ T'@{ ... xᵢ:Tᵢ' ... } 
+
+   Constraints:
+     Γ ⊢ T <: T'   %% Normal subtyping on folded record
+     for each i, ∀ l ∈ loc(Tᵢ'), Γ,x:Ti ⊢ Σ₁|l <: Σ₂|l
+-}
+-------------------------------------------------------------------------------
+subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
+-------------------------------------------------------------------------------
+subTypeWind l g σ t1 t2 = withAlignedM (subTypeWindTys l g σ) t1 t2
+
+-------------------------------------------------------------------------------
+subTypeWindTys :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
+-------------------------------------------------------------------------------
+subTypeWindTys l g σ t1@(TObj _ _) t2@(TObj _ _)
+  = do subTypeContainers' "Wind" l g t1 t2
+       mapM_ (uncurry $ subTypeWindHeaps l g σ) $  bkPaddedObject t1 t2
+
+subTypeWindTys l g σ t1 t2
+  = subTypeContainers' "Wind Non-Obj" l g t1 t2
+    
+-------------------------------------------------------------------------------
+subTypeWindHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
+-------------------------------------------------------------------------------
+subTypeWindHeaps l g σ t1@(TApp TUn _ _) t2@(TApp TUn _ _)
+  = do sts <- alignAndStrengthen "subTypeWindHeaps" l g t1 t2 
+       mapM_ (uncurry $ subTypeWindHeaps l g σ) sts
+    
+    
+subTypeWindHeaps l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
+  | l1 /= l2  = error "BUG: Somehow subtyping different locations"
+  | otherwise = do t1'    <- freshTy "Wind" t1 >>= wellFormed l g
+                   (x,g') <- envAddFresh l (tracePP "fresh??" t1') g
+                   subType l g' t1 t1'
+                   let th2 = heapRead l2 σ
+                       th1 = if heapMem l1 (rheap g') then 
+                               heapRead l1 (rheap g')
+                             else
+                               rType th2
+                   tracePP "added this guy" x `seq` subTypeWind l g' σ th1 th2
+                   return ()
+
+subTypeWindHeaps _ _ _ _ _ = return ()
 
 ---------------------------------------------------------------------------------------
 -- | Splitting Well-Formedness Constraints --------------------------------------------

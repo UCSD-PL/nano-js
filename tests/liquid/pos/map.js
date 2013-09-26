@@ -1,16 +1,18 @@
-/*@ map :: forall A B. ((A) => B, list [A]) => list [B] */
+/*@ map :: ((number) => {v:number | 0 <= v}, <l>)/l |-> list [number] => void/l |-> list [{v:number | 0 <= v}] */
 function map(f, xs){
-  if (empty(xs)) {
-    return nil();
-  }
-  // return cons(f(head(xs)), map(f, tail(xs)));
+    var d = xs.data;
+    var n = xs.next;
+    var e = f(d);
+    xs.data = e;
 
-  var x0  = head(xs);
-  var xs_ = tail(xs);
-  var y   = f(x0);
-  var ys_ = map(f, xs_);
-  return cons(y, ys_);
+    if (typeof(n) != "null") {
+        map(f,n);
+    }
+    else
+    {
+    }
 
+    return;
 }
 
 /*@ abs :: (number) => {v:number | 0 <= v} */
@@ -21,8 +23,8 @@ function abs(x){
   return x;
 }
 
-/*@ main :: (list [number]) => list [{v:number | 0 <= v}] */
+/*@ main :: (<l>)/l |-> list [number] => void/l |-> list [{v:number | 0 <= v}] */
 function main(xs){
   var bs = map(abs, xs);
-  return bs;
+  return;
 }

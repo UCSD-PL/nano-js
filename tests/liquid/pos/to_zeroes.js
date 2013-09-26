@@ -1,11 +1,12 @@
-/*@ to_zeroes :: (<l>)/ l |-> list[{number|v = 0}] => void/l |-> list[{number | true }] */
+/*@ to_zeroes :: (<l>)/ l |-> list[{number|v = 1}] => void/l |-> list[{number | v = 0 }] */
 function to_zeroes(x) {
     var xn = x.next;
-    x.data = 1;
+    x.data = 0;
 
+    var s = typeof(xn);
     if (typeof(xn) != "null") {
-    }  else {
-        assert(typeof(x.next) == "null");
+        to_zeroes(xn);
+    } else {
     }
 
     return;

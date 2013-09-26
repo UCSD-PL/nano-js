@@ -335,12 +335,11 @@ tcStmt' (γ,σ) (IfStmt l e s1 s2)
     -- TODO: Will have to suppert truthy/falsy later.
         unifyTypeM l "If condition" e t tBool
         uw <- tracePP "unwound here" <$> getUnwound
-        e1 <- preWind uw (lastStmtAnn s1) $ tcStmt' (γ, σe) s1
-        e2 <- preWind uw (lastStmtAnn s2) $ tcStmt' (γ, σe) s2
+        e1 <- preWind uw (lastStmtAnn $ tracePP "s1" s1) $ tcStmt' (γ, σe) s1
+        e2 <- preWind uw (lastStmtAnn $ tracePP "s2" s2) $ tcStmt' (γ, σe) s2
         envJoin l (γ,σe) e1 e2
     where
-      lastStmtAnn (BlockStmt l []) = l
-      lastStmtAnn (BlockStmt _ ss) = getAnnotation $ last ss
+      lastStmtAnn (BlockStmt l _) = l
       lastStmtAnn s                = getAnnotation s
       preWind uw l m = do r <- setUnwound uw >> m
                           case r of
@@ -521,11 +520,10 @@ tcExpr' (_,σ) (NullLit _)
   = return (tNull, σ)
 
 tcExpr' (γ,σ) e@(VarRef l x)
-  = do t  <- varLookup γ l x
-       mt <- tcVar (γ,σ) e t
-       case mt of 
-         Just r  -> return r
-         Nothing -> tcError (ann l) (printf "%s out of scope!" (ppshow x))
+  = do mt <- tcVar (γ,σ) e =<< varLookup γ l x -- >>= tcVar (γ,σ) e
+       maybe err return mt
+    where
+      err = tcError (ann l) (printf "%s out of scope!" (ppshow x))
 
 tcExpr' (γ,σ) (PrefixExpr l o e)
   = tcCall (γ,σ) l o [e] (prefixOpTy o γ)
@@ -562,12 +560,14 @@ tcVar (γ,σ) e t@(TApp (TRef loc) [] r)
   = if loc `elem` heapLocs σ then
       return $ Just (t,σ)
     else
-      return $ Nothing
+      do castM e t tNull 
+         return $ Just (t,σ)
     
 tcVar (γ,σ) e t@(TApp TUn ts r)
   = do ts' <- mapM (tcVar (γ,σ) e) ts 
        case [ t | Just (t,_) <- ts' ] of
-         []   -> return Nothing
+         []   -> do castM e t tNull 
+                    return $ Just (t,σ)
          ts'  -> do let t' = mkUnion ts'
                     castM e t t'
                     return $ Just (t, σ)
