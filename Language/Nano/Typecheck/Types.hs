@@ -252,10 +252,9 @@ mkUnion = mkUnionR F.top
 mkUnionR :: (Ord r, Eq r, F.Reftable r) => r -> [RType r] -> RType r
 ---------------------------------------------------------------------------------
 mkUnionR _ [ ] = tErr
-mkUnionR _ [t] = t       
-mkUnionR r ts  = case ts' of
-                   [t] -> t
-                   _   -> TApp TUn ts' r
+mkUnionR r [t] = strengthen t r
+mkUnionR r ts  | length ts' > 1 = TApp TUn ts' r
+               | otherwise      = strengthen (head ts') r
   where ts' = L.sort $ L.nub ts
 
 ---------------------------------------------------------------------------------

@@ -82,6 +82,8 @@ module Language.Nano.Typecheck.TCMonad (
 
     -- * Expression Getter/Setter
   , getExpr, setExpr, withExpr
+    -- * Statement Getter/Setter
+  , getStmt, setStmt
 
   -- * Patch the program with assertions
   , patchPgmM
@@ -158,6 +160,8 @@ data TCState r = TCS {
                    , tc_tdefs    :: !(Env (RType r))
                    -- The currently typed expression 
                    , tc_expr     :: Maybe (Expression (AnnSSA_ r))
+                   -- The currently typed expression 
+                   , tc_stmt     :: Maybe (Statement (AnnSSA_ r))
                    -- Verbosiry
                    , tc_verb  :: V.Verbosity
                    }
@@ -324,7 +328,7 @@ safeDotAccess :: (Ord r, PP r, F.Reftable r,
   RHeap r -> s -> RType r -> TCM r [(Location, ObjectAccess r)]
 -------------------------------------------------------------------------------
 safeDotAccess σ f t@(TApp TUn ts _)  = 
-  do as         <- mapM (safeDotAccess σ f) ts
+  do as         <- mapM (safeDotAccess σ f . tRef) $ nub $ concatMap locs ts
      let tsas    = [ (t, l, a) | (t, (l,a)) <- zip ts (concat as) ]
      let (ts',ls,as) = unzip3 tsas
      e          <- fromJust <$> getExpr
@@ -337,8 +341,13 @@ safeDotAccess σ f t
        case ma of
          Nothing     -> return []
          Just (l,a)  -> case ac_unfold a of
-                          Just (i, θ, _) -> addUnwound (l, i, θ) >> return [(l, a)]
-                          _           -> return  [(l, a)] 
+                          Just (i, θ, _) -> addu (l,i,θ,a)-- addUnwound (l, i, θ) >> return [(l, a)]
+                          _              -> return  [(l, a)] 
+    where addu (l,i,θ,a) = do m <- maybe err getAnn =<< getStmt 
+                              recordUnwindExpr m (l,i,θ)
+                              return [(l,a)]
+          err            = error "BUG: no statement safeDotAccess"
+          getAnn         = return . ann . getAnnotation
 -------------------------------------------------------------------------------
 safeDotAccess' :: (Ord r, PP r, F.Reftable r, 
                   Substitutable r (Fact_ r), Free (Fact_ r), 
@@ -438,6 +447,7 @@ initState verb pgm = TCS { tc_errss   = []
                          , tc_fun     = Nothing
                          , tc_tdefs   = tDefs pgm
                          , tc_expr    = Nothing
+                         , tc_stmt    = Nothing
                          , tc_verb    = verb
                          }
 
@@ -492,6 +502,16 @@ setExpr eo = modify $ \st -> st { tc_expr = eo }
 getExpr   :: TCM r (Maybe (Expression (AnnSSA_ r)))
 -------------------------------------------------------------------------------
 getExpr = tc_expr <$> get
+
+-------------------------------------------------------------------------------
+setStmt   :: Maybe (Statement (AnnSSA_ r)) -> TCM r () 
+-------------------------------------------------------------------------------
+setStmt so = modify $ \st -> st { tc_stmt = so }
+
+-------------------------------------------------------------------------------
+getStmt   :: TCM r (Maybe (Statement (AnnSSA_ r)))
+-------------------------------------------------------------------------------
+getStmt = tc_stmt <$> get
 
 --------------------------------------------------------------------------
 -- | Generating Fresh Values ---------------------------------------------
@@ -564,7 +584,7 @@ recordWindExpr l p@(loc,t) θ
   where
     windInst = uncurry (WindInst loc t) $ toLists θ
     addWind  = modify $ \s -> s {
-      tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
+      tc_winds = M.insertWith (flip (++)) l [tracePP "RECORDING WIND" p `seq`p] $ tc_winds s
       }
 
 -------------------------------------------------------------------------------
@@ -584,11 +604,15 @@ recordingUnwind l action
 -- recordUnwindExpr :: (PP r, F.Reftable r) => SourceSpan -> (Location, Id SourceSpan) -> TCM r ()
 -------------------------------------------------------------------------------
 recordUnwindExpr l p@(loc, id, θi) 
-  = addUnwind >> addAnn (srcPos l) unwindInst 
+  = do getUnwound >>= \lst -> if (loc `elem` map fst3 (tracePP "lst" lst)) then tcError l ("Already unwound " ++ loc) else return ()
+       -- Sigh, now I see the folly of my naming...
+       -- "unwound" is a stack of currently unwound....
+       addUnwound p 
+       addUnwind >> addAnn (srcPos l) unwindInst 
   where 
     unwindInst = UnwindInst loc id (snd $ toLists θi)
     addUnwind  = modify $ \s -> s {
-      tc_unwinds = M.insertWith (flip (++)) l [(loc,id)] $ tc_unwinds s
+      tc_unwinds = M.insertWith (flip (++)) l [tracePP "added" (loc,id)`seq`(loc,id)] $ tc_unwinds s
       }
 
 -------------------------------------------------------------------------------
@@ -735,7 +759,6 @@ withExpr e action =
       setExpr  eold
       return $ r
 
-
 --------------------------------------------------------------------------------
 castM     :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
@@ -838,8 +861,6 @@ heapPatchPgm winds unwinds hm pgm =
                      ([],[])  -> s
                      ([],uws) -> buildWindCalls True  UnwindAll uws s
                      (ws,[])  -> buildWindCalls False WindAll   ws  s
-                     -- ([],uws) -> buildWindCalls True  unwindFunName uws s
-                     -- (ws,[])  -> buildWindCalls False windFunName   ws  s
                      _        -> error $ errorSameLoc s
         clearAnnot l = M.delete (ann l)
         lookupStmt l = M.findWithDefault [] (ann l)
@@ -851,7 +872,6 @@ buildWindCalls pre fn ws s
     display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
     windStmts                 = [fn l $ map display ws] -- map (buildWind l) ws
     l                         = getAnnotation s
-    -- buildWind a (l, (Id _ d)) = ExprStmt a $ CallExpr a (VarRef a (fn $ Id a d)) []
     
 patchStmt _   ws (ReturnStmt l e)     = 
   BlockStmt l $ ws ++ [ReturnStmt l e]
@@ -866,7 +886,7 @@ patchStmt pre ws (IfSingleStmt l e s) =
   IfStmt l e s (BlockStmt l ws)                                      
 
 patchStmt pre ws s                    = 
-  BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
+  BlockStmt (getAnnotation $ tracePP "s" s) $ if tracePP "pre" pre then ws ++[s] else (s:ws)
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])

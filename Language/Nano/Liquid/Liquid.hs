@@ -352,14 +352,9 @@ consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated l, IsLocate
 consAccess l x g i = do (loc,t) <- dotAccessM (rheap g) i (envFindTy x g) 
                         (x,g')  <- envAddFresh l t g
                         let t' = envFindTy x g'
-                        -- let r  = F.PAtom F.Eq (F.expr (rTypeValueVar t)) (F.expr x) 
-                        -- let t' = tracePP "thing" $ pSingleton (rType t) r
                         return (x, g' { rheap = fixHeap (rheap g') loc t' (F.symbol i) })
   where
     fixHeap σ l tnew field = heapUpd l (updateField tnew field (heapRead l σ)) σ
-
-
-           -- upds'= map (updateField tsto (F.symbol x) <$>) upds
 
 dotAccessM σ f (TApp TUn _ _) = error "TBD: access unions liquid"
 dotAccessM σ f t@(TApp (TRef l) _ _)
@@ -429,7 +424,7 @@ consCall g l _ es ft
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') (tracePP "es" [envFindTy x g' | x <- xes]) $ tracePP "ts'" ts'
        -- g'               <- stHeaps l g' h h'
        subTypeHeaps l g' (rheap g') h
-       let g'' = g' { rheap = heapCombine [foldl (flip heapDel) (rheap g) $ heapLocs h, h'] }
+       let g'' = g' { rheap = F.subst su <$> heapCombine [foldl (flip heapDel) (rheap g) $ heapLocs h, h'] }
        tracePP "output heap" (rheap g'') `seq` envAddFresh l (F.subst su ot) g''
      where
        stHeaps l g σi σo = do subTypeHeaps l g (tracePP "rheap g" (rheap g)) (tracePP "σ" σi)

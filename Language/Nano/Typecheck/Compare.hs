@@ -82,7 +82,7 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   -- equiv γ t@(TApp (TDef _) _ _) t' = equiv γ (snd $ unfoldSafe γ t) t'
   -- equiv γ t t'@(TApp (TDef _) _ _) = equiv γ t (snd $ unfoldSafe γ t')
   
-  equiv _ (TApp (TRef _) _ _) (TApp (TRef _) _ _)     = True
+  equiv _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     = l == m
   equiv _ (TApp c _ _)         (TApp c' _ _)          = c == c'
 
   equiv _ (TVar v _  )         (TVar v' _  )          = v == v'

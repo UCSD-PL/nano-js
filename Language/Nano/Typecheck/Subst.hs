@@ -43,7 +43,7 @@ import           Language.Nano.Typecheck.Heaps
 
 import           Control.Applicative ((<$>))
 import qualified Data.HashSet as S
-import           Data.List                      (find, intersect)
+import           Data.List                      (find, intersect,sort,nub)
 import           Data.Traversable               (traverse)
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid

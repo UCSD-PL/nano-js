@@ -18,6 +18,7 @@ import           Data.Monoid
 import           Data.Maybe                         (catMaybes, isJust, fromJust)
 import           Data.Generics                   
 import           Data.Graph
+import           Data.Function
 
 import           Text.PrettyPrint.HughesPJ          (text, render, vcat, ($+$), (<+>))
 import           Text.Printf                        (printf)
@@ -33,6 +34,7 @@ import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Parse 
 import           Language.Nano.Typecheck.TCMonad
 import           Language.Nano.Typecheck.Subst
+import           Language.Nano.Typecheck.Lower
 import           Language.Nano.SSA.SSA
 --import           Language.Nano.HeapTypes.HeapTypes
 
@@ -61,7 +63,7 @@ verifyFile f
    = do nano    <- parseNanoFromFile f
         V.whenLoud $ donePhase FM.Loud "Parse"
         putStrLn . render . pp $ nano
-        let nanoSsa = ssaTransform nano
+        let nanoSsa = padTransform $ ssaTransform nano
         V.whenLoud $ donePhase FM.Loud "SSA Transform"
         V.whenLoud $ putStrLn . render . pp $ nanoSsa
         verb    <- V.getVerbosity
@@ -329,21 +331,26 @@ tcStmt' (γ,σ) (IfSingleStmt l b s)
   = tcStmt' (γ,σ) (IfStmt l b s (EmptyStmt l))
 
 -- if b { s1 } else { s2 }
-tcStmt' (γ,σ) (IfStmt l e s1 s2)
+tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
   = do  (t,σe) <- tcExpr (γ,σ) e 
     -- Doing check for boolean for the conditional for now
     -- TODO: Will have to suppert truthy/falsy later.
         unifyTypeM l "If condition" e t tBool
-        uw <- tracePP "unwound here" <$> getUnwound
-        e1 <- preWind uw (lastStmtAnn $ tracePP "s1" s1) $ tcStmt' (γ, σe) s1
-        e2 <- preWind uw (lastStmtAnn $ tracePP "s2" s2) $ tcStmt' (γ, σe) s2
+        uw <- getUnwound
+        e1 <- preWind uw s1 $ tcStmt' (γ, σe) s1
+        e2 <- preWind uw s2 $ tcStmt' (γ, σe) s2
+        setUnwound uw
         envJoin l (γ,σe) e1 e2
     where
+      msg s = printf "Unwound in IfStatement %s on statement %s" (ppshow ifstmt) (ppshow s)
       lastStmtAnn (BlockStmt l _) = l
-      lastStmtAnn s                = getAnnotation s
-      preWind uw l m = do r <- setUnwound uw >> m
+      lastStmtAnn s               = getAnnotation s
+      preWind uw s m = do r <- setUnwound uw >> m
+                          uw' <- tracePP (msg s) <$> getUnwound
+                          let touw = L.deleteFirstsBy ((==)`on`fst3) uw' uw
+                              l    = lastStmtAnn s
                           case r of
-                            Just e -> Just <$> windLocations e l
+                            Just e -> Just <$> (withUnwound touw $ windLocations e l)
                             _      -> return r
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
@@ -360,7 +367,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         unifyTypeM l "Return" eo t rt
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
-        (γ,σ')            <- windReturnValue (γ,σ') l σ_out t
+        (γ,σ')            <- windSpecLocations (γ,σ') l σ_out -- t
         -- Now unify heap
         θ                 <- unifyHeapsM l "Return" σ' σ_out
         -- Apply the substitutions
@@ -379,7 +386,11 @@ tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
 tcStmt' _ s 
   = convertError "TC Cannot Handle: tcStmt'" s
 
-tcStmt (γ,σ) s = recordingUnwind (ann $ getAnnotation s) $ tcStmt' (γ,σ) s
+tcStmt (γ,σ) s 
+  = do setStmt $ Just s 
+       r <- tcStmt' (γ,σ) s
+       setStmt $ Nothing
+       return r
 
 getFunHeaps γ
   = do f <- getFun
@@ -390,7 +401,7 @@ getFunHeaps γ
 windLocations (γ,σ) l = (tracePP "GET_UNWOUND" <$> getUnwound) >>= foldM (windLocation l) (γ,σ) . uwOrder σ
 
 windLocation l (γ,σ) (loc, tWind, _)
-  = do let σt       = restrictHeap [loc] σ
+  = do let σt       = restrictHeap [tracePP "winding up" loc] σ
        let σc       = foldl (flip heapDel) σ $ heapLocs σt
        (_, _, t')  <- windType γ l loc tWind σt
        σ           <- safeHeapSubstM (heapUpd loc t' σc)
@@ -431,16 +442,14 @@ uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
 -- Compare locations in σ with σ_spec using the current θ.
 -- If a location exists in both and is wound up in σ_spec,
 -- then wind it up here.
-windReturnValue (γ,σ) l σ_spec t 
+windSpecLocations (γ,σ) l σ_spec -- t 
   = do θ         <- getSubst
        σ         <- safeHeapSubstM σ
        let wls    = woundLocations σ_spec
-       let tlocs  = filter (`elem` heapLocs σ) $ apply θ $ locs t
+       let tlocs  = heapLocs σ -- ) $ apply θ $ locs t
        let uwls   = [ (l,i,θ) | (l,i,θ) <- wls,         
                                 (apply θ l) `elem` tlocs,
                                 not . isWoundTy $ heapRead l σ ]
-       -- let uwls   = map (\l -> (l, L.lookup (apply θ l) wls)) tlocs
-       -- let uwls'  = [(l,d,mempty) | (l, Just d) <- uwls, not . isWoundTy $ heapRead l σ]
        withUnwound uwls $ windLocations (γ,σ) l
 
 isWoundTy (TApp (TDef _) _ _) = True
@@ -586,17 +595,22 @@ tcCall (γ,σ) l fn es ft
         -- Typecheck argument
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
+        θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" (tracePP "tcCall input actual" σ') (tracePP "tcCall input formal" σi)
         -- Apply the substitution
-        let (ts',its') = mapPair (apply θ) (ts,its)
+        let (ts',its')    = mapPair (apply θ) (ts,its)
+        -- This function call may require some locations
+        -- to be folded up. Who are we to argue?
+        ls                <- maybe (error "BUG: no statement") getAnnotation <$> getStmt
+        (γ,σ')            <- windSpecLocations (γ, σ') ls (apply θ σi)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
-        castsM es ts' its'
+        castsM es ts' its' 
         castHeapM γ l σ' σi
         checkDisjoint σo
-        let σ_out = heapCombine [foldl (flip heapDel) σ' $ apply θ $ heapLocs σi, apply θ σo]
+        let σ_out = heapCombine [subtr θ σ' σi, apply θ σo]
         return (apply θ ot, apply θ σ_out)
     where
+      subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of
                              [] -> return ()
@@ -624,7 +638,7 @@ tcAccess ::  (Ord r, F.Reftable r, PP r, F.Symbolic s,
 ----------------------------------------------------------------------------------
 tcAccess (γ,σ) l e f = 
   do (r,σ') <- tcExpr (γ,σ) e
-     tcAccess' l σ' r f
+     tcAccess' l σ' (tracePP "accessing" (e,r)`seq`r) f
 
 tcAccess' l σ t f = safeDotAccess σ f t >>= unpackAccess l σ
 
@@ -638,16 +652,26 @@ unpackAccess :: (Ord r, PP r, F.Reftable r) =>
 unpackAccess l σ acc
   = do when (not $ ckDisjoint ls ls') $
          error "BUG: Access resulted in non-disjoint new heap!"
+       when (not $ ckSameUnfolds ufs) $
+         error "BUG: Access resulted in two different unfoldings!"
        return env
   where
     env             = (mkUnion rs, heapCombineWith const [σ_unfold,σ_new,σ])
     (ls, ls')       = mapPair heapLocs (σ,σ_new)
-    ckDisjoint l l' = L.intersect l l' == []
     σ_new           = heapCombine   $ catMaybes hs 
     σ_unfold        = heapFromBinds $ [ (l,t) | (l, Just t) <-  ufs ]
-    (rs, hs, ufs)   = unzip3 $ unpk <$> acc
+    (rs, hs, ufs)   = tracePP "accesses" $ (unzip3 $ unpk <$> acc)
     unwinds         = [(l,i) | (l, Just i) <- map (fmap (fmap fst3 . ac_unfold)) acc ]
     unpk (l,a)      = (ac_result a, ac_heap a, (l, thd3 <$> ac_unfold a))
+    
+ckDisjoint l l' = 
+  L.intersect l l' == []
+
+ckSameUnfolds ufs     
+  = all check ufss
+    where ufss  = L.groupBy ((==)`on`fst) ufs
+          check []     = True
+          check (t:ts) = all (== t)  ts
 
 ----------------------------------------------------------------------------------
 envJoin :: (Ord r, F.Reftable r, PP r) =>
@@ -690,20 +714,3 @@ varLookup γ l x
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
-
--- ----------------------------------------------------------------------------------
--- data WindState = WS { wm :: M.Map (Id SourceSpan) (Id SourceSpan) }
--- type WSM = State WindState
--- ----------------------------------------------------------------------------------
-
--- windDefsFun :: FunctionStatement SourceSpan -> WSM (Bool)
--- windDefsFun (FunctionStmt l f xs body)
---   = do m <- wm <$> get
---        error "TODO"
-
--- windDefsStmts = error "TODO"
-
--- windDefStmt :: Statement SourceSpan -> WSM (Bool)
-
--- windDefStmt ::  
--- windDefStmt = error "TODO"

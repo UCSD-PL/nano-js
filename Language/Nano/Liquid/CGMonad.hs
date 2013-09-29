@@ -904,15 +904,13 @@ subTypeWindHeaps l g σ t1@(TApp TUn _ _) t2@(TApp TUn _ _)
     
 subTypeWindHeaps l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
   | l1 /= l2  = error "BUG: Somehow subtyping different locations"
-  | otherwise = do t1'    <- freshTy "Wind" t1 >>= wellFormed l g
-                   (x,g') <- envAddFresh l (tracePP "fresh??" t1') g
-                   subType l g' t1 t1'
+  | otherwise = do (x,g') <- envAddFresh l t1 g
                    let th2 = heapRead l2 σ
                        th1 = if heapMem l1 (rheap g') then 
                                heapRead l1 (rheap g')
                              else
                                rType th2
-                   tracePP "added this guy" x `seq` subTypeWind l g' σ th1 th2
+                   subTypeWind l g' σ th1 th2
                    return ()
 
 subTypeWindHeaps _ _ _ _ _ = return ()
