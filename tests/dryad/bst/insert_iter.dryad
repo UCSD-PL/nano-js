@@ -1,0 +1,152 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+define relation bst-with-hole-k^(root, hole): 
+  ( ((root l= hole) & emp) |
+	 ( (root |-> loc left: lft; loc right: rgt; int key: ky) * 
+	   ( ((k < ky) & ((bst-with-hole-k^(lft, hole) & (keys-with-hole-k^(lft, hole) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt))))) | 
+	   ((ky < k) & ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst-with-hole-k^(rgt, hole) & (ky lt-set keys-with-hole-k^(rgt, hole))))) ) )
+  )
+  axiom: ( (bst^(hole) -* (((keys-lt-k^(root, hole) lt keys^(hole)) & (keys^(hole) lt keys-gt-k^(root, hole))) => (bst^(root) & (keys^(root) s= (keys-with-hole-k^(root, hole) union keys^(hole)))))) &
+
+	 ( (((hole |-> loc left: virtual hl; loc right: virtual hr; int key: virtual hkk) * ((k < hkk) & (bst^(hr) & (hkk lt-set keys^(hr))))) -* 
+	  ((((keys-lt-k^(root, hole) lt ((singleton hkk) union keys^(hr))) & (((singleton hkk) union keys^(hr)) lt keys-gt-k^(root, hole))) * true) => 
+	   ((bst-with-hole-k^(root, hl) & (keys-with-hole-k^(root, hl) s= (keys-with-hole-k^(root, hole) union ((singleton hkk) union keys^(hr))))) &
+	   ((keys-gt-k^(root, hl) s= ((singleton hkk) union keys-gt-k^(root, hole))) & (keys-lt-k^(root, hl) s= keys-lt-k^(root, hole)))) )) &
+
+	   (((hole |-> loc left: virtual hl; loc right: virtual hr; int key: virtual hkk) * ((hkk < k) & (bst^(hl) & (keys^(hl) set-lt hkk)))) -* 
+	  ((((keys-lt-k^(root, hole) lt ((singleton hkk) union keys^(hl))) & (((singleton hkk) union keys^(hl)) lt keys-gt-k^(root, hole))) * true) => 
+	   ((bst-with-hole-k^(root, hr) & (keys-with-hole-k^(root, hr) s= (keys-with-hole-k^(root, hole) union ((singleton hkk) union keys^(hl))))) &
+	   ((keys-gt-k^(root, hr) s= keys-gt-k^(root, hole)) & (keys-lt-k^(root, hr) s= ((singleton hkk) union keys-lt-k^(root, hole))))) )) ) ) ;
+
+define bin-set-fun keys-with-hole-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	((singleton ky) union (keys-with-hole-k^(lft, hole) union keys^(rgt)));
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	((singleton ky) union (keys^(lft) union keys-with-hole-k^(rgt, hole)));
+   default: emptyset
+  ) ;
+
+define bin-set-fun keys-gt-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	((singleton ky) union keys-gt-k^(lft, hole));
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	keys-gt-k^(rgt, hole);
+   default: emptyset
+  ) ;
+
+define bin-set-fun keys-lt-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	keys-lt-k^(lft, hole);
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	((singleton ky) union keys-lt-k^(rgt, hole));
+   default: emptyset
+  ) ;
+
+
+
+
+bb bst-insert-nil:
+pre: (bst^(root) & ((keys^(root) s= kk) & (~ (k i-in kk)))) ;
+post: (bst^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (root l== nil);
+	malloc y;
+	int y.key := k;
+	loc ret := y;
+}
+
+bb bst-insert-before-loop1:
+pre: (bst^(root) & ((keys^(root) s= kk) & (~ (k i-in kk)))) ;
+post: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: rk) * (k < rk)) | ((parent |-> loc right: hole; int key: rk) * (rk < k))) ) ;
+{
+	assume (! (root l== nil));
+	int rk := root.key;
+	assume (k < rk);
+	loc parent := root;
+	loc hole := root.left;
+}
+
+bb bst-insert-before-loop2:
+pre: (bst^(root) & ((keys^(root) s= kk) & (~ (k i-in kk)))) ;
+post: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: rk) * (k < rk)) | ((parent |-> loc right: hole; int key: rk) * (rk < k))) ) ;
+{
+	assume (! (root l== nil));
+	int rk := root.key;
+	assume (! (k < rk));
+	loc parent := root;
+	loc hole := root.right;
+}
+
+bb bst-insert-in-loop1:
+pre: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: pk) * (k < pk)) | ((parent |-> loc right: hole; int key: pk) * (pk < k))) ) ;
+post: ( (((bst-with-hole-k^(root, parent1) & ((keys-lt-k^(root, parent1) set-lt k) & (k lt-set keys-gt-k^(root, parent1)))) * (bst^(parent1) & (~ (k i-in keys^(parent1))))) & (((keys-lt-k^(root, parent1) lt keys^(parent1)) & (keys^(parent1) lt keys-gt-k^(root, parent1))) & ((keys^(parent1) union keys-with-hole-k^(root, parent1)) s= kk))) &
+	(((parent1 |-> loc left: hole1; int key: hk) * (k < hk)) | ((parent1 |-> loc right: hole1; int key: hk) * (hk < k))) ) ;
+{
+	loc pl := parent.left;
+	loc pr := parent.right;
+	assume (! (hole l== nil));
+	int hk := hole.key;
+	assume (k < hk);
+	loc parent1 := hole;
+	loc hole1 := hole.left;
+}
+
+bb bst-insert-in-loop2:
+pre: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: pk) * (k < pk)) | ((parent |-> loc right: hole; int key: pk) * (pk < k))) ) ;
+post: ( (((bst-with-hole-k^(root, parent1) & ((keys-lt-k^(root, parent1) set-lt k) & (k lt-set keys-gt-k^(root, parent1)))) * (bst^(parent1) & (~ (k i-in keys^(parent1))))) & (((keys-lt-k^(root, parent1) lt keys^(parent1)) & (keys^(parent1) lt keys-gt-k^(root, parent1))) & ((keys^(parent1) union keys-with-hole-k^(root, parent1)) s= kk))) &
+	(((parent1 |-> loc left: hole1; int key: hk) * (k < hk)) | ((parent1 |-> loc right: hole1; int key: hk) * (hk < k))) ) ;
+{
+	loc pl := parent.left;
+	loc pr := parent.right;
+	assume (! (hole l== nil));
+	int hk := hole.key;
+	assume (! (k < hk));
+	loc parent1 := hole;
+	loc hole1 := hole.right;
+}
+
+bb bst-insert-after-loop1:
+pre: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: pk) * (k < pk)) | ((parent |-> loc right: hole; int key: pk) * (pk < k))) ) ;
+post: (bst^(root) & (keys^(root) s= (kk union (singleton k)))) ;
+{
+	assume (hole l== nil);
+	int pk := parent.key;
+	assume (k < pk);
+	malloc y;
+	int y.key := k;
+	loc parent.left := y;
+}
+
+bb bst-insert-after-loop2:
+pre: ( (((bst-with-hole-k^(root, parent) & ((keys-lt-k^(root, parent) set-lt k) & (k lt-set keys-gt-k^(root, parent)))) * (bst^(parent) & (~ (k i-in keys^(parent))))) & (((keys-lt-k^(root, parent) lt keys^(parent)) & (keys^(parent) lt keys-gt-k^(root, parent))) & ((keys^(parent) union keys-with-hole-k^(root, parent)) s= kk))) &
+	(((parent |-> loc left: hole; int key: pk) * (k < pk)) | ((parent |-> loc right: hole; int key: pk) * (pk < k))) ) ;
+post: (bst^(root) & (keys^(root) s= (kk union (singleton k)))) ;
+{
+	assume (hole l== nil);
+	int pk := parent.key;
+	assume (! (k < pk));
+	malloc y;
+	int y.key := k;
+	loc parent.right := y;
+}
+
+

@@ -1,0 +1,114 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+method bst-removeroot(loc x)
+requires: (
+        	((x |-> loc left: lft; loc right: rgt; int key: ky) * 
+	 	 ((bst^(lft) & (keys^(lft) s= lks)) * 
+	 	 (bst^(rgt) & (keys^(rgt) s= rks))
+		 )) &
+		(lks lt rks)
+    ) ;
+ensures: (bst^(ret) & (keys^(ret) s= (lks union rks))) ;
+
+
+bb bst-removeroot-nil-leftright:
+pre: (
+        	((x |-> loc left: xlft; loc right: xrgt; int key: xky) * 
+	 	 ((bst^(xlft) & (keys^(xlft) s= lkss)) * 
+	 	 (bst^(xrgt) & (keys^(xrgt) s= rkss))
+		 )) &
+		(lkss lt rkss)
+    ) ;
+post: (bst^(ret) & (keys^(ret) s= (lkss union rkss))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	assume ((xl l== nil) && (xr l== nil));
+	free x;
+	loc ret := nil;
+}
+
+bb bst-removeroot-nil-left:
+pre: (
+        	((x |-> loc left: xlft; loc right: xrgt; int key: xky) * 
+	 	 ((bst^(xlft) & (keys^(xlft) s= lkss)) * 
+	 	 (bst^(xrgt) & (keys^(xrgt) s= rkss))
+		 )) &
+		(lkss lt rkss)
+    ) ;
+post: (bst^(ret) & (keys^(ret) s= (lkss union rkss))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	assume ((xl l== nil) && (! (xr l== nil)));
+	free x;
+	loc ret := xr;
+}
+
+bb bst-removeroot-nil-right:
+pre: (
+        	((x |-> loc left: xlft; loc right: xrgt; int key: xky) * 
+	 	 ((bst^(xlft) & (keys^(xlft) s= lkss)) * 
+	 	 (bst^(xrgt) & (keys^(xrgt) s= rkss))
+		 )) &
+		(lkss lt rkss)
+    ) ;
+post: (bst^(ret) & (keys^(ret) s= (lkss union rkss))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	assume ((! (xl l== nil)) && (xr l== nil));
+	free x;
+	loc ret := xl;
+}
+
+bb bst-removeroot-right:
+pre: (
+        	((x |-> loc left: xlft; loc right: xrgt; int key: xky) * 
+	 	 ((bst^(xlft) & (keys^(xlft) s= lkss)) * 
+	 	 (bst^(xrgt) & (keys^(xrgt) s= rkss))
+		 )) &
+		(lkss lt rkss)
+    ) ;
+post: (bst^(ret) & (keys^(ret) s= (lkss union rkss))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	assume ((! (xl l== nil)) && (! (xr l== nil)));
+	loc xrl := xr.left;
+	loc x.right := xrl;
+	loc t := bst-removeroot(x);
+	loc xr.left := t;
+	loc ret := xr;
+}
+
+bb bst-removeroot-right-pre:
+pre: (
+        	((x |-> loc left: xlft; loc right: xrgt; int key: xky) * 
+	 	 ((bst^(xlft) & (keys^(xlft) s= lkss)) * 
+	 	 (bst^(xrgt) & (keys^(xrgt) s= rkss))
+		 )) &
+		(lkss lt rkss)
+    ) ;
+post: (
+        ((x |-> loc left: xl; loc right: xrl; int key: xky) * 
+        ((bst^(xl) * bst^(xrl)) &
+	(keys^(xl) lt keys^(xrl))))  
+    * true);
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	assume ((! (xl l== nil)) && (! (xr l== nil)));
+	loc xrl := xr.left;
+	loc x.right := xrl;
+}

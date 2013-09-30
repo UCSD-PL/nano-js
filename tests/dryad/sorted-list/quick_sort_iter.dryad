@@ -1,0 +1,175 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * sll^(nxt))  
+  )
+  axiom: (lseg^(x, x) * (((x l= nil) & (keys^(x) s= emptyset)) | ((~ (x l= nil)) & (~ (keys^(x) s= emptyset)))));
+
+define pred sorted-sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted-sll^(nxt) & (ky le-set keys^(nxt)))
+		  )  
+  )
+  axiom: (sorted-lseg^(x, x) * sll^(x));
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * (lseg^(nxt, tail) & (ky le-set lseg-keys^(nxt, tail))))  
+  ) 
+  axiom: ( (((head l= tail) => (emp & (lseg-keys^(head, tail) s= emptyset))) & ((tail l= nil) => (sll^(head) & (keys^(head) s= lseg-keys^(head, tail))))) &
+	( (sll^(tail) -* (sll^(head) & (keys^(head) s= (lseg-keys^(head, tail) union keys^(tail))))) &
+	  (((tail |-> loc next: virtual tn; int key: virtual tk) * sll^(tn)) -* ((lseg^(head, tn) & (lseg-keys^(head, tn) s= (lseg-keys^(head, tail) union (singleton tk)))) * sll^(tn))) ) ) ;
+
+define relation sorted-lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * (sorted-lseg^(nxt, tail) & (ky le-set lseg-keys^(nxt, tail))))  
+  ) 
+  axiom: ( lseg^(head, tail) &
+	  ( ((tail l= nil) => sorted-sll^(head)) &
+	( (sorted-sll^(tail) -* ((lseg-keys^(head, tail) le keys^(tail)) => sorted-sll^(head))) &
+	  (((tail |-> loc next: virtual tn; int key: virtual tk) * sll^(tn)) -* (((lseg-keys^(head, tail) set-le tk) * true) => (sorted-lseg^(head, tn) * sll^(tn)))) ) ) ) ;
+
+define bin-set-fun lseg-keys^(head, tail):
+  (case (head l= tail) : emptyset;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union lseg-keys^(nxt, tail));
+   default: emptyset
+  ) ;
+
+
+method find-last(loc y)
+requires: ((sorted-sll^(y) * (keys^(y) s= ykss)) & (~ (y l= nil)));
+ensures: ((sorted-lseg^(y, ret) & ((lseg-keys^(y, ret) set-le lastd) & ((lseg-keys^(y, ret) union (singleton lastd)) s= ykss)))
+       	* (ret |-> loc next: nill; int key: lastd)) ; 
+
+method quicksort1(loc h)
+requires: (sll^(h) & (keys^(h) s= hkss1)) ;
+ensures: (sorted-sll^(ret) & (keys^(ret) s= hkss1)) ;
+
+method quicksort2(loc h)
+requires: (sll^(h) & (keys^(h) s= hkss2)) ;
+ensures: (sorted-sll^(ret) & (keys^(ret) s= hkss2)) ;
+
+
+bb quicksort-nil:
+pre: (sll^(x) & (keys^(x) s= xks)) ;
+post: (sorted-sll^(ret) & (keys^(ret) s= xks)) ;
+{
+	assume (x l== nil);
+	loc ret := nil;
+}
+
+bb quicksort-before-loop:
+pre: (sll^(x) & (keys^(x) s= xks)) ;
+post: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr) * ((sll^(ll) & (keys^(ll) set-le d)) * (sll^(rr) & (d le-set keys^(rr))))) & 
+		      (((keys^(curr) union (keys^(ll) union keys^(rr))) union (singleton d)) s= xks)));
+{
+	assume (! (x l== nil));
+	loc curr := x.next;
+	int d := x.key;
+	loc nill := nil
+	loc x.next := nill;
+	loc ll := nil;
+	loc rr := nil;
+}
+
+bb quicksort-in-loop1:
+pre: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr) * ((sll^(ll) & (keys^(ll) set-le d)) * (sll^(rr) & (d le-set keys^(rr))))) & 
+		      (((keys^(curr) union (keys^(ll) union keys^(rr))) union (singleton d)) s= xks)));
+post: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr1) * ((sll^(ll1) & (keys^(ll1) set-le d)) * (sll^(rr1) & (d le-set keys^(rr1))))) & 
+		      (((keys^(curr1) union (keys^(ll1) union keys^(rr1))) union (singleton d)) s= xks)));
+{
+	assume (! (curr l== nil));
+	int cd := curr.key;
+	loc curr1 :=  curr.next;
+	assume (cd <= d);
+	loc curr.next := ll;
+	loc ll1 := curr;
+	loc rr1 := rr;
+}
+
+bb quicksort-in-loop2:
+pre: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr) * ((sll^(ll) & (keys^(ll) set-le d)) * (sll^(rr) & (d le-set keys^(rr))))) & 
+		      (((keys^(curr) union (keys^(ll) union keys^(rr))) union (singleton d)) s= xks)));
+post: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr1) * ((sll^(ll1) & (keys^(ll1) set-le d)) * (sll^(rr1) & (d le-set keys^(rr1))))) & 
+		      (((keys^(curr1) union (keys^(ll1) union keys^(rr1))) union (singleton d)) s= xks)));
+{
+	assume (! (curr l== nil));
+	int cd := curr.key;
+	loc curr1 :=  curr.next;
+	assume (! (cd <= d));
+	loc curr.next := rr;
+	loc ll1 := ll;
+	loc rr1 := curr;
+}
+
+bb quicksort-after-loop:
+pre: ((x |-> loc next: nill; int key: d) * 
+       ((sll^(curr) * ((sll^(ll) & (keys^(ll) set-le d)) * (sll^(rr) & (d le-set keys^(rr))))) & 
+		      (((keys^(curr) union (keys^(ll) union keys^(rr))) union (singleton d)) s= xks)));
+post: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+{
+	assume (curr l== nil);
+	loc x.next := rr;
+}
+
+bb quicksort-after-loop-call-right:
+pre: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+post: (sll^(x) * true);
+{
+	assume (nil l== nil);
+}
+
+bb quicksort-after-loop-not-nil-call-left:
+pre: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+post: (sll^(ll) * true);
+{
+	loc temp1 := quicksort1(x);
+}
+
+bb quicksort-after-loop-nil:
+pre: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+post: (sorted-sll^(ret) & (keys^(ret) s= xks)) ;
+{
+	loc temp1 := quicksort1(x);
+	loc temp2 := quicksort2(ll);
+	assume (temp2 l== nil);
+	loc ret := temp1;
+}
+
+bb quicksort-after-loop-not-nil-call-last:
+pre: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+post: ((sll^(temp2) & (~ (temp2 l= nil))) * true);
+{
+	loc temp1 := quicksort1(x);
+	loc temp2 := quicksort2(ll);
+	assume (! (temp2 l== nil));
+}
+
+bb quicksort-after-loop-not-nil:
+pre: ((sll^(ll) * sll^(x)) & ((keys^(ll) le keys^(x)) & ((keys^(ll) union keys^(x)) s= xks)));
+post: (sorted-sll^(ret) & (keys^(ret) s= xks)) ;
+{
+	loc temp1 := quicksort1(x);
+	loc temp2 := quicksort2(ll);
+	assume (! (temp2 l== nil));
+	loc last := find-last(temp2);
+	loc last.next := temp1;
+	loc ret := temp2;
+}

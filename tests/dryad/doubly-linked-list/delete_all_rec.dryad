@@ -1,0 +1,88 @@
+define pred dll^(x):
+ (
+	 (((x l= nil) & emp) |
+
+	  ((x |-> loc next: y) & (y l= nil))) |
+
+	   (
+	        (((x |-> loc next: nxt) * (nxt |-> secondary prev: x)) * true) &
+	        (  (x |-> loc next: nxt) * ((~(nxt l= nil)) & dll^(nxt)) )
+		)
+ );
+	 
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method dll-delete(loc x, int k)
+requires: (dll^(x) & (keys^(x) s= xks)) ;
+ensures: (dll^(ret) & (((k i-in xks) => (keys^(ret) s= (xks setminus (singleton k)))) &
+			           ((~ (k i-in xks)) => (keys^(ret) s= xks))
+					  ));
+
+
+bb delete-nil:
+pre: (dll^(x) & (kk s= keys^(x))) ;
+post: (dll^(ret) & (((k i-in kk) => (keys^(ret) s= (kk setminus (singleton k)))) &
+			           ((~ (k i-in kk)) => (keys^(ret) s= kk))
+					  ));
+{
+	assume (x l== nil);
+	loc ret := x;
+}
+
+
+bb delete-in-place:
+pre: (dll^(x) & (kk s= keys^(x))) ;
+post: (dll^(ret) & (((k i-in kk) => (keys^(ret) s= (kk setminus (singleton k)))) &
+			           ((~ (k i-in kk)) => (keys^(ret) s= kk))
+					  ));
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk i== k);
+	loc z := x.next;
+	loc t := dll-delete(z; k);
+	free x;
+	loc ret := t;
+}
+
+bb delete-in-place-pre:
+pre: (dll^(x) & (kk s= keys^(x))) ;
+post: (dll^(z) * true);
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk i== k);
+	loc z := x.next;
+}
+
+
+bb delete-recursive-call:
+pre: (dll^(x) & (kks s= keys^(x))) ;
+post: (dll^(ret) & (((k i-in kks) => (keys^(ret) s= (kks setminus (singleton k)))) &
+			           ((~ (k i-in kks)) => (keys^(ret) s= kks))
+					  ));
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc z := x.next;
+	loc t := dll-delete(z; k);
+	loc x.next := t;
+	loc t.prev := x;
+	loc ret := x;
+}
+
+bb delete-recursive-call-pre:
+pre: (dll^(x) & (kks s= keys^(x))) ;
+post: (dll^(z) * true);
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc z := x.next;
+}

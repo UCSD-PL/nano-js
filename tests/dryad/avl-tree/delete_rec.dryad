@@ -1,0 +1,320 @@
+define pred avl^(x): 
+  ( ((x l= nil) & emp) |
+    (
+        (x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) * 
+        (
+	 (
+	  (avl^(lft) & (keys^(lft) set-lt ky)) *
+	  (avl^(rgt) & (ky lt-set keys^(rgt)))
+	 ) &
+	 (
+	  ((height^(lft) i= height^(rgt)) & ((hgt i= (height^(lft) + 1)) * true)) 	   |
+	  ( ((height^(lft) i= (height^(rgt) + 1)) & ((hgt i= (height^(rgt) + 2)) * true) ) |
+	  ((height^(rgt) i= (height^(lft) + 1)) & ((hgt i= (height^(lft) + 2)) * true) ) )
+	)
+       )
+    )
+  ) ;
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+define int-fun height^(x):
+  (case (x l= nil): 0;
+   case (((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) * true) &
+	((height^(lft) < height^(rgt)) * true)): 
+   	(height^(rgt) + 1);
+   default: (height^(lft) + 1)
+  ) ;
+
+method avl-delete(loc x, int kk)
+requires: (((avl^(x) & (keys^(x) s= xks)) & (height^(x) i= h)) &
+	(kk i-in xks)) ;
+
+ensures: (((avl^(ret) & (keys^(ret) s= (xks setminus (singleton kk)))) & 
+	  (height^(ret) i= newh)) &
+         ((newh i= h) | (newh i= (h - 1)))); 
+
+method avl-find-smallest(loc x)
+requires: ((((avl^(x) & (keys^(x) s= xks2)) & (height^(x) i= h2)) & (~ (x l= nil)))
+       	& ((xks2 s= ((singleton minn) union rest)) & (minn lt-set rest))) ;
+ensures: (((avl^(x) & (keys^(x) s= xks2)) & (height^(x) i= h2)) & (ret i= minn)) ;
+
+method avl-balance(loc x)
+requires: ((
+	((x |-> loc left: olft; loc right: orgt; int key: oky; int hight: ohgt) *
+     (((((keys^(olft) s= olks) & (height^(olft) i= olht)) & avl^(olft)) & (keys^(olft) set-lt oky)) *
+     ((((keys^(orgt) s= orks) & (height^(orgt) i= orht)) & avl^(orgt)) & (oky lt-set keys^(orgt))))) &
+	 ((orht <= (olht + 2)) & (olht <= (orht + 2)))) & 
+	((((orgt l= nil) | ((orgt |-> loc left: rgtlft; loc right: rgtrgt) * ((height^(rgtlft) i= rlht) * (height^(rgtrgt) i= rrht)))) *
+	((olft l= nil) | ((olft |-> loc left: lftlft; loc right: lftrgt) * ((height^(lftlft) i= llht) * (height^(lftrgt) i= lrht))))) * true) );
+
+ensures: ((avl^(ret) & (keys^(ret) s= ((singleton oky) union (olks union orks)))) & 
+	  (((((orht i= (olht + 1)) & (height^(ret) i= (orht + 1))) |
+	   ((olht i= (orht + 1)) & (height^(ret) i= (olht + 1)))) |
+	   ((olht i= orht) & (height^(ret) i= (olht + 1)))) |
+	  (((((orht i= (olht + 2)) & (rlht i= rrht)) & (height^(ret) i= (orht + 1))) | (((orht i= (olht + 2)) & (~ (rlht i= rrht))) & (height^(ret) i= orht))) |
+	  ((((olht i= (orht + 2)) & (llht i= lrht)) & (height^(ret) i= (olht + 1))) | (((olht i= (orht + 2)) & (~ (llht i= lrht))) & (height^(ret) i= olht)))))
+	  ) ;
+
+
+bb avl-delete-nil:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (x l== nil);
+	loc ret := nil;
+}
+
+bb avl-delete-current-nil-left:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (k i== xk);
+	assume (xl l== nil);
+	free x;
+	loc ret := xr;
+}
+
+bb avl-delete-current-nil-right:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (k i== xk);
+	assume (! (xl l== nil));
+	assume (xr l== nil);
+	free x;
+	loc ret := xl;
+}
+
+bb avl-delete-current-find-pre:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(xr) & (~ (xr l= nil))) * true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (k i== xk);
+	assume (! (xl l== nil));
+	assume (! (xr l== nil));
+}
+
+bb avl-delete-current-replace-pre:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(xr) & (min i-in keys^(xr))) * true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (k i== xk);
+	assume (! (xl l== nil));
+	assume (! (xr l== nil));
+	int min := avl-find-smallest(xr);
+}
+
+bb avl-delete-left-pre:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(xl) & (k i-in keys^(xl))) * true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (k i== xk));
+	assume (k < xk);
+}
+
+bb avl-delete-right-pre:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: ((avl^(xr) & (k i-in keys^(xr))) * true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (k i== xk));
+	assume (! (k < xk));
+}
+
+bb avl-delete-left-left-pre:
+pre: (((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	(k i-in xkss)) ;
+
+post: (
+	((x |-> loc left: newl; loc right: xr; int key: xk; int hight: xh) *
+     (((avl^(xr) & (xk lt-set keys^(xr))) *
+     (avl^(newl) & (keys^(newl) set-lt xk))) &
+	 ((height^(newl) <= (height^(xr) + 2)) & (height^(xr) <= (height^(newl) + 2))) ))
+	* true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (! (k i== xk));
+	assume (! (xk < k));
+	loc newl := avl-delete(xl; k);
+	loc x.left := newl;
+}
+
+bb avl-delete-right-right-pre:
+pre: ((((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) *
+     (((keys^(lft) s= xlks) & (height^(lft) i= xlht)) *
+     ((keys^(rgt) s= xrks) & (height^(rgt) i= xrht))))) &
+	(k i-in xkss)) ;
+
+post: (
+	((x |-> loc left: xl; loc right: newr; int key: xk; int hight: xh) *
+     (((avl^(newr) & (xk lt-set keys^(newr))) *
+     (avl^(xl) & (keys^(xl) set-lt xk))) &
+	 ((height^(newr) <= (height^(xl) + 2)) & (height^(xl) <= (height^(newr) + 2))) ))
+	* true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (! (k i== xk));
+	assume (xk < k);
+	loc newr := avl-delete(xr; k);
+	loc x.right := newr;
+}
+
+bb avl-delete-right-right:
+pre: ((((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) *
+     (((keys^(lft) s= xlks) & (height^(lft) i= xlht)) *
+     ((keys^(rgt) s= xrks) & (height^(rgt) i= xrht))))) &
+	(k i-in xkss)) ;
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (! (k i== xk));
+	assume (xk < k);
+	loc newr := avl-delete(xr; k);
+	loc x.right := newr;
+	loc ret := avl-balance(x);
+}
+
+bb avl-delete-left-left:
+pre: ((((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) *
+     (((keys^(lft) s= xlks) & (height^(lft) i= xlht)) *
+     ((keys^(rgt) s= xrks) & (height^(rgt) i= xrht))))) &
+	(k i-in xkss)) ;
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (! (k i== xk));
+	assume (! (xk < k));
+	loc newl := avl-delete(xl; k);
+	loc x.left := newl;
+	loc ret := avl-balance(x);
+}
+
+bb avl-delete-current-replace-right-pre:
+pre: (
+	((((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) *
+     (((keys^(lft) s= xlks) & (height^(lft) i= xlht)) *
+     ((keys^(rgt) s= xrks) & (height^(rgt) i= xrht))))) &
+	(k i-in xkss)) &
+	(((lft |-> loc left: lftlft; loc right: lftrgt; int key: lftky; int hight: lfthgt) * ((height^(lftlft) i= xllht) * (height^(lftrgt) i= xlrht))) * true)
+     );
+
+post: (
+	((x |-> loc left: xl; loc right: newr; int key: min; int hight: xh) *
+     (((avl^(newr) & (min lt-set keys^(newr))) *
+     (avl^(xl) & (keys^(xl) set-lt min))) &
+	 ((height^(newr) <= (height^(xl) + 2)) & (height^(xl) <= (height^(newr) + 2))) ))
+	* true) ;
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (k i== xk);
+	assume (! (xl l== nil));
+	assume (! (xr l== nil));
+	int min := avl-find-smallest(xr);
+	loc newr := avl-delete(xr; min);
+	int x.key := min;
+	loc x.right := newr;
+}
+
+bb avl-delete-current-replace-right:
+pre: (
+	((((avl^(x) & (keys^(x) s= xkss)) & (height^(x) i= hh)) &
+	((x |-> loc left: lft; loc right: rgt; int key: ky; int hight: hgt) *
+     (((keys^(lft) s= xlks) & (height^(lft) i= xlht)) *
+     ((keys^(rgt) s= xrks) & (height^(rgt) i= xrht))))) &
+	(k i-in xkss)) &
+	(((lft |-> loc left: lftlft; loc right: lftrgt; int key: lftky; int hight: lfthgt) * ((height^(lftlft) i= xllht) * (height^(lftrgt) i= xlrht))) * true)
+     );
+
+post: ((avl^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) & 
+         ((height^(ret) i= hh) | (height^(ret) i= (hh - 1))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xh := x.hight;
+	assume (k i== xk);
+	assume (! (xl l== nil));
+	assume (! (xr l== nil));
+	int min := avl-find-smallest(xr);
+	loc newr := avl-delete(xr; min);
+	int x.key := min;
+	loc x.right := newr;
+	loc ret := avl-balance(x);
+}
+
+

@@ -1,0 +1,81 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sll-delete(loc x, int k)
+requires: (sll^(x) & (keys^(x) s= xks)) ;
+ensures: (sll^(ret) & (((k i-in xks) => (keys^(ret) s= (xks setminus (singleton k)))) &
+			           ((~ (k i-in xks)) => (keys^(ret) s= xks))
+					  ));
+
+
+bb delete-nil:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: (sll^(ret) & (((k i-in kk) => (keys^(ret) s= (kk setminus (singleton k)))) &
+			           ((~ (k i-in kk)) => (keys^(ret) s= kk))
+					  ));
+{
+	assume (x l== nil);
+	loc ret := x;
+}
+
+
+bb delete-in-place:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: (sll^(ret) & (((k i-in kk) => (keys^(ret) s= (kk setminus (singleton k)))) &
+			           ((~ (k i-in kk)) => (keys^(ret) s= kk))
+					  ));
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk i== k);
+	loc y := x.next;
+	loc t := sll-delete(y; k);
+	free x;
+	loc ret := t;
+}
+
+bb delete-in-place-pre:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: (sll^(y) * true);
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk i== k);
+	loc y := x.next;
+}
+
+
+bb delete-recursive-call:
+pre: (sll^(x) & (kks s= keys^(x))) ;
+post: (sll^(ret) & (((k i-in kks) => (keys^(ret) s= (kks setminus (singleton k)))) &
+			           ((~ (k i-in kks)) => (keys^(ret) s= kks))
+					  ));
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc y := x.next;
+	loc t := sll-delete(y; k);
+	loc x.next := t;
+	loc ret := x;
+}
+
+bb delete-recursive-call-pre:
+pre: (sll^(x) & (kks s= keys^(x))) ;
+post: (sll^(y) * true);
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc y := x.next;
+}

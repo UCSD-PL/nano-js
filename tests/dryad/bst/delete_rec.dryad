@@ -1,0 +1,112 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+method bst-removeroot(loc x)
+requires: (
+        	((x |-> loc left: lft; loc right: rgt; int key: ky) * 
+	 	 ((bst^(lft) & (keys^(lft) s= lks)) * 
+	 	 (bst^(rgt) & (keys^(rgt) s= rks))
+		 )) &
+		(lks lt rks)
+    ) ;
+ensures: (bst^(ret) & (keys^(ret) s= (lks union rks))) ;
+
+
+method bst-delete(loc x, int k)
+requires: ((bst^(x) & (keys^(x) s= xks)) & (k i-in xks)) ;
+ensures: (bst^(ret) & (keys^(ret) s= (xks setminus (singleton k)))) ;
+
+
+bb bst-delete-current:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (xk i== k);
+	loc ret := bst-removeroot(x);
+}
+
+
+bb bst-delete-current-pre:
+pre:  ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: (
+        	((x |-> loc left: xl; loc right: xr; int key: xk) * 
+	 	 ((bst^(xl) *  bst^(xr))
+		   &
+		 (keys^(xl) lt keys^(xr)))) * true
+    ) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	int xpt := x.priority;
+	assume (xk i== k);
+}
+
+bb bst-delete-left:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (xk i== k));
+	assume (k < xk);
+	loc t := bst-delete(xl; k);
+	loc x.left := t;
+	loc ret := x;
+}
+
+bb bst-delete-left-pre:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: ((bst^(xl) & (k i-in keys^(xl))) * true) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (xk i== k));
+	assume (k < xk);
+}
+
+bb bst-delete-right:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss setminus (singleton k)))) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (xk i== k));
+	assume (! (k < xk));
+	loc t := bst-delete(xr; k);
+	loc x.right := t;
+	loc ret := x;
+}
+
+bb bst-delete-right-pre:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (k i-in xkss)) ;
+post: ((bst^(xr) & (k i-in keys^(xr))) * true) ;
+{
+	loc xl := x.left;
+	loc xr := x.right;
+	int xk := x.key;
+	assume (! (xk i== k));
+	assume (! (k < xk));
+}
+
+
+
+
+
+

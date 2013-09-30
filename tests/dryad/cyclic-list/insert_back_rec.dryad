@@ -1,0 +1,46 @@
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt) * lseg^(nxt, tail))  
+  ) ;
+
+method lseg-insert(loc p, loc q)
+requires: (lseg^(p, q) & (~ (p l= q))) ;
+ensures: lseg^(ret, q) ;
+
+
+bb cyclic-list-insert-back-base:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:   ((x |-> loc next: ret) * lseg^(ret, x)) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (t l== x);
+	malloc z;
+	loc z.next := x;
+	loc x.next := z;
+	loc ret := z;
+}
+
+bb cyclic-list-insert-back-pre:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  ( (lseg^(t, x) & (~ (t l= x))) * true );
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (! (t l== x));
+}
+
+bb cyclic-list-insert-back-recursive:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:   ((x |-> loc next: ret) * lseg^(ret, x)) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (! (t l== x));
+	loc u := lseg-insert(t, x);
+	loc x.next := u;
+	loc ret := u;
+}
+
+
