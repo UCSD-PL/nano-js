@@ -1,0 +1,95 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (ky lt-set keys^(nxt)))
+		  )  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sorted-merge(loc x1, loc x2)
+requires: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+ensures: (sorted^(ret) & (keys^(ret) s= (x1ks union x2ks))) ;
+
+bb merge-op1-nil:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: (sorted^(ret) & (keys^(ret) s= (x1ks union x2ks))) ;
+{
+	assume (x1 l== nil);
+	loc ret := x2; 
+}
+
+bb merge-op2-nil:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: (sorted^(ret) & (keys^(ret) s= (x1ks union x2ks))) ;
+{
+	assume (! (x1 l== nil));
+	assume (x2 l== nil);
+	loc ret := x1; 
+}
+
+bb merge-op1-first:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: (sorted^(ret) & (keys^(ret) s= (x1ks union x2ks))) ;
+{
+	assume (! (x1 l== nil));
+	assume (! (x2 l== nil));
+	int x1k := x1.key;
+	int x2k := x2.key;
+	assume (x1k <= x2k);
+	loc x1next := x1.next;
+	loc y := sorted-merge(x1next, x2);
+	malloc u;
+	int u.key := x1k;
+	loc u.next := y;
+	free x1;
+	loc ret := u; 
+}
+
+bb merge-op1-first-pre:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: ((sorted^(x1next) * sorted^(x2)) *  true);
+{
+	assume (! (x1 l== nil));
+	assume (! (x2 l== nil));
+	int x1k := x1.key;
+	int x2k := x2.key;
+	assume (x1k <= x2k);
+	loc x1next := x1.next;
+}
+
+bb merge-op2-first:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: (sorted^(ret) & (keys^(ret) s= (x1ks union x2ks))) ;
+{
+	assume (! (x1 l== nil));
+	assume (! (x2 l== nil));
+	int x1k := x1.key;
+	int x2k := x2.key;
+	assume (! (x1k <= x2k));
+	loc x2next := x2.next;
+	loc y := sorted-merge(x1, x2next);
+	malloc u;
+	int u.key := x2k;
+	loc u.next := y;
+	free x2;
+	loc ret := u; 
+}
+
+bb merge-op2-first-pre:
+pre: ((sorted^(x1) & (keys^(x1) s= x1ks)) * (sorted^(x2) & (keys^(x2) s= x2ks))) ;
+post: ((sorted^(x1) * sorted^(x2next)) *  true);
+{
+	assume (! (x1 l== nil));
+	assume (! (x2 l== nil));
+	int x1k := x1.key;
+	int x2k := x2.key;
+	assume (! (x1k <= x2k));
+	loc x2next := x2.next;
+}

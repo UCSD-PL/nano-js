@@ -1,0 +1,336 @@
+define pred heap^(x): 
+  ( ((x l= nil) & emp) |
+    (
+        (x |-> loc left: lft2; loc right: rgt2; int key: ky2) * 
+        (
+	       (heap^(lft2) & (keys^(lft2) set-lt ky2)) *
+	       (heap^(rgt2) & (keys^(rgt2) set-lt ky2))
+		)
+	)
+  ) ;
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft3; loc right: rgt3; int key: ky3) * true): 
+   	((singleton ky3) union (keys^(lft3) union keys^(rgt3)));
+   default: emptyset
+  ) ;
+
+method heapify(loc x)
+requires: (((x |-> loc left: lft1; loc right: rgt1; int key: ky1) * (heap^(lft1) * heap^(rgt1))) & (keys^(x) s= xks)) ;
+ensures: (heap^(ret) & (keys^(ret) s= xks));
+
+
+bb heapify-left-nil:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (nodeleft l== nil);
+	loc maxchild := x.right;
+	assume (maxchild l== nil);
+	loc ret := x;
+}
+
+bb heapify-left-nil-right-small:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (nodeleft l== nil);
+	loc maxchild := x.right;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (childkey < xkey);
+	loc ret := x;
+}
+
+bb heapify-right-nil:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (noderight l== nil);
+	loc maxchild := x.left;
+	assume (maxchild l== nil);
+	loc ret := x;
+}
+
+bb heapify-right-nil-left-small:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (noderight l== nil);
+	loc maxchild := x.left;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (childkey < xkey);
+	loc ret := x;
+}
+
+bb heapify-child-non-nil-right-contr:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (leftkey < rightkey);
+	loc maxchild := noderight;
+	assume (maxchild l== nil);
+	loc ret := x;
+}
+
+bb heapify-child-non-nil-left-contr:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (rightkey <= leftkey);
+	loc maxchild := nodeleft;
+	assume (maxchild l== nil);
+	loc ret := x;
+}
+
+
+bb heapify-child-non-nil-right-small:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (leftkey < rightkey);
+	loc maxchild := noderight;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (childkey < xkey);
+	loc ret := x;
+}
+
+bb heapify-child-non-nil-left-small:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (rightkey <= leftkey);
+	loc maxchild := nodeleft;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (childkey < xkey);
+	loc ret := x;
+}
+
+bb heapify-left-nil-right-large:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (nodeleft l== nil);
+	loc maxchild := x.right;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := childkey;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc u := heapify(maxchild);
+	loc x.right := u;
+	loc ret := x;
+}
+
+bb heapify-left-nil-right-large-pre:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (((maxchild |-> loc left: lft1; loc right: rgt1; int key: ky1) * (heap^(lft1) * heap^(rgt1))) * true);
+{
+	loc nodeleft := x.left;
+	assume (nodeleft l== nil);
+	loc maxchild := x.right;
+	assume (! (maxchild l== nil));	
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := childkey;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc lft1 := maxchild.left;
+	loc rgt1 := maxchild.right;
+	int ky1 := maxchild.key;
+}
+
+
+bb heapify-right-nil-left-large:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (noderight l== nil);
+	loc maxchild := x.left;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := childkey;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc u := heapify(maxchild);
+	loc x.left := u;
+	loc ret := x;
+}
+
+
+bb heapify-right-nil-left-large-pre:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (((maxchild |-> loc left: lft4; loc right: rgt4; int key: ky4) * (heap^(lft4) * heap^(rgt4))) * true) ;
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (noderight l== nil);
+	loc maxchild := x.left;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := childkey;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc lft4 := maxchild.left;
+	loc rgt4 := maxchild.right;
+	int ky4 := maxchild.key;
+}
+
+bb heapify-child-non-nil-right-large:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (leftkey < rightkey);
+	loc maxchild := noderight;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := maxchild.key;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc u := heapify(maxchild);
+	loc x.right := u;
+	loc ret := x;
+}
+
+
+bb heapify-child-non-nil-right-large-pre:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (((maxchild |-> loc left: lft4; loc right: rgt4; int key: ky4) * (heap^(lft4) * heap^(rgt4))) * true) ;
+{
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (leftkey < rightkey);
+	loc maxchild := noderight;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := maxchild.key;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc lft4 := maxchild.left;
+	loc rgt4 := maxchild.right;
+	int ky4 := maxchild.key;
+}
+
+bb heapify-child-non-nil-left-large:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (heap^(ret) & (keys^(ret) s= xks));
+{
+
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (rightkey <= leftkey);
+	loc maxchild := nodeleft;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := maxchild.key;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc u := heapify(maxchild);
+	loc x.left := u;
+	loc ret := x;
+}
+
+bb heapify-child-non-nil-left-large-pre:
+pre: (((x |-> loc left: lft; loc right: rgt; int key: ky) * (heap^(lft) * heap^(rgt))) & (keys^(x) s= xks)) ;
+post: (((maxchild |-> loc left: lft4; loc right: rgt4; int key: ky4) * (heap^(lft4) * heap^(rgt4))) * true) ;
+{
+
+	loc nodeleft := x.left;
+	assume (! (nodeleft l== nil));
+	loc noderight := x.right;
+	assume (! (noderight l== nil));
+	int leftkey := nodeleft.key;
+	int rightkey := noderight.key;
+	assume (rightkey <= leftkey);
+	loc maxchild := nodeleft;
+	assume (! (maxchild l== nil));
+	int childkey := maxchild.key;
+	int xkey := x.key;
+	assume (xkey < childkey);
+	int temp1 := maxchild.key;
+	int temp2 := x.key;
+	int maxchild.key := temp2;
+	int x.key := temp1;
+	loc lft4 := maxchild.left;
+	loc rgt4 := maxchild.right;
+	int ky4 := maxchild.key;
+}

@@ -1,0 +1,132 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+define relation bst-with-leftmost-hole^(root, hole):
+  ( (((root l= hole) | (root l= nil)) & emp) |
+         ( (root |-> loc left: lft; loc right: rgt; int key: ky) *
+           ((bst-with-leftmost-hole^(lft, hole) & (keys-leftmost^(lft, hole) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))) )
+  )
+  axiom: ( (bst^(hole) -* ((keys^(hole) lt keys-leftmost^(root, hole)) => (bst^(root) & (keys^(root) s= (keys-leftmost^(root, hole) union keys^(hole)))))) &
+
+         ( ((hole |-> loc left: virtual hl; loc right: virtual hr; int key: virtual hk) * (bst^(hr) & (hk lt-set keys^(hr)))) -*
+          (((keys^(hr) lt keys-leftmost^(root, hole)) * true) =>
+           (bst-with-leftmost-hole^(root, hl) & (keys-leftmost^(root, hl) s= (keys-leftmost^(root, hole) union ((singleton hk) union keys^(hr)))))) ) ) ;
+
+
+define bin-set-fun keys-leftmost^(root, hole):
+  (case ((root l= hole) | (root l= nil)): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true):
+        ((singleton ky) union (keys-leftmost^(lft, hole) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+
+method bst-find-leftmost(loc x)
+requires: ((bst^(x) & (keys^(x) s= xks2)) & ((~ (x l= nil)) & ((x |-> loc left: xlft) * (~ (xlft l= nil))))) ;
+ensures: ((
+	( bst-with-leftmost-hole^(x, ret) *  
+	  ( (ret |-> loc left: clft; loc right: crgt; int key: cky) * 
+	    ( ( ((clft |-> loc left: clftlft; loc right: clftrgt; int key: clftky) * ((clftlft l= nil) & (bst^(clftrgt) & (clftky lt-set keys^(clftrgt))))) & (keys^(clft) set-lt cky) )
+	      * (bst^(crgt) & (cky lt-set keys^(crgt))) ) 
+	   ) )
+      & (keys^(ret) lt keys-leftmost^(x, ret)) 
+      ) & (xks2 s= (keys^(ret) union keys-leftmost^(x, ret)))) ;
+
+
+
+
+
+bb bst-find-leftmost-before-loop:
+pre: ((bst^(x) & (keys^(x) s= xks)) & ((~ (x l= nil)) & ((x |-> loc left: xlft) * (~ (xlft l= nil))))) ;
+post: ((
+	( bst-with-leftmost-hole^(x, curr) *  
+	  ( (curr |-> loc left: clft; loc right: crgt; int key: cky) * 
+	    ( ( ((clft |-> loc left: clftlft; loc right: clftrgt; int key: clftky) * ((bst^(clftlft) & (keys^(clftlft) set-lt clftky)) * (bst^(clftrgt) & (clftky lt-set keys^(clftrgt))))) & (keys^(clft) set-lt cky) )
+	      * (bst^(crgt) & (cky lt-set keys^(crgt))) ) 
+	   ) )
+      & (keys^(curr) lt keys-leftmost^(x, curr)) 
+      ) & (xks s= (keys^(curr) union keys-leftmost^(x, curr)))) ;
+{
+	loc curr := x;
+	loc clft := curr.left;
+	loc crgt := curr.right;
+	int cky := curr.key;
+	loc clftlft := clft.left;
+	loc clftrgt := clft.right;
+	int clftky := clft.key;
+}
+
+bb bst-find-leftmost-in-loop:
+pre: ((
+	( bst-with-leftmost-hole^(x, curr) *  
+	  ( (curr |-> loc left: clft; loc right: crgt; int key: cky) * 
+	    ( ( ((clft |-> loc left: clftlft; loc right: clftrgt; int key: clftky) * ((bst^(clftlft) & (keys^(clftlft) set-lt clftky)) * (bst^(clftrgt) & (clftky lt-set keys^(clftrgt))))) & (keys^(clft) set-lt cky) )
+	      * (bst^(crgt) & (cky lt-set keys^(crgt))) ) 
+	   ) )
+      & (keys^(curr) lt keys-leftmost^(x, curr)) 
+      ) & (xks s= (keys^(curr) union keys-leftmost^(x, curr)))) ;
+post: ((
+	( bst-with-leftmost-hole^(x, curr1) *  
+	  ( (curr1 |-> loc left: clft1; loc right: crgt1; int key: cky1) * 
+	    ( ( ((clft1 |-> loc left: clftlft1; loc right: clftrgt1; int key: clftky1) * ((bst^(clftlft1) & (keys^(clftlft1) set-lt clftky1)) * (bst^(clftrgt1) & (clftky1 lt-set keys^(clftrgt1))))) & (keys^(clft1) set-lt cky1) )
+	      * (bst^(crgt1) & (cky1 lt-set keys^(crgt1))) ) 
+	   ) )
+      & (keys^(curr1) lt keys-leftmost^(x, curr1)) 
+      ) & (xks s= (keys^(curr1) union keys-leftmost^(x, curr1)))) ;
+{
+	loc clft := curr.left;
+	loc crgt := curr.right;
+	int cky := curr.key;
+	loc clftlft := clft.left;
+	loc clftrgt := clft.right;
+	int clftky := clft.key;
+	assume (! (clftlft l== nil));
+	loc curr1 := clft;
+	loc clft1 := curr1.left;
+	loc crgt1 := curr1.right;
+	int cky1 := curr1.key;
+	loc clftlft1 := clft1.left;
+	loc clftrgt1 := clft1.right;
+	int clftky1 := clft1.key;
+}
+
+bb bst-find-leftmost-after-loop:
+pre: ((
+	( bst-with-leftmost-hole^(x, curr) *  
+	  ( (curr |-> loc left: clft; loc right: crgt; int key: cky) * 
+	    ( ( ((clft |-> loc left: clftlft; loc right: clftrgt; int key: clftky) * ((bst^(clftlft) & (keys^(clftlft) set-lt clftky)) * (bst^(clftrgt) & (clftky lt-set keys^(clftrgt))))) & (keys^(clft) set-lt cky) )
+	      * (bst^(crgt) & (cky lt-set keys^(crgt))) ) 
+	   ) )
+      & (keys^(curr) lt keys-leftmost^(x, curr)) 
+      ) & (xks s= (keys^(curr) union keys-leftmost^(x, curr)))) ;
+post: ((
+	( bst-with-leftmost-hole^(x, ret) *  
+	  ( (ret |-> loc left: clft; loc right: crgt; int key: cky) * 
+	    ( ( ((clft |-> loc left: clftlft; loc right: clftrgt; int key: clftky) * ((clftlft l= nil) & (bst^(clftrgt) & (clftky lt-set keys^(clftrgt))))) & (keys^(clft) set-lt cky) )
+	      * (bst^(crgt) & (cky lt-set keys^(crgt))) ) 
+	   ) )
+      & (keys^(ret) lt keys-leftmost^(x, ret)) 
+      ) & (xks s= (keys^(ret) union keys-leftmost^(x, ret)))) ;
+{
+	loc clft := curr.left;
+	loc crgt := curr.right;
+	int cky := curr.key;
+	loc clftlft := clft.left;
+	loc clftrgt := clft.right;
+	int clftky := clft.key;
+	assume (clftlft l== nil);
+	loc ret := curr;
+}
+

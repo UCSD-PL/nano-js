@@ -1,0 +1,35 @@
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt) * lseg^(nxt, tail))  
+  ) ;
+
+
+bb delete-front-base:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  ((emp & ((x l= nxt) => (ret l= nil))) |
+		   ((~(x l= nxt)) => ((x |-> loc next: ret) * lseg^(ret, x)))
+		) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (t l== x);
+	free t;
+	loc ret := nil;
+}
+
+bb delete-front:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  ((emp & ((x l= nxt) => (ret l= nil))) |
+		   ((~(x l= nxt)) => ((x |-> loc next: ret) * lseg^(ret, x)))
+		) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (! (t l== x));
+	loc u := t.next;
+	free t;
+	loc x.next := u;
+	loc ret := u;
+}
+

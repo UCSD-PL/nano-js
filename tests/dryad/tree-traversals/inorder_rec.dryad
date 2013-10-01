@@ -1,0 +1,85 @@
+define pred tree^(x):
+	( ((x l= nil) & emp)
+	| ((x |-> loc left: lft; loc right: rgt; int key: ky) * (tree^(lft) * tree^(rgt)))  
+	);
+
+define pred intree^(x):
+	( ((x l= nil) & emp)
+	| (((x |-> loc left: lft; loc right: rgt; int key: ky) * (intree^(lft) * intree^(rgt)))
+		& ((((((order^(lft) + rsize^(lft)) + 1) i= ky) * true) | (lft l= nil))
+		& (((order^(rgt) i= ((ky + lsize^(rgt)) + 1)) * true) | (rgt l= nil))))  
+	);
+
+define int-fun order^(x):
+	( case (x l= nil): 0;
+	  case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+		ky;
+	  default: 0
+	);
+
+define int-fun size^(x):
+	( case (x l= nil): 0;
+	  case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+		(1 + (size^(lft) + size^(rgt)));
+	  default: 0
+	);
+
+define int-fun lsize^(x):
+	( case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+		size^(lft);
+	  default: 0
+	);
+
+define int-fun rsize^(x):
+	( case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+		size^(rgt);
+	  default: 0
+	);
+
+
+method inorder(loc x, int n)
+requires: (tree^(x) & (szarg i= size^(x)));
+ensures: (intree^(x) & ((ret i= (n + szarg)) & ((((order^(x) i= (n + lsize^(x))) & ((1 + (lsize^(x) + rsize^(x))) i= size^(x))) | (x l= nil)) & (size^(x) i= szarg))));
+
+
+bb inorder-basic:
+pre: (tree^(x) & (sz i= size^(x)));
+post: (intree^(x) & ((ret i= (n + sz)) & ((((order^(x) i= (n + lsize^(x))) & ((1 + (lsize^(x) + rsize^(x))) i= size^(x))) | (x l= nil)) & (size^(x) i= sz))));
+{
+	assume (x l== nil);
+	int ret := n;
+}
+
+bb inorder-inductive:
+pre: (tree^(x) & (sz i= size^(x)));
+post: (intree^(x) & ((ret i= (n + sz)) & ((((order^(x) i= (n + lsize^(x))) & ((1 + (lsize^(x) + rsize^(x))) i= size^(x))) | (x l= nil)) & (size^(x) i= sz))));
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	int n1 := inorder(xl; n);
+	int x.key := n1;
+	int n2 := n1 + 1;
+	loc xr := x.right;
+	int n3 := inorder(xr; n2);
+	int ret := n3;
+}
+
+bb inorder-call1:
+pre: (tree^(x) & (sz i= size^(x)));
+post: (tree^(xl) * true);
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+}
+
+bb inorder-call2:
+pre: (tree^(x) & (sz i= size^(x)));
+post: (tree^(xr) * true);
+{
+	assume (! (x l== nil));
+	loc xl := x.left;
+	int n1 := inorder(xl; n);
+	int x.key := n1;
+	int n2 := n1 + 1;
+	loc xr := x.right;
+}

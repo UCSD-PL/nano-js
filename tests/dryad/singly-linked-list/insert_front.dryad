@@ -1,0 +1,33 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+bb insert-nil:
+pre: (sll^(x) & (keys^(x) s= kk)) ;
+post: (sll^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (x l== nil);
+	malloc y;
+	int y.key := k;
+	loc ret := y; 
+}
+
+bb insert-at-front:
+pre: (sll^(x) & (keys^(x) s= kk)) ;
+post: (sll^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (! (x l== nil));
+	malloc y;
+	int y.key := k;
+	loc y.next := x;
+	loc ret := y;
+}

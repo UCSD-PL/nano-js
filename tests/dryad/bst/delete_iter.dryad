@@ -1,0 +1,167 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+define relation bst-with-hole-k^(root, hole): 
+  ( ((root l= hole) & emp) |
+	 ( (root |-> loc left: lft; loc right: rgt; int key: ky) * 
+	   ( ((k < ky) & ((bst-with-hole-k^(lft, hole) & (keys-with-hole-k^(lft, hole) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt))))) | 
+	   ((ky < k) & ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst-with-hole-k^(rgt, hole) & (ky lt-set keys-with-hole-k^(rgt, hole))))) ) )
+  )
+  axiom: ( (bst^(hole) -* (((keys-lt-k^(root, hole) lt keys^(hole)) & (keys^(hole) lt keys-gt-k^(root, hole))) => (bst^(root) & (keys^(root) s= (keys-with-hole-k^(root, hole) union keys^(hole)))))) &
+
+	 ( (((hole |-> loc left: virtual hl; loc right: virtual hr; int key: virtual hkk) * ((k < hkk) & (bst^(hr) & (hkk lt-set keys^(hr))))) -* 
+	  ((((keys-lt-k^(root, hole) lt ((singleton hkk) union keys^(hr))) & (((singleton hkk) union keys^(hr)) lt keys-gt-k^(root, hole))) * true) => 
+	   ((bst-with-hole-k^(root, hl) & (keys-with-hole-k^(root, hl) s= (keys-with-hole-k^(root, hole) union ((singleton hkk) union keys^(hr))))) &
+	   ((keys-gt-k^(root, hl) s= ((singleton hkk) union keys-gt-k^(root, hole))) & (keys-lt-k^(root, hl) s= keys-lt-k^(root, hole)))) )) &
+
+	   (((hole |-> loc left: virtual hl; loc right: virtual hr; int key: virtual hkk) * ((hkk < k) & (bst^(hl) & (keys^(hl) set-lt hkk)))) -* 
+	  ((((keys-lt-k^(root, hole) lt ((singleton hkk) union keys^(hl))) & (((singleton hkk) union keys^(hl)) lt keys-gt-k^(root, hole))) * true) => 
+	   ((bst-with-hole-k^(root, hr) & (keys-with-hole-k^(root, hr) s= (keys-with-hole-k^(root, hole) union ((singleton hkk) union keys^(hl))))) &
+	   ((keys-gt-k^(root, hr) s= keys-gt-k^(root, hole)) & (keys-lt-k^(root, hr) s= ((singleton hkk) union keys-lt-k^(root, hole))))) )) ) ) ;
+
+define bin-set-fun keys-with-hole-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	((singleton ky) union (keys-with-hole-k^(lft, hole) union keys^(rgt)));
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	((singleton ky) union (keys^(lft) union keys-with-hole-k^(rgt, hole)));
+   default: emptyset
+  ) ;
+
+define bin-set-fun keys-gt-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	((singleton ky) union keys-gt-k^(lft, hole));
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	keys-gt-k^(rgt, hole);
+   default: emptyset
+  ) ;
+
+define bin-set-fun keys-lt-k^(root, hole):
+  (case (root l= hole): emptyset;
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (k < ky)): 
+   	keys-lt-k^(lft, hole);
+   case ((root |-> loc left: lft; loc right: rgt; int key: ky) * (~ (k < ky))): 
+   	((singleton ky) union keys-lt-k^(rgt, hole));
+   default: emptyset
+  ) ;
+
+
+
+method bst-removeroot(loc x)
+requires: ((bst^(x) & (keys^(x) s= xkss)) & ((x |-> int key: kyy) * true)) ;
+ensures: (bst^(ret) & (keys^(ret) s= (xkss setminus (singleton kyy)))) ;
+
+
+
+
+
+bb bst-delete-root:
+pre: ((bst^(x) & (keys^(x) s= xks)) & ((~ (x l= nil)) & (k i-in xks)));
+post: (bst^(ret) & (keys^(ret) s= (xks setminus (singleton k)))) ;
+{
+	int xk := x.key;
+	assume (xk i== k);
+	loc ret := bst-removeroot(x);
+}
+
+bb bst-delete-before-loop1:
+pre: ((bst^(x) & (keys^(x) s= xks)) & ((~ (x l= nil)) & (k i-in xks)));
+post: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+{
+	int xk := x.key;
+	assume (k < xk);
+	int pky := xk;
+	loc prt := x;
+	loc curr := x.left;
+}
+
+bb bst-delete-before-loop2:
+pre: ((bst^(x) & (keys^(x) s= xks)) & ((~ (x l= nil)) & (k i-in xks)));
+post: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+{
+	int xk := x.key;
+	assume (xk < k);
+	int pky := xk;
+	loc prt := x;
+	loc curr := x.right;
+}
+
+bb bst-delete-in-loop1:
+pre: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+post: ( ((bst-with-hole-k^(x, prt1) * bst^(prt1)) & (((keys-lt-k^(x, prt1) lt keys^(prt1)) & (keys^(prt1) lt keys-gt-k^(x, prt1))) & 
+				(((keys-with-hole-k^(x, prt1) union keys^(prt1)) s= xks) & ((keys-with-hole-k^(x, prt1) intersection keys^(prt1)) s= emptyset)))) & 
+       (((~ (curr1 l= nil)) * (k i-in keys^(curr1))) & (((prt1 |-> loc left: curr1; int key: pky1) * (k < pky1)) | ((prt1 |-> loc right: curr1; int key: pky1) * (pky1 < k)))) ) ;
+{
+	int pky := prt.key;
+	int currk := curr.key;
+	assume (k < currk);
+	loc prt1 := curr;
+	loc curr1 := curr.left;
+	int pky1 := currk;
+}
+
+bb bst-delete-in-loop2:
+pre: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+post: ( ((bst-with-hole-k^(x, prt1) * bst^(prt1)) & (((keys-lt-k^(x, prt1) lt keys^(prt1)) & (keys^(prt1) lt keys-gt-k^(x, prt1))) & 
+				(((keys-with-hole-k^(x, prt1) union keys^(prt1)) s= xks) & ((keys-with-hole-k^(x, prt1) intersection keys^(prt1)) s= emptyset)))) & 
+       (((~ (curr1 l= nil)) * (k i-in keys^(curr1))) & (((prt1 |-> loc left: curr1; int key: pky1) * (k < pky1)) | ((prt1 |-> loc right: curr1; int key: pky1) * (pky1 < k)))) ) ;
+{
+	int pky := prt.key;
+	int currk := curr.key;
+	assume (currk < k);
+	loc prt1 := curr;
+	loc curr1 := curr.right;
+	int pky1 := currk;
+}
+
+bb bst-delete-after-loop1:
+pre: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+post: (bst^(ret) & (keys^(ret) s= (xks setminus (singleton k)))) ;
+{
+	int pky := prt.key;
+	int currk := curr.key;
+	assume (k i== currk);
+	loc tmp := bst-removeroot(curr);
+	assume (k < pky);
+	loc prt.left := tmp;
+	loc ret := x;
+}
+
+bb bst-delete-after-loop2:
+pre: ( ((bst-with-hole-k^(x, prt) * bst^(prt)) & (((keys-lt-k^(x, prt) lt keys^(prt)) & (keys^(prt) lt keys-gt-k^(x, prt))) & 
+				(((keys-with-hole-k^(x, prt) union keys^(prt)) s= xks) & ((keys-with-hole-k^(x, prt) intersection keys^(prt)) s= emptyset)))) & 
+       (((~ (curr l= nil)) * (k i-in keys^(curr))) & (((prt |-> loc left: curr; int key: pky) * (k < pky)) | ((prt |-> loc right: curr; int key: pky) * (pky < k)))) ) ;
+post: (bst^(ret) & (keys^(ret) s= (xks setminus (singleton k)))) ;
+{
+	int pky := prt.key;
+	int currk := curr.key;
+	assume (k i== currk);
+	loc tmp := bst-removeroot(curr);
+	assume (! (k < pky));
+	loc prt.right := tmp;
+	loc ret := x;
+}
+
+

@@ -1,0 +1,215 @@
+define pred list^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * list^(nxt))
+  )
+  axiom: (lseg^(x, x) * (((x l= nil) & (length^(x) i= 0)) | ((~ (x l= nil)) & (0 < length^(x)))));
+  
+define pred sorted-list^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * (sorted-list^(nxt) & (ky lt-set keys^(nxt))))  
+  )
+axiom: ((list^(x) & (sorted-lseg^(x, x) * (((x l= nil) & (length^(x) i= 0)) | ((~ (x l= nil)) & (0 < length^(x)))))) &
+	    (((x |-> int key: tk) * true) => (tk lt-set keys^(x)))
+	   );
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+define int-fun length^(x):
+  (case (x l= nil): 0;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	(1 + length^(nxt));
+   default: 0
+  ) ;
+
+define relation lseg^(head, tail): 
+  ( 
+	(((head l= tail) | ((head l= nil) & (tail l= nil))) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * lseg^(nxt, tail))  
+  ) 
+axiom: ( 
+			((((head l= tail) => (emp & ((lseg-length^(head, tail) i= 0) & (lseg-keys^(head, tail) s= emptyset)))) &
+			((tail l= nil) => (list^(head) & ((length^(head) i= lseg-length^(head, tail)) & (keys^(head) s= lseg-keys^(head, tail)))))) &
+			(list^(tail) -* (list^(head) & ((keys^(head) s= (lseg-keys^(head, tail) union keys^(tail))) & (length^(head) i= (lseg-length^(head, tail) + length^(tail))))))) &
+			(((tail |-> loc next: virtual tn; int key: virtual tk) * list^(tn)) -* ((lseg^(head, tn) & ((lseg-keys^(head, tn) s= (lseg-keys^(head, tail) union (singleton tk))) & (lseg-length^(head, tn) i= (lseg-length^(head, tail) + 1))) ) * list^(tn)))
+	   ) ;
+
+define relation sorted-lseg^(head, tail): 
+  ( 
+	(((head l= tail) | ((head l= nil) & (tail l= nil))) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * (sorted-lseg^(nxt, tail) & (ky lt-set lseg-keys^(nxt, tail))))  
+  ) 
+axiom: ( 
+			((((head l= tail) => (emp & ((lseg-length^(head, tail) i= 0) & (lseg-keys^(head, tail) s= emptyset)))) &
+			((tail l= nil) => (sorted-list^(head) & ((length^(head) i= lseg-length^(head, tail)) & (keys^(head) s= lseg-keys^(head, tail)))))) &
+			(sorted-list^(tail) -* ((lseg-keys^(head, tail) le keys^(tail)) => (sorted-list^(head) & ((keys^(head) s= (lseg-keys^(head, tail) union keys^(tail))) & (length^(head) i= (lseg-length^(head, tail) + length^(tail)))))))) &
+			(((tail |-> loc next: virtual tn; int key: virtual tk) * list^(tn)) -* (((lseg-keys^(head, tail) set-lt tk) => (sorted-lseg^(head, tn) & ((lseg-keys^(head, tn) s= (lseg-keys^(head, tail) union (singleton tk))) & (lseg-length^(head, tn) i= (lseg-length^(head, tail) + 1))) )) * list^(tn)))
+	   ) ;
+
+define bin-set-fun lseg-keys^(head, tail):
+  (case ((head l= tail) | ((head l= nil) & (tail l= nil))) : emptyset;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union lseg-keys^(nxt, tail));
+   default: emptyset
+  ) ;
+
+define bin-int-fun lseg-length^(head, tail):
+  (case (head l= tail) : 0;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	(1 + lseg-length^(nxt, tail));
+   default: 0
+  ) ;
+
+
+method gslistsortreal(loc x)
+requires: (list^(x) & (k s= keys^(x)));
+ensures: (sorted-list^(ret) & (keys^(ret) s= k));
+
+method gslistsortmerge(loc l1, loc l2)
+requires: ((sorted-list^(l1) & (k1 s= keys^(l1))) * (sorted-list^(l2) & (k2 s= keys^(l2))));
+ensures: (sorted-list^(ret) & (keys^(ret) s= (k1 union k2)));
+
+
+bb sort-nil:
+pre: (list^(x) & (k s= keys^(x)));
+post: (sorted-list^(ret) & (keys^(ret) s= k));
+{
+	assume (x l== nil);
+	loc ret := x;
+}
+
+bb sort-singleton:
+pre: (list^(x) & (k s= keys^(x)));
+post: (sorted-list^(ret) & (keys^(ret) s= k));
+{
+	assume (! (x l== nil));
+	loc l1 := x;
+	loc l2 := x.next;
+	assume (l2 l== nil);
+	loc ret := x;
+}
+
+
+bb sort-loop-pre:
+pre: (list^(x) & (k s= keys^(x)));
+post: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+{
+	assume (! (x l== nil));
+	loc l1 := x;
+	loc l2 := x.next;
+	assume (! (l2 l== nil));
+	loc l2next := l2.next;
+}
+
+bb sort-inductive1:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+{
+	assume (! (l2next l== nil));
+	loc l2 := l2next;
+	loc l2next := l2.next;
+	loc l2 := l2next;
+	assume (! (l2 l== nil));
+	loc l2next := l2.next;
+	loc l1next := l1.next;
+	loc l1 := l1next;
+}
+
+bb sort-post1-pre1:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: list^(x);
+{
+	assume (! (l2next l== nil));
+	loc l2 := l2next;
+	loc l2next := l2.next;
+	loc l2 := l2next;
+	assume (l2 l== nil);
+	loc l2 := l1.next;
+	loc nill := nil;
+	loc l1.next := nill;
+}
+
+bb sort-post1-pre2:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: list^(l2);
+{
+	assume (! (l2next l== nil));
+	loc l2 := l2next;
+	loc l2next := l2.next;
+	loc l2 := l2next;
+	assume (l2 l== nil);
+	loc l2 := l1.next;
+	loc nill := nil;
+	loc l1.next := nill;
+	loc t1 := gslistsortreal(x);
+}
+
+bb sort-post1-pre3:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: (sorted-list^(t1) * sorted-list^(t2));
+{
+	assume (! (l2next l== nil));
+	loc l2 := l2next;
+	loc l2next := l2.next;
+	loc l2 := l2next;
+	assume (l2 l== nil);
+	loc l2 := l1.next;
+	loc nill := nil;
+	loc l1.next := nill;
+	loc t1 := gslistsortreal(x);
+	loc t2 := gslistsortreal(l2);
+}
+
+bb sort-post1:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: (sorted-list^(ret) & (keys^(ret) s= k));
+{
+	assume (! (l2next l== nil));
+	loc l2 := l2next;
+	loc l2next := l2.next;
+	loc l2 := l2next;
+	assume (l2 l== nil);
+	loc l2 := l1.next;
+	loc nill := nil;
+	loc l1.next := nill;
+
+	loc t1 := gslistsortreal(x);
+	loc t2 := gslistsortreal(l2);
+	loc t3 := gslistsortmerge(t1,t2);
+	loc ret := t3;
+}
+
+bb sort-pre-post:
+pre: ((list^(x) & (lseg^(x, l1) * (list^(l1) & (lseg^(l1, l2) * (list^(l2) & ((~ (l2 l= nil)) & ((l2 |-> loc next: l2next) * true))))))) & (k s= ((lseg-keys^(x, l1) union lseg-keys^(l1, l2)) union keys^(l2))));
+post: ((list^(x) * list^(l2)) & (k s= (keys^(x) union keys^(l2))));
+{
+	assume (l2next l== nil);
+	loc l2 := l1.next;
+	loc nill := nil;
+	loc l1.next := nill;
+}
+
+bb sort-post2-pre1:
+pre: ((list^(x) * list^(l2)) & (k s= (keys^(x) union keys^(l2))));
+post: (sorted-list^(t1) * sorted-list^(t2));
+{
+	loc t1 := gslistsortreal(x);
+	loc t2 := gslistsortreal(l2);
+}
+
+
+bb sort-post2:
+pre: ((list^(x) * list^(l2)) & (k s= (keys^(x) union keys^(l2))));
+post: (sorted-list^(ret) & (keys^(ret) s= k));
+{
+	loc t1 := gslistsortreal(x);
+	loc t2 := gslistsortreal(l2);
+	loc t3 := gslistsortmerge(t1,t2);
+	loc ret := t3;
+}

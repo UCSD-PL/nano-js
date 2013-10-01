@@ -1,0 +1,113 @@
+define pred list^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * list^(nxt))
+  )
+  axiom: (lseg^(x, x) * (((x l= nil) & (length^(x) i= 0)) | ((~ (x l= nil)) & (0 < length^(x)))));
+  
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+define int-fun length^(x):
+  (case (x l= nil): 0;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	(1 + length^(nxt));
+   default: 0
+  ) ;
+
+define relation lseg^(head, tail): 
+  ( 
+	(((head l= tail) | ((head l= nil) & (tail l= nil))) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * lseg^(nxt, tail))  
+  ) 
+axiom: ( 
+			((((head l= tail) => (emp & ((lseg-length^(head, tail) i= 0) & (lseg-keys^(head, tail) s= emptyset)))) &
+			((tail l= nil) => (list^(head) & ((length^(head) i= lseg-length^(head, tail)) & (keys^(head) s= lseg-keys^(head, tail)))))) &
+			(list^(tail) -* (list^(head) & ((keys^(head) s= (lseg-keys^(head, tail) union keys^(tail))) & (length^(head) i= (lseg-length^(head, tail) + length^(tail))))))) &
+			(((tail |-> loc next: virtual tn; int key: virtual tk) * list^(tn)) -* ((lseg^(head, tn) & ((lseg-keys^(head, tn) s= (lseg-keys^(head, tail) union (singleton tk))) & (lseg-length^(head, tn) i= (lseg-length^(head, tail) + 1))) ) * list^(tn)))
+	   ) ;
+
+define bin-set-fun lseg-keys^(head, tail):
+  (case ((head l= tail) | ((head l= nil) & (tail l= nil))) : emptyset;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union lseg-keys^(nxt, tail));
+   default: emptyset
+  ) ;
+
+define bin-int-fun lseg-length^(head, tail):
+  (case (head l= tail) : 0;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	(1 + lseg-length^(nxt, tail));
+   default: 0
+  ) ;
+
+ 
+bb remove-loop-pre:
+pre: ((kk s= keys^(x)) & (list^(x) & ((~ (d i-in keys^(x))) | (((lseg^(x, y) & (~ (d i-in lseg-keys^(x, y)))) * (y |-> loc next: z; int key: d)) * list^(z)))));
+post: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+{
+	loc prev := nil;
+	loc tmp := x;
+}
+
+bb remove-loop-inductive:
+pre: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+post: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+{
+	assume (! (tmp l== nil));
+	int tk := tmp.key;
+	assume (! (tk i== d));
+	loc prev := tmp;
+	loc tmp := prev.next;
+	int tp := prev.key;
+}
+
+
+bb remove-loop-post1:
+pre: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+post: (list^(ret) & (((~ (d i-in kk)) => (keys^(ret) s= kk)) &
+				     ((d i-in kk) => (lseg^(ret, z) * list^(z)))));
+{
+	assume (tmp l== nil);
+	loc ret := x;
+}
+
+bb remove-loop-post2:
+pre: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+post: (list^(ret) & (((~ (d i-in kk)) => (keys^(ret) s= kk)) &
+				     ((d i-in kk) => (lseg^(ret, z) * list^(z)))));
+{
+	assume (! (tmp l== nil));
+	int tk := tmp.key;
+	assume (tk i== d));
+	assume (! (prev l== nil));
+	loc t := tmp.next;
+	loc prev.next := t;
+	free tmp;
+	loc ret := x;
+}
+
+
+bb remove-loop-post3:
+pre: ((kk s= keys^(x)) & ((((prev l= nil) & (tmp l= x)) & list^(x)) | 
+	((((lseg^(x, prev) & (~ (d i-in lseg-keys^(x, prev)))) * ((prev |-> loc next: tmp; int key: tp) & (~ (d i= tp)))) * (lseg^(tmp, y) & (~ (d i-in lseg-keys^(tmp, y))))) * ((y |-> loc next: z; int key: d) * list^(z)))));
+post: (list^(ret) & (((~ (d i-in kk)) => (keys^(ret) s= kk)) &
+				     ((d i-in kk) => (lseg^(ret, z) * list^(z)))));
+{
+	assume (! (tmp l== nil));
+	int tk := tmp.key;
+	assume (tk i== d));
+	assume (prev l== nil);
+	loc x := tmp.next;
+	free tmp;
+}

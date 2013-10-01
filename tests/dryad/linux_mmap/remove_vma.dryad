@@ -1,0 +1,24 @@
+define pred vma^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          (((x |-> loc next: nxt; int start: st; int end: ed) & ((st <= ed) & (ed lt-set addrs^(nxt)))) * vma^(nxt))
+  );
+
+
+define set-fun addrs^(x):
+  (case (x l= nil): emptyset;
+  case ((x |-> loc next: nxt; int start: st; int end: ed) * true): 
+   	(((singleton st) union (singleton ed)) union addrs^(nxt));
+   default: emptyset
+  ) ;
+
+
+
+bb basic-block:
+pre: ((vma^(x) & (addrset s= addrs^(x))) & ((x |-> int start: st; int end: ed) * true));
+post: (vma^(ret) & (addrs^(ret) s= ((addrset setminus (singleton st)) setminus (singleton ed))));
+{
+	loc x-next := x.next;
+	free x;
+	loc ret := x-next;
+}

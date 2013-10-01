@@ -1,0 +1,20 @@
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt) * lseg^(nxt, tail))  
+  ) ;
+
+
+bb cyclic-list-insert-front:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:   ((x |-> loc next: ret) * lseg^(ret, x)) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	malloc z;
+	loc z.next := t;
+	loc x.next := z;
+	loc ret := z;
+}
+
+

@@ -1,0 +1,61 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+
+bb bst-search-pre-loop:
+pre: bst^(root) ;
+post: ((bst^(root) & (bst^(curr) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr)) * true))) ;
+{
+	loc curr := root;
+}
+
+bb bst-search-in-loop-found:
+pre: ((bst^(root) & (bst^(curr1) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr1)) * true))) ;
+post: (bst^(root) & ((ret l= nil) | ((ret |-> int key: k) * true))) ;
+{
+	assume (! (curr1 l== nil));
+	int currk := curr1.key;
+	assume (k i== currk);
+	loc ret := curr1;
+}
+
+bb bst-search-in-loop-left:
+pre: ((bst^(root) & (bst^(curr1) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr1)) * true))) ;
+post: ((bst^(root) & (bst^(curr2) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr2)) * true))) ;
+{
+	assume (! (curr1 l== nil));
+	int currk := curr1.key;
+	assume (! (k i== currk));
+	assume (k < currk);
+	loc curr2 := curr1.left;
+}
+
+bb bst-search-in-loop-right:
+pre: ((bst^(root) & (bst^(curr1) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr1)) * true))) ;
+post: ((bst^(root) & (bst^(curr2) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr2)) * true))) ;
+{
+	assume (! (curr1 l== nil));
+	int currk := curr1.key;
+	assume (! (k i== currk));
+	assume (! (k < currk));
+	loc curr2 := curr1.right;
+}
+
+bb bst-search-post-loop:
+pre: ((bst^(root) & (bst^(curr1) * true)) & ((k i-in keys^(root)) <=> ((k i-in keys^(curr1)) * true))) ;
+post: (bst^(root) & ((ret l= nil) | ((ret |-> int key: k) * true))) ;
+{
+	assume (curr1 l== nil);
+	loc ret := curr1;
+}

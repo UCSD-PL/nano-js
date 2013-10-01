@@ -1,0 +1,48 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (ky lt-set keys^(nxt)))
+		  )  
+  ) ;
+
+define pred rev-sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (keys^(nxt) set-lt ky))
+		  )  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+
+bb inplace-reverse-preloop:
+pre: (sorted^(i) & (keys^(i) s= kk)) ;
+post: ((rev-sorted^(j) * sorted^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+{
+	loc j := nil;
+}
+
+bb inplace-reverse-loopinv:
+pre: ((rev-sorted^(j) * sorted^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+post: ((rev-sorted^(j) * sorted^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+{
+	assume (! (i l== nil));
+	loc temp := i.next;
+	loc i.next := j;
+	loc j := i;
+	loc i := temp;
+}
+
+bb inplace-reverse-postloop:
+pre: ((rev-sorted^(j) * sorted^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+post: (rev-sorted^(j) & (keys^(j) s= kk)) ;
+{
+	assume (i l== nil);
+}

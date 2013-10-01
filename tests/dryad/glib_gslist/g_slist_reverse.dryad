@@ -1,0 +1,60 @@
+define pred list^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * list^(nxt))
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+
+define relation lseg^(head, tail): 
+  ( 
+	(((head l= tail) | ((head l= nil) & (tail l= nil))) & emp) | 
+          ((head |-> loc next: nxt; int key: ky) * lseg^(nxt, tail))  
+  ) 
+axiom: ( 
+			(list^(tail) -* (list^(head) & (keys^(head) s= (lseg-keys^(head, tail) union keys^(tail))))) &
+			(((tail |-> loc next: virtual tn; int key: virtual tk) * list^(tn)) -* ((lseg^(head, tn) & (lseg-keys^(head, tn) s= (lseg-keys^(head, tail) union (singleton tk)))) * list^(tn))) 
+	   ) ;
+
+define bin-set-fun lseg-keys^(head, tail):
+  (case ((head l= tail) | ((head l= nil) & (tail l= nil))) : emptyset;
+   case ((head |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union lseg-keys^(nxt, tail));
+   default: emptyset
+  ) ;
+
+
+bb reverse-loop-pre:
+pre: (list^(x) & (kk s= keys^(x)));
+post: ((list^(x) * list^(prev)) & (kk s= (keys^(x) union keys^(prev))));
+{
+	loc prev := nil;
+	loc node := nil;
+}
+
+
+bb copy-loop-inductive:
+pre:((list^(x) * list^(prev)) & (kk s= (keys^(x) union keys^(prev))));
+post:((list^(x) * list^(prev)) & (kk s= (keys^(x) union keys^(prev))));
+{
+	assume (! (x l== nil));
+	loc node := x.next;
+	loc x.next := prev;
+	loc prev := x;
+	loc x := node;
+	loc node := nil;
+}
+
+bb copy-loop-post:
+pre:((list^(x) * list^(prev)) & (kk s= (keys^(x) union keys^(prev))));
+post:(list^(ret) & (kk s= keys^(ret)));
+{
+	assume (x l== nil);
+	loc ret := prev;
+}

@@ -1,0 +1,82 @@
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (keys^(lft) set-lt ky)) * (bst^(rgt) & (ky lt-set keys^(rgt)))))  
+  );
+
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+method bst-insert(loc x, int k)
+requires: ((bst^(x) & (keys^(x) s= xks)) & (~ (k i-in xks))) ;
+ensures: (bst^(ret) & (keys^(ret) s= (xks union (singleton k)))) ;
+
+
+bb bst-insert-basic:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (~ (k i-in xkss))) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss union (singleton k)))) ;
+{
+	assume (x l== nil);
+	malloc y;
+	int y.key := k;
+	loc ret := y;
+}
+
+
+bb bst-insert-left:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (~ (k i-in xkss))) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss union (singleton k)))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	loc l := x.left;
+	assume (k < xk);
+	loc t := bst-insert(l; k);
+	loc x.left := t;
+	loc ret := x;
+}
+
+bb bst-insert-left-pre:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (~ (k i-in xkss))) ;
+post: ((bst^(l) & (~ (k i-in keys^(l)))) * true) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	loc l := x.left;
+	assume (k < xk);
+}
+
+bb bst-insert-right:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (~ (k i-in xkss))) ;
+post: (bst^(ret) & (keys^(ret) s= (xkss union (singleton k)))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	loc r := x.right;
+	assume (! (k < xk));
+	loc t := bst-insert(r; k);
+	loc x.right := t;
+	loc ret := x;
+}
+
+bb bst-insert-right-pre:
+pre: ((bst^(x) & (keys^(x) s= xkss)) & (~ (k i-in xkss))) ;
+post: ((bst^(r) & (~ (k i-in keys^(r)))) * true) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	loc r := x.right;
+	assume (! (k < xk));
+}
+
+
+
+
+
+
+
+

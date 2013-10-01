@@ -1,0 +1,64 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (ky lt-set keys^(nxt)))
+		  )  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sorted-insert(loc x, int k)
+requires: ((sorted^(x) & (keys^(x) s= xks)) & (~ (k i-in xks))) ;
+ensures: (sorted^(ret) & (keys^(ret) s= (xks union (singleton k)))) ;
+
+bb insert-nil:
+pre: ((sorted^(x) & (kk s= keys^(x))) & (~ (k i-in kk))) ;
+post: (sorted^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (x l== nil);
+	malloc y;
+	int y.key := k;
+	loc ret := y; 
+}
+
+bb insert-in-place:
+pre: ((sorted^(x) & (kk s= keys^(x))) & (~ (k i-in kk))) ;
+post: (sorted^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (k <= xk);
+	malloc y;
+	int y.key := k;
+	loc y.next := x;
+	loc ret := y;
+}
+
+bb insert-recursive-call:
+pre: ((sorted^(x) & (kk s= keys^(x))) & (~ (k i-in kk))) ;
+post: (sorted^(ret) & (keys^(ret) s= (kk union (singleton k)))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk < k);
+	loc y := x.next;
+	loc t := sorted-insert(y; k);
+	loc x.next := t;
+	loc ret := x;
+}
+
+bb insert-recursive-call-pre:
+pre: ((sorted^(x) & (kk s= keys^(x))) & (~ (k i-in kk))) ;
+post: ((sorted^(y) & (~ (k i-in keys^(y)))) * true) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (xk < k);
+	loc y := x.next;
+}

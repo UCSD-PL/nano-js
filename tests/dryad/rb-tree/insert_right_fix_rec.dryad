@@ -1,0 +1,296 @@
+define pred rbp^(x): 
+  ( ((x l= nil) & emp) |
+    (
+      (
+        (x |-> loc left: lft; loc right: rgt; int key: ky; int color: clr) * 
+        (
+	 (
+	  (rbp^(lft) & (keys^(lft) set-lt ky)) *
+	  (rbp^(rgt) & (ky lt-set keys^(rgt)))
+	 ) &
+	 (bh^(lft) i= bh^(rgt))
+       )
+     ) &
+     ((clr i= 0) |
+      ((black^(lft) * true) & (black^(rgt) * true))
+     )  
+   )
+  ) ;
+
+define pred black^(x):
+	( ((x l= nil) & emp) | ((x |-> int color: clr) & (clr i= 0)) ) ;
+
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky; int color: clr) * true): 
+   	((singleton ky) union (keys^(lft) union keys^(rgt)));
+   default: emptyset
+  ) ;
+
+define int-fun bh^(x):
+  (case (x l= nil): 1;
+   case ((((x |-> loc left: lft; loc right: rgt; int key: ky; int color: clr) * true) &
+	((bh^(lft) < bh^(rgt)) * true)) & (clr i= 0)): 
+   	(bh^(rgt) + 1);
+   case ((((x |-> loc left: lft; loc right: rgt; int key: ky; int color: clr) * true) &
+	((bh^(lft) < bh^(rgt)) * true)) & (~ (clr i= 0))): 
+   	bh^(rgt);
+   case ((((x |-> loc left: lft; loc right: rgt; int key: ky; int color: clr) * true) &
+	((bh^(rgt) <= bh^(lft)) * true)) & (clr i= 0)): 
+   	(bh^(lft) + 1);
+   default: bh^(lft)
+  ) ;
+
+method rbt-insert-right-fixup(loc x)
+requires: (
+    (
+     (
+        (x |-> loc left: llft; loc right: rrgt; int key: kky; int color: cclr) * 
+	 (
+	  (((rrgt |-> loc left: rgtlft; loc right: rgtrgt; int key: rgtky; int color: rgtclr) * 
+	   ( (rbp^(rgtlft) & (keys^(rgtlft) set-lt rgtky)) *
+	    (rbp^(rgtrgt) & (rgtky lt-set keys^(rgtrgt))) )) &
+	   (kky lt-set keys^(rrgt))) *
+	  (rbp^(llft) & (keys^(llft) set-lt kky))
+	 )
+     ) & 
+     ( (((bh^(rgtlft) i= bh^(rgtrgt)) * true) & ((bh^(rgtrgt) i= bh^(llft)) * true)) & 
+       ((~ (rgtclr i= 0)) & (((cclr i= 0) & ((black^(rgtlft) * true) | (black^(rgtrgt) * true))) | ((black^(llft) * (black^(rgtlft) * black^(rgtrgt))) * true))) )
+   )
+   & (((keys^(x) s= xks2) & (bh^(x) i= h2)) & (((black^(x) * true) & (oldclr2 i= 0)) | (((~ black^(x)) * true) & (~ (oldclr2 i= 0)))))
+   ) ;
+ensures: (
+    (
+     (
+        (ret |-> loc left: retlft; loc right: retrgt; int key: retky; int color: retclr) * 
+        (
+	 (
+	  (rbp^(retlft) & (keys^(retlft) set-lt retky)) *
+	  (rbp^(retrgt) & (retky lt-set keys^(retrgt)))
+	 ) &
+	 (bh^(retlft) i= bh^(retrgt))
+       )
+     ) & 
+     ((keys^(ret) s= xks2) & (bh^(ret) i= h2))
+    ) &
+    ((retclr i= 0) | (((black^(retlft) * true) | (black^(retrgt) * true)) & ((~ (oldclr2 i= 0)) | ((black^(retlft) * true) & (black^(retrgt) * true)))))
+  ) ;
+
+
+bb rbt-insert-right-fixup-case3:
+pre: (
+    (
+     (
+        (x |-> loc left: llft; loc right: rrgt; int key: kky; int color: cclr) * 
+	 (
+	  (((rrgt |-> loc left: rgtlft; loc right: rgtrgt; int key: rgtky; int color: rgtclr) * 
+	   ( (rbp^(rgtlft) & (keys^(rgtlft) set-lt rgtky)) *
+	    (rbp^(rgtrgt) & (rgtky lt-set keys^(rgtrgt))) )) &
+	   (kky lt-set keys^(rrgt))) *
+	  (rbp^(llft) & (keys^(llft) set-lt kky))
+	 )
+     ) & 
+     ( (((bh^(rgtlft) i= bh^(rgtrgt)) * true) & ((bh^(rgtrgt) i= bh^(llft)) * true)) & 
+       ((~ (rgtclr i= 0)) & (((cclr i= 0) & ((black^(rgtlft) * true) | (black^(rgtrgt) * true))) | ((black^(llft) * (black^(rgtlft) * black^(rgtrgt))) * true))) )
+   )
+   & (((keys^(x) s= xks2) & (bh^(x) i= h2)) & (((black^(x) * true) & (oldclr2 i= 0)) | (((~ black^(x)) * true) & (~ (oldclr2 i= 0)))))
+   ) ;
+post: (
+    (
+     (
+        (ret |-> loc left: xl; loc right: xr; int key: xk; int color: one) * 
+        (
+	 (
+	  (rbp^(xl) & (keys^(xl) set-lt xk)) *
+	  (rbp^(xr) & (xk lt-set keys^(xr)))
+	 ) &
+	 (bh^(xl) i= bh^(xr))
+       )
+     ) & 
+     ((keys^(ret) s= xks2) & (bh^(ret) i= h2))
+    ) &
+    ((one i= 0) | (((black^(xl) * true) | (black^(xr) * true)) & ((~ (oldclr2 i= 0)) | ((black^(xl) * true) & (black^(xr) * true)))))
+  ) ;
+{
+	int xk := x.key;
+	int xc := x.color;
+	loc xl := x.left;
+	loc xr := x.right;
+	int xlcolor := xl.color;
+	assume (! ((xl l== nil) || (xlcolor i== 0)));
+	int zero := 0;
+	int one := 1;
+	int xl.color := zero;
+	int xr.color := zero;
+	int x.color := one;
+	loc ret := x;
+}
+
+bb rbt-insert-right-fixup-else:
+pre: (
+    (
+     (
+        (x |-> loc left: llft; loc right: rrgt; int key: kky; int color: cclr) * 
+	 (
+	  (((rrgt |-> loc left: rgtlft; loc right: rgtrgt; int key: rgtky; int color: rgtclr) * 
+	   ( (rbp^(rgtlft) & (keys^(rgtlft) set-lt rgtky)) *
+	    (rbp^(rgtrgt) & (rgtky lt-set keys^(rgtrgt))) )) &
+	   (kky lt-set keys^(rrgt))) *
+	  (rbp^(llft) & (keys^(llft) set-lt kky))
+	 )
+     ) & 
+     ( (((bh^(rgtlft) i= bh^(rgtrgt)) * true) & ((bh^(rgtrgt) i= bh^(llft)) * true)) & 
+       ((~ (rgtclr i= 0)) & (((cclr i= 0) & ((black^(rgtlft) * true) | (black^(rgtrgt) * true))) | ((black^(llft) * (black^(rgtlft) * black^(rgtrgt))) * true))) )
+   )
+   & (((keys^(x) s= xks2) & (bh^(x) i= h2)) & (((black^(x) * true) & (oldclr2 i= 0)) | (((~ black^(x)) * true) & (~ (oldclr2 i= 0)))))
+   ) ;
+post: (
+    (
+     (
+        (ret |-> loc left: xl; loc right: xr; int key: xk; int color: xc) * 
+        (
+	 (
+	  (rbp^(xl) & (keys^(xl) set-lt xk)) *
+	  (rbp^(xr) & (xk lt-set keys^(xr)))
+	 ) &
+	 (bh^(xl) i= bh^(xr))
+       )
+     ) & 
+     ((keys^(ret) s= xks2) & (bh^(ret) i= h2))
+    ) &
+    ((xc i= 0) | (((black^(xl) * true) | (black^(xr) * true)) & ((~ (oldclr2 i= 0)) | ((black^(xl) * true) & (black^(xr) * true)))))
+  ) ;
+{
+	int xk := x.key;
+	int xc := x.color;
+	loc xl := x.left;
+	loc xr := x.right;
+	int xlcolor := xl.color;
+	assume ((xl l== nil) || (xlcolor i== 0));
+	loc pl := xr.left;
+	loc pr := xr.right;
+	int plcolor := pl.color;
+	int prcolor := pr.color;
+	assume ((pr l== nil) || (prcolor i== 0));
+	assume ((pl l== nil) || (plcolor i== 0));
+	loc ret := x;
+}
+
+bb rbt-insert-right-fixup-case4:
+pre: (
+    (
+     (
+        (x |-> loc left: llft; loc right: rrgt; int key: kky; int color: cclr) * 
+	 (
+	  (((rrgt |-> loc left: rgtlft; loc right: rgtrgt; int key: rgtky; int color: rgtclr) * 
+	   ( (rbp^(rgtlft) & (keys^(rgtlft) set-lt rgtky)) *
+	    (rbp^(rgtrgt) & (rgtky lt-set keys^(rgtrgt))) )) &
+	   (kky lt-set keys^(rrgt))) *
+	  (rbp^(llft) & (keys^(llft) set-lt kky))
+	 )
+     ) & 
+     ( (((bh^(rgtlft) i= bh^(rgtrgt)) * true) & ((bh^(rgtrgt) i= bh^(llft)) * true)) & 
+       ((~ (rgtclr i= 0)) & (((cclr i= 0) & ((black^(rgtlft) * true) | (black^(rgtrgt) * true))) | ((black^(llft) * (black^(rgtlft) * black^(rgtrgt))) * true))) )
+   )
+   & (((keys^(x) s= xks2) & (bh^(x) i= h2)) & (((black^(x) * true) & (oldclr2 i= 0)) | (((~ black^(x)) * true) & (~ (oldclr2 i= 0)))))
+   ) ;
+post: (
+    (
+     (
+        (ret |-> loc left: x; loc right: xr; int key: plkey; int color: zero) * 
+        (
+	 (
+	  (rbp^(x) & (keys^(x) set-lt plkey)) *
+	  (rbp^(xr) & (plkey lt-set keys^(xr)))
+	 ) &
+	 (bh^(x) i= bh^(xr))
+       )
+     ) & 
+     ((keys^(ret) s= xks2) & (bh^(ret) i= h2))
+    ) &
+    ((zero i= 0) | (((black^(x) * true) | (black^(xr) * true)) & ((~ (oldclr2 i= 0)) | ((black^(x) * true) & (black^(xr) * true)))))
+  ) ;
+{
+	int xk := x.key;
+	int xc := x.color;
+	loc xl := x.left;
+	loc xr := x.right;
+	int xlcolor := xl.color;
+	assume ((xl l== nil) || (xlcolor i== 0));
+	loc pl := xr.left;
+	loc pr := xr.right;
+	int plcolor := pl.color;
+	int prcolor := pr.color;
+	int plkey := pl.key;
+	assume (! ((pl l== nil) || (plcolor i== 0)));
+	loc pll := pl.left;
+	loc plr := pl.right;
+	loc xr.left := plr;
+	loc x.right := pll;
+	loc pl.right := xr;
+	loc pl.left := x;
+	int zero := 0;
+	int one := 1;
+	int pl.color := zero;
+	int x.color := one;
+	loc ret := pl;
+}
+
+bb rbt-insert-right-fixup-case5:
+pre: (
+    (
+     (
+        (x |-> loc left: llft; loc right: rrgt; int key: kky; int color: cclr) * 
+	 (
+	  (((rrgt |-> loc left: rgtlft; loc right: rgtrgt; int key: rgtky; int color: rgtclr) * 
+	   ( (rbp^(rgtlft) & (keys^(rgtlft) set-lt rgtky)) *
+	    (rbp^(rgtrgt) & (rgtky lt-set keys^(rgtrgt))) )) &
+	   (kky lt-set keys^(rrgt))) *
+	  (rbp^(llft) & (keys^(llft) set-lt kky))
+	 )
+     ) & 
+     ( (((bh^(rgtlft) i= bh^(rgtrgt)) * true) & ((bh^(rgtrgt) i= bh^(llft)) * true)) & 
+       ((~ (rgtclr i= 0)) & (((cclr i= 0) & ((black^(rgtlft) * true) | (black^(rgtrgt) * true))) | ((black^(llft) * (black^(rgtlft) * black^(rgtrgt))) * true))) )
+   )
+   & (((keys^(x) s= xks2) & (bh^(x) i= h2)) & (((black^(x) * true) & (oldclr2 i= 0)) | (((~ black^(x)) * true) & (~ (oldclr2 i= 0)))))
+   ) ;
+post: (
+    (
+     (
+        (ret |-> loc left: x; loc right: pr; int key: pkey; int color: zero) * 
+        (
+	 (
+	  (rbp^(x) & (keys^(x) set-lt pkey)) *
+	  (rbp^(pr) & (pkey lt-set keys^(pr)))
+	 ) &
+	 (bh^(x) i= bh^(pr))
+       )
+     ) & 
+     ((keys^(ret) s= xks2) & (bh^(ret) i= h2))
+    ) &
+    ((zero i= 0) | (((black^(x) * true) | (black^(pr) * true)) & ((~ (oldclr2 i= 0)) | ((black^(x) * true) & (black^(pr) * true)))))
+  ) ;
+{
+	int xk := x.key;
+	int xc := x.color;
+	loc xl := x.left;
+	loc xr := x.right;
+	int xlcolor := xl.color;
+	assume ((xl l== nil) || (xlcolor i== 0));
+	loc pl := xr.left;
+	loc pr := xr.right;
+	int pkey := xr.key;
+	int plcolor := pl.color;
+	int prcolor := pr.color;	
+	assume ((pl l== nil) || (plcolor i== 0));
+	assume (! ((pr l== nil) || (prcolor i== 0)));
+	loc xr.left := x;
+	loc x.right := pl;
+	int zero := 0;
+	int one := 1;
+	int xr.color := zero;
+	int x.color := one;
+	loc ret := xr;
+}
+
+

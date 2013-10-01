@@ -1,0 +1,90 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int value: ky) * 
+			(sorted^(nxt) & (ky le-set list-keys^(nxt)))
+		  )  
+  ) ;
+  
+define set-fun list-keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int value: ky) * true): 
+   	((singleton ky) union list-keys^(nxt));
+   default: emptyset
+  ) ;
+
+
+define pred bst^(x): 
+  ( ((x l= nil) & emp) |
+	  ((x |-> loc left: lft; loc right: rgt; int key: ky) * ((bst^(lft) & (bst-keys^(lft) set-le ky)) * (bst^(rgt) & (ky le-set bst-keys^(rgt)))))  
+  );
+
+define set-fun bst-keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc left: lft; loc right: rgt; int key: ky) * true): 
+   	((singleton ky) union (bst-keys^(lft) union bst-keys^(rgt)));
+   default: emptyset
+  ) ;
+
+
+method treetolistrec(loc t, loc l)
+requires: (((bst^(t) & (bst-keys^(t) s= kk1)) * (sorted^(l) & (list-keys^(l) s= kk2))) & (kk1 le kk2));
+ensures: (sorted^(ret) & (list-keys^(ret) s= (kk1 union kk2)));
+
+
+bb tree-to-list-nil:
+pre: (((bst^(t) & (bst-keys^(t) s= k1)) * (sorted^(l) & (list-keys^(l) s= k2))) & (k1 le k2));
+post: (sorted^(ret) & (list-keys^(ret) s= (k1 union k2)));
+{
+	assume (t l== nil);
+	loc ret := l; 
+}
+
+bb tree-to-list-non-nil:
+pre: (((bst^(t) & (bst-keys^(t) s= k1)) * (sorted^(l) & (list-keys^(l) s= k2))) & (k1 le k2));
+post: (sorted^(ret) & (list-keys^(ret) s= (k1 union k2)));
+{
+	assume (! (t l== nil));
+	malloc lnode;
+	int tkey := t.key;
+	int lnode.value := tkey;
+	loc nill := nil;
+	loc lnode.next := nill;
+	loc tright := t.right;
+	loc tmplist1 := treetolistrec(tright, l);
+	loc lnode.next := tmplist1;
+	loc tleft := t.left;
+	free t;
+	loc tmplist2 := treetolistrec(tleft, lnode);
+	loc ret := tmplist2;
+}
+
+bb tree-to-list-non-nil-pre1:
+pre: (((bst^(t) & (bst-keys^(t) s= k1)) * (sorted^(l) & (list-keys^(l) s= k2))) & (k1 le k2));
+post: (((bst^(tright) * sorted^(l)) & (bst-keys^(tright) le list-keys^(l))) * true);
+{
+	assume (! (t l== nil));
+	malloc lnode;
+	int tkey := t.key;
+	int lnode.value := tkey;
+	loc nill := nil;
+	loc lnode.next := nill;
+	loc tright := t.right;
+}
+
+bb tree-to-list-non-nil-pre2:
+pre: (((bst^(t) & (bst-keys^(t) s= k1)) * (sorted^(l) & (list-keys^(l) s= k2))) & (k1 le k2));
+post: (((bst^(tleft) * sorted^(lnode)) & (bst-keys^(tleft) le list-keys^(lnode))) * true);
+{
+	assume (! (t l== nil));
+	malloc lnode;
+	int tkey := t.key;
+	int lnode.value := tkey;
+	loc nill := nil;
+	loc lnode.next := nill;
+	loc tright := t.right;
+	loc tmplist1 := treetolistrec(tright, l);
+	loc lnode.next := tmplist1;
+	loc tleft := t.left;
+	free t;
+}

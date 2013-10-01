@@ -1,0 +1,50 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (ky lt-set keys^(nxt)))
+		  )  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sorted-delete(loc x, int k)
+requires: ((((~ (x l= nil)) & sorted^(x)) & (keys^(x) s= xks)) & (k i-in xks)) ;
+ensures: (sorted^(ret) & (keys^(ret) s= (xks setminus (singleton k)))) ;
+
+bb delete-in-place:
+pre: ((((~ (x l= nil)) & sorted^(x)) & (kk s= keys^(x))) & (k i-in kk)) ;
+post: (sorted^(ret) & (keys^(ret) s= (kk setminus (singleton k)))) ;
+{
+	int xk := x.key;
+	assume (xk i== k);
+	loc y := x.next;
+	free x;
+	loc ret := y;
+}
+
+bb delete-recursive-call:
+pre: ((((~ (x l= nil)) & sorted^(x)) & (kk s= keys^(x))) & (k i-in kk)) ;
+post: (sorted^(ret) & (keys^(ret) s= (kk setminus (singleton k)))) ;
+{
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc y := x.next;
+	loc t := sorted-delete(y; k);
+	loc x.next := t;
+	loc ret := x;
+}
+
+bb delete-recursive-call-pre:
+pre: ((((~ (x l= nil)) & sorted^(x)) & (kk s= keys^(x))) & (k i-in kk)) ;
+post: ((((~ (y l= nil)) & sorted^(y)) & (k i-in keys^(y))) * true)
+{
+	int xk := x.key;
+	assume (! (xk i== k));
+	loc y := x.next;
+}

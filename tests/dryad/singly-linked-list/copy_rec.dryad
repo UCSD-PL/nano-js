@@ -1,0 +1,46 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method list-copy(loc x)
+requires: (sll^(x) & (keys^(x) s= xks)) ;
+ensures: ((sll^(ret) & (keys^(ret) s= xks)) * (sll^(x) & (keys^(x) s= xks))) ;
+
+bb copy-op1-nil:
+pre: (sll^(x) & (keys^(x) s= xks)) ;
+post: ((sll^(ret) & (keys^(ret) s= xks)) * (sll^(x) & (keys^(x) s= xks))) ;
+{
+	assume (x l== nil);
+	loc ret := x; 
+}
+
+bb copy-recursive:
+pre: (sll^(x) & (keys^(x) s= xks)) ;
+post: ((sll^(ret) & (keys^(ret) s= xks)) * (sll^(x) & (keys^(x) s= xks))) ;
+{
+	assume (! (x l== nil));
+	loc y := x.next;
+	loc u := list-copy(y);
+	malloc t;
+	int xk := x.key;
+	int t.key := xk;
+	loc t.next := u;
+	loc ret := t;
+}
+
+bb copy-recursive-pre:
+pre: (sll^(x) & (keys^(x) s= xks)) ;
+post: (sll^(y) * true) ;
+{
+	assume (! (x l== nil));
+	loc y := x.next;
+}

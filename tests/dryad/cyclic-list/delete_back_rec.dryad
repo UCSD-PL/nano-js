@@ -1,0 +1,75 @@
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt) * lseg^(nxt, tail))  
+  ) ;
+
+method lseg-delete-back(loc p, loc q)
+requires: ((~(p l= nil)) & lseg^(p, q)) ;
+ensures: lseg^(ret, q) ;
+
+
+bb delete-back-base:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  ((emp & ((x l= nxt) => (ret l= nil))) |
+		   ((~(x l= nxt)) => ((x |-> loc next: ret) * lseg^(ret, x)))
+		) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (t l== x);
+	free t;
+	loc ret := nil;
+}
+
+bb delete-back-fun-call:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  ((emp & ((x l= nxt) => (ret l= nil))) |
+		   ((~(x l= nxt)) => ((x |-> loc next: ret) * lseg^(ret, x)))
+		) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (! (t l== x));
+	loc u := lseg-delete-back(t, x);
+	loc x.next := u;
+	loc ret := u;
+}
+
+bb delete-back-fun-call-pre:
+pre:  ((x |-> loc next: nxt) * lseg^(nxt, x)) ;
+post:  (((~(t l= nil)) & lseg^(t, x)) * true) ;
+{
+	assume (! (x l== nil));
+	loc t := x.next;
+	assume (! (t l== x));
+}
+
+bb lseg-delete-back-base:
+pre:  ((~(p l= nil)) & lseg^(p, q));
+post:  lseg^(ret, q);
+{
+	loc t := p.next;
+	assume (t l== q);
+	free p;
+	loc ret := q;
+}
+
+bb lseg-delete-back-rec:
+pre:  ((~(p l= nil)) & lseg^(p, q));
+post:  lseg^(ret, q);
+{
+	loc t := p.next;
+	assume (! (t l== q));
+	loc u := lseg-delete-back(t, q);
+	loc p.next := u;
+	loc ret := p;
+}
+
+bb lseg-delete-back-rec-pre:
+pre:  ((~(p l= nil)) & lseg^(p, q));
+post:  (((~(t l= nil)) & lseg^(t, q)) * true);
+{
+	loc t := p.next;
+	assume (! (t l== q));
+}

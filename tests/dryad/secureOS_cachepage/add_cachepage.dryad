@@ -1,0 +1,93 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int location: ky) * sll^(nxt))  
+  )
+  axiom: (lseg^(x, x) * (((x l= nil) & (locs^(x) s= emptyset)) | ((~ (x l= nil)) & (~ (locs^(x) s= emptyset)))));
+
+define pred sorted-sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int location: ky) * 
+			(sorted-sll^(nxt) & (ky lt-set locs^(nxt)))
+		  )  
+  )
+  axiom: (sorted-lseg^(x, x) * sll^(x));
+  
+define set-fun locs^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int location: ky) * true): 
+   	((singleton ky) union locs^(nxt));
+   default: emptyset
+  ) ;
+
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt; int location: ky) * (lseg^(nxt, tail) & (ky lt-set lseg-locs^(nxt, tail))))  
+  ) 
+  axiom: ( (((head l= tail) => (emp & (lseg-locs^(head, tail) s= emptyset))) & ((tail l= nil) => (sll^(head) & (locs^(head) s= lseg-locs^(head, tail))))) &
+	( (sll^(tail) -* (sll^(head) & (locs^(head) s= (lseg-locs^(head, tail) union locs^(tail))))) &
+	  (((tail |-> loc next: virtual tn; int location: virtual tk) * sll^(tn)) -* ((lseg^(head, tn) & (lseg-locs^(head, tn) s= (lseg-locs^(head, tail) union (singleton tk)))) * sll^(tn))) ) ) ;
+
+define relation sorted-lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt; int location: ky) * (sorted-lseg^(nxt, tail) & (ky lt-set lseg-locs^(nxt, tail))))  
+  ) 
+  axiom: ( lseg^(head, tail) &
+	  ( ((tail l= nil) => sorted-sll^(head)) &
+	( (sorted-sll^(tail) -* ((lseg-locs^(head, tail) lt locs^(tail)) => sorted-sll^(head))) &
+	  (((tail |-> loc next: virtual tn; int location: virtual tk) * sll^(tn)) -* (((lseg-locs^(head, tail) set-lt tk) * true) => (sorted-lseg^(head, tn) * sll^(tn)))) ) ) ) ;
+
+define bin-set-fun lseg-locs^(head, tail):
+  (case (head l= tail) : emptyset;
+   case ((head |-> loc next: nxt; int location: ky) * true): 
+   	((singleton ky) union lseg-locs^(nxt, tail));
+   default: emptyset
+  ) ;
+
+
+
+method lookupprev(loc head, int idx)
+requires: ((sorted-sll^(head) & (locs^(head) s= hkss)) & (~ (head l= nil)));
+ensures: ( (sorted-sll^(head) & (locs^(head) s= hkss)) &
+	( ((ret l= nil) & (idx lt-set locs^(head))) |
+	((~ (ret l= nil)) & ( (sorted-sll^(rn) & (idx lt-set locs^(rn))) * 
+	((sorted-lseg^(head, ret) & ((lseg-locs^(head, ret) set-lt rk) & (rk <= idx))) * (ret |-> loc next: rn; int location: rk)) )) ) );
+
+
+
+
+bb add-nil:
+pre: ((((sorted-sll^(head) & (locs^(head) s= hks)) & (~ (pk i-in hks))) & (~ (head l= nil))) * ((page |-> loc next: nill; int location: pk) & (nill l= nil)));
+post: (sorted-sll^(ret) & (locs^(ret) s= (hks union (singleton pk))));
+{
+	assume (head l== nil);
+	loc page.next := nill;
+	loc ret := page;
+}
+
+bb add-prev-nil:
+pre: ((((sorted-sll^(head) & (locs^(head) s= hks)) & (~ (pk i-in hks))) & (~ (head l= nil))) * ((page |-> loc next: nill; int location: pk) & (nill l= nil)));
+post: (sorted-sll^(ret) & (locs^(ret) s= (hks union (singleton pk))));
+{
+	assume (! (head l== nil));
+	loc prev := lookupprev(head; pk);
+	assume (prev l== nil);
+	loc page.next := head;
+	loc ret := page;
+}
+
+bb add-prev-not-nil:
+pre: ((((sorted-sll^(head) & (locs^(head) s= hks)) & (~ (pk i-in hks))) & (~ (head l= nil))) * ((page |-> loc next: nill; int location: pk) & (nill l= nil)));
+post: (sorted-sll^(ret) & (locs^(ret) s= (hks union (singleton pk))));
+{
+	assume (! (head l== nil));
+	loc prev := lookupprev(head; pk);
+	assume (! (prev l== nil));
+	loc prevn := prev.next;
+	loc page.next := prevn;
+	loc prev.next := page;
+	loc ret := head;
+}

@@ -1,0 +1,55 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sll-find(loc x, int k)
+requires: (sll^(x) & (keys^(x) s= xks)) ;
+ensures: ((sll^(x) & (keys^(x) s= xks)) & ((ret i= 1) <=> (k i-in xks))) ;
+
+bb find-nil:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: ((sll^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (x l== nil);
+	int ret := 0; 
+}
+
+bb find-key-equal:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: ((sll^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (k i== xk);
+	int ret := 1; 
+}
+
+bb find-key-recursive:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: ((sll^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (k i== xk));
+	loc y := x.next;
+	int ret := sll-find(y; k);
+}
+
+bb find-key-recursive-pre:
+pre: (sll^(x) & (kk s= keys^(x))) ;
+post: (sll^(y) * true) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (k i== xk));
+	loc y := x.next;
+}

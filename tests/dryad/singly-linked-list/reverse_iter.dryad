@@ -1,0 +1,40 @@
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+
+bb inplace-reverse-preloop:
+pre: (sll^(i) & (keys^(i) s= kk)) ;
+post: ((sll^(j) * sll^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+{
+	loc j := nil;
+}
+
+bb inplace-reverse-loopinv:
+pre: ((sll^(j) * sll^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+post: ((sll^(j) * sll^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+{
+	assume (! (i l== nil));
+	loc temp := i.next;
+	loc i.next := j;
+	loc j := i;
+	loc i := temp;
+}
+
+bb inplace-reverse-postloop:
+pre: ((sll^(j) * sll^(i)) & ((keys^(j) union keys^(i)) s= kk)) ;
+post: (sll^(j) & (keys^(j) s= kk)) ;
+{
+	assume (i l== nil);
+}
+
+

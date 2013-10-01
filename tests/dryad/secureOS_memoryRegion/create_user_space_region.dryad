@@ -1,0 +1,68 @@
+define pred dll^(x):
+ (
+	 ((x l= nil) & emp) |
+
+	  ( ((x |-> loc next: y; int fileOffset: fo; int fileSize: fs; int size: sz) *
+	   (((y l= nil) & emp) |
+	   (
+	        ((y |-> secondary prev: x) * (~(y l= nil))) & dll^(y)
+	   ))
+	  ) & (~ (x l= nil)))
+ )
+ axiom: sll^(x);
+
+define int-fun length^(x):
+  (case (x l= nil): 0;
+   case ((x |-> loc next: nxt) * true): 
+   	(1 + length^(nxt));
+   default: 0
+  ) ;
+
+define pred sll^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt) * sll^(nxt))  
+  )
+  axiom: (lseg^(x, x) * (((x l= nil) & (length^(x) i= 0)) | ((~ (x l= nil)) & (0 < length^(x)))));
+
+
+define relation lseg^(head, tail): 
+  ( 
+	((head l= tail) & emp) | 
+          ((head |-> loc next: nxt) * lseg^(nxt, tail))  
+  ) 
+  axiom: ( (((head l= tail) => (emp & (lseg-length^(head, tail) i= 0))) & ((tail l= nil) => (sll^(head) & (length^(head) i= lseg-length^(head, tail))))) &
+	( (sll^(tail) -* (sll^(head) & (length^(head) i= (lseg-length^(head, tail) + length^(tail))))) &
+	  (((tail |-> loc next: virtual tn) * sll^(tn)) -* ((lseg^(head, tn) & (lseg-length^(head, tn) i= (lseg-length^(head, tail) + 1))) * sll^(tn))) ) ) ;
+
+
+define bin-int-fun lseg-length^(head, tail):
+  (case (head l= tail) : 0;
+   case ((head |-> loc next: nxt) * true): 
+   	(1 + lseg-length^(nxt, tail));
+   default: 0
+  ) ;
+
+
+
+method memory-region-init(loc file, int fo, int fs, int vaddr, int sz)
+requires: emp;
+ensures: ((ret |-> loc backingFile: file; int fileOffset: fo; int fileSize: fs; int startAddress: vaddr; int size: sz; loc prev: nill; loc next: nill)
+       & (nill l= nil)) ;
+
+
+bb memory-region-create-user-space-region:
+pre: emp;
+post: dll^(ret);
+{
+	loc nill := nil;
+	int zero := 0;
+	int one := 1;
+	int start := 786432;
+	int size := 65536;
+	loc r := memory-region-init(nill, zero, zero, zero, one);
+	loc r1 := memory-region-init(nill, zero, zero, start, size);
+	loc r.next := r1;
+	loc r1.prev := r;
+	loc ret := r;
+}

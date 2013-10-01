@@ -1,0 +1,70 @@
+define pred sorted^(x): 
+  ( 
+	((x l= nil) & emp) | 
+          ((x |-> loc next: nxt; int key: ky) * 
+			(sorted^(nxt) & (ky lt-set keys^(nxt)))
+		  )  
+  ) ;
+  
+define set-fun keys^(x):
+  (case (x l= nil): emptyset;
+   case ((x |-> loc next: nxt; int key: ky) * true): 
+   	((singleton ky) union keys^(nxt));
+   default: emptyset
+  ) ;
+
+method sorted-find(loc x, int k)
+requires: (sorted^(x) & (keys^(x) s= xks)) ;
+ensures: ((sorted^(x) & (keys^(x) s= xks)) & ((ret i= 1) <=> (k i-in xks))) ;
+
+bb find-nil:
+pre: (sorted^(x) & (kk s= keys^(x))) ;
+post: ((sorted^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (x l== nil);
+	int ret := 0; 
+}
+
+bb find-key-less-than:
+pre: (sorted^(x) & (kk s= keys^(x))) ;
+post: ((sorted^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (k < xk);
+	int ret := 0; 
+}
+
+bb find-key-equal:
+pre: (sorted^(x) & (kk s= keys^(x))) ;
+post: ((sorted^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (k < xk));
+	assume (k i== xk);
+	int ret := 1; 
+}
+
+bb find-key-greater-than:
+pre: (sorted^(x) & (kk s= keys^(x))) ;
+post: ((sorted^(x) & (keys^(x) s= kk)) & ((ret i= 1) <=> (k i-in kk))) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (k < xk));
+	assume (! (k i== xk));
+	loc y := x.next;
+	int ret := sorted-find(y; k);
+}
+
+bb find-key-greater-than-pre:
+pre: (sorted^(x) & (kk s= keys^(x))) ;
+post: (sorted^(y) * true) ;
+{
+	assume (! (x l== nil));
+	int xk := x.key;
+	assume (! (k < xk));
+	assume (! (k i== xk));
+	loc y := x.next;
+}
