@@ -181,14 +181,14 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
        (x3,g3) <- consExpr g2 e3
        (_,g4)  <- consAccess l x3 g3 x
        let σ      = rheap g
-           tref   = tracePP "1" $ envFindTy x2 g4
-           tsto   = tracePP "2" $ envFindTy x3 g4
+           tref   = tracePP "1" $ envFindTy x3 g4
+           tsto   = tracePP "2" $ envFindTy x2 g4
            upds   = tracePP "upds" $ [(l,heapRead l σ) | l <- locs tref]
            updFun = if length upds == 1 then sUpdateField else wUpdateField
        -- upds' <-  mapM (updFun tsto (F.symbol x) <$>) upds
        -- (upds', g4) <- foldM (\(upds,g) (l,t) -> 
        (upds', g4) <- foldM (updFieldM updFun (F.symbol x) tsto) ([],g3) upds
-       let σ'   = heapCombineWith const [heapFromBinds upds', σ]
+       let σ'   = heapCombineWith const [heapFromBinds $ tracePP "upds'" upds', σ]
        return $ Just g4 { rheap = tracePP "newHeap" $ σ' }
     where
       updFieldM updF f t (upds,g) (l,tobj) = 
@@ -365,8 +365,8 @@ consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated x, PP s) =>
                AnnTypeR -> x -> CGEnv -> s -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
 consAccess l x g i = do locts     <- dotAccessM l g i (envFindTy x g) 
-                        (xs,g')   <- foldM updLoc ([],g) locts
-                        γ <- getTDefs
+                        (xs,g')   <- tracePP "consAccess" <$> foldM updLoc ([],g) locts
+                        γ         <- getTDefs
                         let t'   = foldl1 ((fst4.).compareTs γ) $ map (`envFindTy` g') xs
                         envAddFresh l t' g'
                         -- (x,g')  <- envAddFresh l t g
@@ -395,7 +395,7 @@ dotAccessM _ g f t@(TApp (TRef l) _ _)
        return $ [(l, foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
 
 dotAccessM l g _ t = 
-  tracePP "hey hey hey" () `seq`subTypeContainers' "dead access" l g tru fls >> return []
+  subTypeContainers' "dead access" l g tru fls >> return []
   where 
     tru = tTop
     fls = tTop `strengthen` F.predReft F.PFalse
@@ -456,11 +456,11 @@ consCall :: (PP a)
 consCall g l _ es ft 
   = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> tracePP "ft" <$> instantiate l g ft
        (xes, g')         <- consScan consExpr g es
-       let (su, ts') = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
+       let (su, ts')     = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') (tracePP "es" [envFindTy x g' | x <- xes]) $ tracePP "ts'" ts'
        -- g'               <- stHeaps l g' h h'
        subTypeHeaps l g' (rheap g') h
-       let g'' = g' { rheap = F.subst su <$> heapCombine [foldl (flip heapDel) (rheap g) $ heapLocs h, h'] }
+       let g'' = g' { rheap = F.subst su <$> heapCombine [foldl (flip heapDel) (rheap g') $ heapLocs h, h'] }
        tracePP "output heap" (rheap g'') `seq` envAddFresh l (F.subst su ot) g''
      {- where
          msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}

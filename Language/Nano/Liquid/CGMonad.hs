@@ -304,10 +304,10 @@ addInvariant   :: RefType -> CGM RefType
 addInvariant t           = ((`tx` t) . invs) <$> get
   where 
     -- HACK!!
-    fixRef (TRef _)      = TRef "l"
-    fixRef tc            = tc
-    tx i t@(TApp tc _ _) = maybe t (strengthen t . rTypeReft . val) $ M.lookup (fixRef tc) i
-    tx _ t               = t 
+    fixRef (TRef _)        = TRef "l"
+    fixRef tc              = tc
+    tx i t@(TApp tc _ _)   = maybe t (strengthen t . rTypeReft . val) $ M.lookup (fixRef tc) i
+    tx _ t                 = t 
 
 
 ---------------------------------------------------------------------------------------
@@ -432,9 +432,9 @@ joinHeaps l γ g g1 g2
            --
        ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
        _                 <- mapM (wellFormed l g) ts
-       -- let σ'             = heapCombineWith const [heapFromBinds (zip both ts), σ2', σ1']
-       let combine γ t1 t2 = fst4 $ compareTs γ (tracePP "joinHeaps1" t1) (tracePP "joinHeaps2" t2)
-       let σ'             = heapCombineWith (combine γ) [σ1,σ2]
+       let σ'             = heapCombine [heapFromBinds (zip both ts), σ2', σ1']
+       -- let combine γ t1 t2 = fst4 $ compareTs γ (tracePP "joinHeaps1" t1) (tracePP "joinHeaps2" t2)
+       -- let σ'             = heapCombineWith (combine γ) [σ1,σ2]
        -- Subtype the common heap locations
        zipWithM_ (subTypeContainers l g1) (map snd4 t4) ts
        zipWithM_ (subTypeContainers l g2) (map thd4 t4) ts
@@ -894,7 +894,7 @@ subTypeWUpdate l g tobj tobj'
        (x,g')       <- envAddFresh l t g
        wellFormed l g' t
        subTypeContainers' "WeakUpdate" l g' tobj  t
-       -- subTypeContainers' "WeakUpdate" l g' tobj' t
+       subTypeContainers' "WeakUpdate" l g' tobj' t
        return (x,g') 
 
     
