@@ -1,35 +1,53 @@
-/*@ type heap[A] exists! l |-> heap[A] * r |-> heap[A] . { left:<l>, key:A, right:<r> } */
-/*@ heapify :: (<x>)/ x |-> heap[number] => void/x |-> heap[number] */
-function heapify(x) {
-    var left  = x.left;
-    var right = x.right;
-    var s = 0;
-    if (typeof(left) == "null") {
-        s = right;
-    } else {
-        if (typeof(right) == "null") {
-            s = left;
-        } else {
-            var lk = left.key;
-            var rk = right.key;
-            if (lk < rk) {
-                s = right;
-            } else {
-                s = left;
-            }
-            s = right;
+/*@ type heap[A] exists! l |-> heap[A] * r |-> heap[A] . { left:<l>+null, key:A, right:<r>+null } */
+
+/*@ foo :: (<p>,<c>+null)/p |-> heap[{number|true}] * c |-> heap[number] => void/same*/
+function foo(x,c) {
+    if (typeof(c) != "null") {
+        var ck = c.key;
+        var xk = x.key;
+        if (ck > xk) {
+            var t = xk;
+            xk    = ck;
+            ck    = t; 
+            c.key = ck;
+            x.key = xk;
+            return;
         }
     }
-    if (typeof(s) != "null") {
-       var sk = s.key;
-       var xk = x.key;
-        if (1/* sk > xk*/) {
-            var t = xk;
-            xk    = sk;
-            sk    = t; 
-            s.key = sk;
-            x.key = xk;
-            heapify(s);
+    return;
+}
+
+/*@ heapify      :: (<x>+null)/ x |-> heap[{number|true}] => void/x |-> heap[number] */
+function heapify(x) {
+    var s = 0;
+
+    if (typeof(x) == "null") {
+        return;
+    }
+
+    var l = x.left;
+    var r = x.right;
+
+    if (typeof(l) == "null")  {
+        foo(x,r);
+        r = x.right;
+        heapify(r);
+    } else {
+        if (typeof(r) == "null") {
+            foo(x,l);
+            heapify(l);
+        } else {
+            var lk = l.key;
+            var rk = r.key;
+            if (lk < rk) {
+                foo(x,r);
+                r = x.right;
+                heapify(r);
+            } else {
+                foo(x,l);
+                l = x.left;
+                heapify(l);
+            }
         }
     }
     return;

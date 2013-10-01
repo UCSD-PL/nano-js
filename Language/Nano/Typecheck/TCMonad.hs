@@ -258,8 +258,8 @@ freshFun :: (PP r, PP fn, F.Reftable r) =>
   AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 -------------------------------------------------------------------------------
 freshFun l fn ft
-  = do let bkft           =  tracePP "bkft" $ bkAll ft
-       (τs,t')          <- tracePP "t'" <$> freshTyArgs (srcPos l) bkft
+  = do let bkft           = bkAll ft
+       (τs,t')          <- freshTyArgs (srcPos l) bkft
        (ts,ibs,σi,σo :: RHeap r,ot) <- maybe err return $ bkFun t'
        let ls             = nub $ heapLocs σi ++ heapLocs σo
        ls'               <- mapM (const freshLocation') ls
@@ -267,7 +267,7 @@ freshFun l fn ft
        let (σi',σo')      = mapPair (apply θl) (σi, σo)
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
-       addAnn (srcPos l) $ FunInst (zip (tracePP "fst bkft" (fst bkft)) τs) (zip ls ls')
+       addAnn (srcPos l) $ FunInst (zip (fst bkft) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
@@ -763,8 +763,8 @@ withExpr e action =
 castM     :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r -> RType r -> TCM r ()
 --------------------------------------------------------------------------------
 castM e t t'    = subTypeM t t' >>= go
-  where go SupT = addDownCast e (tracePP "t from" t) (tracePP "t to" t')
-        go Rel  = addDownCast e (tracePP "t from" t) (tracePP "t to" t')
+  where go SupT = addDownCast e t t'
+        go Rel  = addDownCast e t t'
         go SubT = addUpCast e t'
         go EqT  = return ()
         go Nth  = addDeadCast e t'
@@ -774,7 +774,7 @@ castHeapM :: (Ord r, PP r, F.Reftable r) =>
   Env (RType r) -> AnnSSA_ r -> RHeap r -> RHeap r -> TCM r ()
 --------------------------------------------------------------------------------
 castHeapM γ l σ1 σ2
-  = do (σ1',σ2') <- normalizeHeaps γ l (tracePP "σ1" σ1) (tracePP "σ2" σ2)
+  = do (σ1',σ2') <- normalizeHeaps γ l σ1 σ2
        e <- freshHeapVar l "$$heap"
        subHeapM γ σ1' σ2' >>= go e
   where go e SupT = addDownCastH e σ2
@@ -860,7 +860,7 @@ heapPatchPgm winds unwinds hm pgm =
           return $ case (ws, uws) of
                      ([],[])  -> s
                      ([],uws) -> buildWindCalls True  UnwindAll uws s
-                     (ws,[])  -> buildWindCalls False WindAll   ws  s
+                     (ws,[])  -> buildWindCalls True  WindAll   ws  s
                      _        -> error $ errorSameLoc s
         clearAnnot l = M.delete (ann l)
         lookupStmt l = M.findWithDefault [] (ann l)
@@ -877,7 +877,8 @@ patchStmt _   ws (ReturnStmt l e)     =
   BlockStmt l $ ws ++ [ReturnStmt l e]
 
 patchStmt pre ws (BlockStmt l ss)     = 
-  BlockStmt l $ if pre then ws ++ ss else ss ++ ws
+  BlockStmt l $ -- if pre then ws ++ ss else
+                  ss ++ ws
 
 patchStmt pre ws (IfStmt l e s1 s2)   = 
   IfStmt l e s1 (patchStmt pre ws s2)

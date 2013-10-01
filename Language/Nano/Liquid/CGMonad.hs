@@ -53,7 +53,9 @@ module Language.Nano.Liquid.CGMonad (
   , subTypeContainers, subTypeContainers'
   , subTypeHeaps
   , subTypeWind
+  , subTypeWUpdate
   , alignTsM, withAlignedM
+  , strengthenUnion
 
   , addInvariant
   
@@ -197,7 +199,8 @@ withFun f m = do fOld <- cg_fun <$> get
 -- =======
 -- >>>>>>> pvekris
 
--- Use the TCMonad dotAccess
+-- Use the TCMonad dotAccess)
+
 
 {-----------------------------------------------------------------------------------}
 {-getBinding :: (PP r, F.Reftable r, F.Symbolic s) => -}
@@ -429,7 +432,9 @@ joinHeaps l γ g g1 g2
            --
        ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
        _                 <- mapM (wellFormed l g) ts
-       let σ'             = heapCombineWith const [heapFromBinds (zip both ts), σ2', σ1']
+       -- let σ'             = heapCombineWith const [heapFromBinds (zip both ts), σ2', σ1']
+       let combine γ t1 t2 = fst4 $ compareTs γ (tracePP "joinHeaps1" t1) (tracePP "joinHeaps2" t2)
+       let σ'             = heapCombineWith (combine γ) [σ1,σ2]
        -- Subtype the common heap locations
        zipWithM_ (subTypeContainers l g1) (map snd4 t4) ts
        zipWithM_ (subTypeContainers l g2) (map thd4 t4) ts
@@ -638,18 +643,32 @@ subTypeContainers' msg l g t1 t2 =
   subTypeContainers l g (tracePP (printf "subTypeContainers[%s]:\n\t%s\n\t%s" 
                                 msg (ppshow t1) (ppshow t2)) t1) t2
 
-
 alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
-  getTDefs >>= return . (\γ -> map fixup $ bkPaddedUnion msg γ u1 u2)
-  where
-    (r1, r2)       = mapPair rTypeR (u1, u2)
-    fix t b v 
-      | v == b     = rTypeValueVar t
-      | otherwise  = v
-    rr t r         = F.substa (fix t b) r where F.Reft (b,_) = r
-    fixup (t1, t2) = (t1 `strengthen` rr t1 r1, t2 `strengthen` rr t2 r2)
+  getTDefs >>= return . (\γ -> bkPaddedUnion msg γ u1' u2')
+  -- getTDefs >>= return . (\γ -> map fixup $ bkPaddedUnion msg γ u1 u2)
+  where 
+    (u1',u2') = mapPair strengthenUnion (u1,u2)
+  -- where
+  --   (r1, r2)       = mapPair rTypeR (u1, u2)
+  --   fix t b v 
+  --     | v == b     = rTypeValueVar t
+  --     | otherwise  = v
+  --   rr t r         = F.substa (fix t b) r where F.Reft (b,_) = r
+  --   fixup (t1, t2) = (t1 `strengthen` rr t1 r1, t2 `strengthen` rr t2 r2)
  
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
+
+------------------------------------------------------------------------------------------
+strengthenUnion :: RefType -> RefType
+------------------------------------------------------------------------------------------
+strengthenUnion (TApp TUn ts r) = TApp TUn (map fixup ts) r
+  where fix t b v
+          | v == b    = rTypeValueVar t
+          | otherwise = v
+        rr t r  = F.substa (fix t b) r where F.Reft (b,_) = r
+        fixup t = t `strengthen` rr t r
+
+strengthenUnion t = t
 
 -------------------------------------------------------------------------------
 alignTsM :: RefType -> RefType -> CGM (RefType, RefType)
@@ -866,6 +885,19 @@ bsplitC g ci t1 t2
     p  = F.pAnd $ guards g
     r1 = rTypeSortedReft t1
     r2 = rTypeSortedReft t2
+    
+subTypeWUpdate l g tobj tobj'
+  = do γ            <- getTDefs
+       -- (tt,tl,tr,_) <- tracePP "WELP" <$> (withAlignedM ((return.) . compareTs γ)) tobj tobj'
+       (tt,tl,tr,_) <- return $ compareTs γ tobj tobj'
+       t            <- freshTy "weak" (toType tt) 
+       (x,g')       <- envAddFresh l t g
+       wellFormed l g' t
+       subTypeContainers' "WeakUpdate" l g' tobj  t
+       -- subTypeContainers' "WeakUpdate" l g' tobj' t
+       return (x,g') 
+
+    
 
 {-            
    Winding up the heap: 
@@ -901,9 +933,10 @@ subTypeWindHeaps l g σ t1@(TApp TUn _ _) t2@(TApp TUn _ _)
   = do sts <- alignAndStrengthen "subTypeWindHeaps" l g t1 t2 
        mapM_ (uncurry $ subTypeWindHeaps l g σ) sts
     
-    
 subTypeWindHeaps l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
   | l1 /= l2  = error "BUG: Somehow subtyping different locations"
+  -- | not (l2 `heapMem` σ) = 
+  --   subTypeContainers' "dead" l g tru fls
   | otherwise = do (x,g') <- envAddFresh l t1 g
                    let th2 = heapRead l2 σ
                        th1 = if heapMem l1 (rheap g') then 
@@ -912,6 +945,9 @@ subTypeWindHeaps l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
                                rType th2
                    subTypeWind l g' σ th1 th2
                    return ()
+  where 
+    tru = tTop
+    fls = tTop `strengthen` F.predReft F.PFalse
 
 subTypeWindHeaps _ _ _ _ _ = return ()
 

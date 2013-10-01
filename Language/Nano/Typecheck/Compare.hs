@@ -82,7 +82,7 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   -- equiv γ t@(TApp (TDef _) _ _) t' = equiv γ (snd $ unfoldSafe γ t) t'
   -- equiv γ t t'@(TApp (TDef _) _ _) = equiv γ t (snd $ unfoldSafe γ t')
   
-  equiv _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     = l == m
+  equiv _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     =  l == m -- True
   equiv _ (TApp c _ _)         (TApp c' _ _)          = c == c'
 
   equiv _ (TVar v _  )         (TVar v' _  )          = v == v'
@@ -522,7 +522,7 @@ bkPaddedObject t1@(TObj xt1s _) t2@(TObj xt2s _) =
   where 
     checkB b b' | b_sym b == b_sym b' = (b_type b, b_type b')
     checkB _ _                        = 
-      errorstar "unimplemented: bkPaddedObject: cannot split these objects"
+      errorstar (printf "unimplemented: bkPaddedObject: cannot split %s %s" (ppshow t1) (ppshow t2))
 bkPaddedObject _ _                    = 
   errorstar "bkPaddedObject: can only break objects"
 

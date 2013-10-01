@@ -123,6 +123,7 @@ safeHeapSubst = safeHeapSubstWith safeAdd
 unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
 -- unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (snd $ unfoldSafe γ t) t'
 -- unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (snd $ unfoldSafe γ t')
+unifEq _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     = True
 unifEq γ t t'                     = equiv γ t t'
 
 -----------------------------------------------------------------------------
@@ -185,10 +186,10 @@ unifyHeaps' γ r@(Right θ) bs1 bs2 =
     ls2       = map fst bs2'
 
     memBoth l = apply θ l `elem` ls1 && apply θ l `elem` ls2
-    common    = L.filter memBoth ls
+    common    = L.nub $ L.filter memBoth ls
 
-    t1s       = (fromJust . flip L.lookup bs1') <$> (L.nub common)
-    t2s       = (fromJust . flip L.lookup bs2') <$> (L.nub common)
+    t1s       = tracePP "unifyHeaps' t1s" $ (fromJust . flip L.lookup bs1') <$> common
+    t2s       = tracePP "unifyHeaps' t2s" $ (fromJust . flip L.lookup bs2') <$> common
 
     bs1''      = filter (not . (`elem` common) . fst) bs1'
     bs2''      = filter (not . (`elem` common) . fst) bs2'

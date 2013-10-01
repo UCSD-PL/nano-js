@@ -255,7 +255,7 @@ mkUnionR _ [ ] = tErr
 mkUnionR r [t] = strengthen t r
 mkUnionR r ts  | length ts' > 1 = TApp TUn ts' r
                | otherwise      = strengthen (head ts') r
-  where ts' = L.sort $ L.nub ts
+  where ts'  = L.sort $ L.nub ts
 
 ---------------------------------------------------------------------------------
 bkUnion :: RType r -> [RType r]
@@ -293,8 +293,6 @@ strengthenContainers (TObj ts r) (TObj ts' r') =
     doB _       _                   = errorstar "strengthenContainers: sanity check - 1"
 strengthenContainers t t' | toType t == toType t' = strengthen t' $ rTypeR t
 strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity check - 2"
-  
-
 
 ---------------------------------------------------------------------------------
 -- | Helpful type checks
@@ -485,7 +483,7 @@ instance F.Reftable r => PP (RType r) where
                               <+> pp t <+> text "/" <+> pp h'
   pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." 
                                    <+> pp t' where (αs, t') = bkAll t
-  pp (TApp TUn ts r)            = F.ppTy r $ ppArgs id (text "+") ts 
+  pp (TApp TUn ts r)            = F.ppTy r $ parens (ppArgs id (text "+") ts )
   pp (TApp d@(TDef _)ts r)      = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
 
   pp (TApp c [] r)              = F.ppTy r $ ppTC c 
