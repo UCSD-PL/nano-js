@@ -41,6 +41,7 @@ import           Language.Nano.Typecheck.Compare
 import           Language.Nano.SSA.SSA
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.CGMonad
+import           Language.Nano.Misc
 
 import           System.Console.CmdArgs.Default
 
@@ -178,14 +179,28 @@ consStmt g (ExprStmt _ (AssignExpr _ OpAssign (LVar lx x) e))
 consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
   = do (x2,g2) <- consExpr g e2
        (x3,g3) <- consExpr g2 e3
-       consAccess l x3 g3 x
-       let σ    = rheap g
-           tref = tracePP "1" $ envFindTy x3 g3
-           tsto = tracePP "2" $ envFindTy x2 g3
-           upds = tracePP "upds" $ [(l,heapRead l σ) | l <- locs tref]
-           upds'= map (updateField tsto (F.symbol x) <$>) upds
-           σ'   = heapCombineWith const [heapFromBinds upds', σ]
-       return $ Just g3 { rheap = σ' }
+       (_,g4)  <- consAccess l x3 g3 x
+       let σ      = rheap g
+           tref   = tracePP "1" $ envFindTy x3 g4
+           tsto   = tracePP "2" $ envFindTy x2 g4
+           upds   = tracePP "upds" $ [(l,heapRead l σ) | l <- locs tref]
+           updFun = if length upds == 1 then sUpdateField else wUpdateField
+       -- upds' <-  mapM (updFun tsto (F.symbol x) <$>) upds
+       -- (upds', g4) <- foldM (\(upds,g) (l,t) -> 
+       (upds', g4) <- foldM (updFieldM updFun (F.symbol x) tsto) ([],g3) upds
+       let σ'   = heapCombineWith const [heapFromBinds $ tracePP "upds'" upds', σ]
+       return $ Just g4 { rheap = tracePP "newHeap" $ σ' }
+    where
+      updFieldM updF f t (upds,g) (l,tobj) = 
+        do (tobj',g') <- updF g f t tobj
+           return ((l,tobj'):upds, g')
+
+      sUpdateField g f t tobj = return $ (updateField t f tobj, g)
+      wUpdateField g f t tobj = do
+        let tobj'    = tracePP "tobj'" $ updateField t f $ tracePP "tobj" tobj
+        (x,g')      <- subTypeWUpdate l2 g tobj tobj'
+        return $ (tracePP "new type" $ envFindTy x g', g')
+
 
   -- @e3.x@ should have the exact same type with @e2@
   -- = do  (x2,g2) <- consExpr g e2
@@ -260,7 +275,7 @@ consStmt _ s
 
 consReturnHeap g (ReturnStmt l _)
   = do (_,σ) <- getFunHeaps g l
-       subTypeHeaps l g (tracePP "rheap g" (rheap g)) (tracePP "σ" σ)
+       subTypeHeaps l g (tracePP "Return rheap g" (rheap g)) (tracePP "Return σ" σ)
        
 getFunHeaps g l
   = (fromJust . funHeaps . flip envFindTy g) <$> getFun
@@ -346,23 +361,44 @@ consExpr _ e
 
 
 ---------------------------------------------------------------------------------------------
-consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated l, IsLocated x, PP s) =>
-              l -> x -> CGEnv -> s -> CGM (Id l, CGEnv)
+consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated x, PP s) =>
+               AnnTypeR -> x -> CGEnv -> s -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
-consAccess l x g i = do (loc,t) <- dotAccessM (rheap g) i (envFindTy x g) 
-                        (x,g')  <- envAddFresh l t g
-                        let t' = envFindTy x g'
-                        return (x, g' { rheap = fixHeap (rheap g') loc t' (F.symbol i) })
+consAccess l x g i = do locts     <- dotAccessM l g i (envFindTy x g) 
+                        (xs,g')   <- tracePP "consAccess" <$> foldM updLoc ([],g) locts
+                        γ         <- getTDefs
+                        let t'   = foldl1 ((fst4.).compareTs γ) $ map (`envFindTy` g') xs
+                        envAddFresh l t' g'
+                        -- (x,g')  <- envAddFresh l t g
+                        -- let t'   = envFindTy x g'
+                        -- return (x, g' { rheap = fixHeap (rheap g') loc t' (F.symbol i) })
   where
+    sy                     = F.symbol i
     fixHeap σ l tnew field = heapUpd l (updateField tnew field (heapRead l σ)) σ
+    updLoc (xs,g) (m,t)    = do (x,g')  <- envAddFresh l t g
+                                let t'   = envFindTy x g'
+                                    g''  = g' { rheap = fixHeap (rheap g') m t' sy }
+                                return  (x:xs, g'')
+              
+dotAccessM l g f u@(TApp TUn ts _)
+  -- = do concat <$> mapM (dotAccessM l g f) ts 
+  = do concat <$> mapM dotAccessStrong ts'
+  where (TApp TUn ts' _) = tracePP "==>" $ strengthenUnion $ tracePP "STR" u 
+        σ               = rheap g
+        dotAccessStrong t = do (_, g') <- envAddFresh l t g 
+                               dotAccessM l g' f t
 
-dotAccessM σ f (TApp TUn _ _) = error "TBD: access unions liquid"
-dotAccessM σ f t@(TApp (TRef l) _ _)
+
+dotAccessM _ g f t@(TApp (TRef l) _ _)
   = do γ <- getTDefs
-       let results = fromJust $ dotAccessRef (γ,σ) f t
-       return $ (l, mkUnion $ ac_result <$> results)
+       let results = fromJust $ dotAccessRef (γ,rheap g) f t
+       return $ [(l, foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
 
-       
+dotAccessM l g _ t = 
+  subTypeContainers' "dead access" l g tru fls >> return []
+  where 
+    tru = tTop
+    fls = tTop `strengthen` F.predReft F.PFalse
 
 ------------------------------------------------------------------------------------------
 consUpCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
@@ -420,15 +456,14 @@ consCall :: (PP a)
 consCall g l _ es ft 
   = do (_,its,h,h',ot)   <- mfromJust "consCall" . bkFun <$> tracePP "ft" <$> instantiate l g ft
        (xes, g')         <- consScan consExpr g es
-       let (su, ts') = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
+       let (su, ts')     = tracePP "rename" <$> renameBinds (tracePP "its" its) xes
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') (tracePP "es" [envFindTy x g' | x <- xes]) $ tracePP "ts'" ts'
        -- g'               <- stHeaps l g' h h'
        subTypeHeaps l g' (rheap g') h
-       let g'' = g' { rheap = F.subst su <$> heapCombine [foldl (flip heapDel) (rheap g) $ heapLocs h, h'] }
+       let g'' = g' { rheap = F.subst su <$> heapCombine [foldl (flip heapDel) (rheap g') $ heapLocs h, h'] }
        tracePP "output heap" (rheap g'') `seq` envAddFresh l (F.subst su ot) g''
-     where
-       stHeaps l g σi σo = do subTypeHeaps l g (tracePP "rheap g" (rheap g)) (tracePP "σ" σi)
-     {-  msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
+     {- where
+         msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
      
      
@@ -489,8 +524,8 @@ consWind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM
 ---------------------------------------------------------------------------------
 consWind l g (m, ty, θ) = 
   do 
-    (σw, tw, t) <- freshTyWind g l θ ty
-    tracePP (printf "Subtyping %s/%s <: %s/%s" (ppshow (rheap g)) (ppshow (heapRead m (rheap g))) (ppshow σw) (ppshow tw)) ()`seq`subTypeWind l g σw (heapRead m (rheap g)) tw
+    (σw, tw, t) <- freshTyWind g l (tracePP "inst" θ) ty
+    subTypeWind l g (tracePP "consWind heap" σw) (heapRead m (tracePP "consWind actual heap" $ rheap g)) (tracePP "consWind type" tw)
     let ls = heapLocs $ restrictHeap [m] (rheap g)
     return $ g { rheap = heapAdd m t $ heapDiff (rheap g) ls }
     where
@@ -503,7 +538,7 @@ consUnwind l g (m, ty, θl) =
   do 
     (σ,t,αs) <- envFindTyDef ty
     let θ = θl `mappend` fromLists (zip αs vs) []
-    return $ g { rheap = heapCombine [ heapUpd m (apply θ t) (rheap g)
+    return $ g { rheap = tracePP "consUnwind heap" $ heapCombine [ heapUpd m (apply θ t) (rheap g)
                                      , apply θ σ
                                      ]
                }

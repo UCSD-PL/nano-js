@@ -1,15 +1,13 @@
 /*@ map :: ((number) => {v:number | 0 <= v}, <l>)/l |-> list [number] => void/l |-> list [{v:number | 0 <= v}] */
 function map(f, xs){
-    var d = xs.data;
+    // var d = xs.data;
     var n = xs.next;
-    var e = f(d);
+    var e = f(xs.data);
     xs.data = e;
 
-    if (typeof(n) != "null") {
-        map(f,n);
-    }
-    else
-    {
+    if (typeof(xs.next) != "null") {
+        assert(typeof(xs.next) != "null");
+        map(f,xs.next);
     }
 
     return;
