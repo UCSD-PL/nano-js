@@ -2,11 +2,11 @@ import "doubly-linked-list.js";
 
 // fix this modulo nulls
 
-/*@ insert_at_middle ::  
-      (u:?rdlist[A,B], k:A, v:?dlist[A,C])/h 
-      => <ret>/ u |-> rdlist[A,<ret>] * ret |-> { dlist[A,<u>] | keys(ret) = set_cup(set_singleton(k), keys(v,h))} 
+/*@ delete_at_middle ::  
+      (u:?rdlist[A,<l>], p:<l>, v:?dlist[A,<l>])/h
+      => void/ u |-> {rdlist[A,v] | keys(u) = keys(u,h)} * v |-> { dlist[A,<u>] | keys(v) = keys(v,h)} 
  */
-function insert_at_middle (u, k, v){
+function delete_at_middle (u, p, v){
   var ret  = {};
   ret.data = k;
   ret.next = v;
