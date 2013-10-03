@@ -216,7 +216,6 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
-            tracePP "Renames!" (renames θ σ σ') `seq` checkLocSubs θ σ'
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
        return $ Just (γ', heapEmpty)
 
@@ -360,8 +359,8 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (γ,σ')            <- windLocations (γ,tracePP "ReturnStmt" σ) l
         (t,σ')            <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
         let rt             = envFindReturn γ 
-        (_, σ_out)        <- getFunHeaps γ
-        unifyTypeM l "Return" eo t rt
+        (σ_in, σ_out)     <- getFunHeaps γ
+        θ                 <- unifyTypeM l "Return" eo t rt 
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
         (γ,σ')            <- windSpecLocations (γ,σ') l σ_out -- t
@@ -370,6 +369,12 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- Apply the substitutions
         let (rt', t')       = mapPair (apply θ) (rt,t)
         σ'                <- safeHeapSubstM σ'
+        -- Record the fact that we may have renamed 
+        -- an input location. This is OK if the 
+        -- this location does not appear in the 
+        -- output spec
+        checkLocSubs θ σ_out
+        recordRenameM (ann l) (partitionRenames θ σ_in σ_out)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         -- eHeap             <- freshHeapVar l "return_heap"
@@ -725,6 +730,15 @@ varLookup γ l x
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
+    
+partitionRenames θ σ1 σ2 = (θ', θr)
+    where 
+      θ'              = delRenames θ θr
+      θr              = renames θ σ1 σ2
+      ls              = locSub θ
+      delLocs         = foldl (flip M.delete)
+      subLocs         = M.keys . locSub
+      delRenames θ θr = Su (tySub θ) . delLocs (locSub θ) $ subLocs θr
     
 renames :: RSubst r -> RHeap r -> RHeap r -> RSubst r
 renames θ σ1 σ2     
