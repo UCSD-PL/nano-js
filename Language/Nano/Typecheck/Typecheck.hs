@@ -63,7 +63,7 @@ verifyFile f
    = do nano    <- parseNanoFromFile f
         V.whenLoud $ donePhase FM.Loud "Parse"
         putStrLn . render . pp $ nano
-        let nanoSsa = padTransform $ ssaTransform nano
+        let nanoSsa = padTransform . ssaTransform $ nano
         V.whenLoud $ donePhase FM.Loud "SSA Transform"
         V.whenLoud $ putStrLn . render . pp $ nanoSsa
         verb    <- V.getVerbosity
@@ -216,7 +216,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
-            checkLocSubs θ σ'
+            tracePP "Renames!" (renames θ σ σ') `seq` checkLocSubs θ σ'
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
        return $ Just (γ', heapEmpty)
 
@@ -435,7 +435,7 @@ uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
   -- For each unwound location l |-> t, record (l, locations referred to by t
   -- build a graph of these dependencies and sort it, then fold locations
   -- in that order
-  where deps      = map (\(l,i,θ) ->((l,i,θ),l,locs $ heapRead l σ)) ls
+  where deps      = map (\(l,i,θ) ->((l,i,θ),l,locs $ heapRead "uwOrder" l σ)) ls
         (g,v2e,_) = graphFromEdges deps
 
 -- Compare locations in σ with σ_spec using the current θ.
@@ -448,7 +448,7 @@ windSpecLocations (γ,σ) l σ_spec -- t
        let tlocs  = tracePP "heapLocs" $ heapLocs σ -- ) $ apply θ $ locs t
        let uwls   = tracePP "uwls" [ (l,i,θ) | (l,i,θ) <- wls,         
                                 (apply θ l) `elem` tlocs,
-                                not . isWoundTy $ heapRead l σ ]
+                                not . isWoundTy $ heapRead "windSpecLocations" l σ ]
        windLocations' (γ,σ) l uwls
        -- getUnwound >>= windLocations' (γ,σ) l
        -- withUnwound uwls $ windLocations' (γ,σ) l
@@ -505,11 +505,11 @@ tcDotAsgn (γ,σ) l x f e
        return $ Just (γ, heapCombineWith const [heapFromBinds $ zip ls ts', σ])
        -- return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ' $ zip ls ts')
   where  
-    updHeapField  σ t loc = return $ updateField t (F.symbol f) (heapRead loc σ)
+    updHeapField  σ t loc = return $ updateField t (F.symbol f) (heapRead "updHeapField"  loc σ)
     wUpdHeapField σ t loc =
       do γ  <- getTDefs 
          t' <- updHeapField σ t loc
-         return $ fst4 $ compareTs γ (heapRead loc σ) t'
+         return $ fst4 $ compareTs γ (heapRead "wUpdHeapField" loc σ) t'
 
 weakenUpdTy _ t []      = t
 weakenUpdTy γ t (t':ts) = 
@@ -612,16 +612,16 @@ tcCall (γ,σ) l fn es ft
         -- This function call may require some locations
         -- to be folded up. Who are we to argue?
         ls                <- maybe (error "BUG: no statement") getAnnotation <$> getStmt
-        (γ,σ')            <- windSpecLocations (γ, σ') ls (apply θ σi)
+        (γ,σ')            <- windSpecLocations (γ, σ') ls (apply θ $ tracePP "tcCall spec in" σi)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its' 
         castHeapM γ l σ' σi
-        checkDisjoint σo
-        let σ_out = heapCombine [subtr θ σ' σi, apply θ σo]
+        checkDisjoint $ tracePP "tcCall spec out" σo
+        let σ_out = heapCombine [subtr θ σ' σi, tracePP "tcCall heapOut" $ apply θ σo]
         return (apply θ ot, apply θ σ_out)
     where
-      subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
+      subtr θ σ1 σ2   = foldl (flip heapDel) (tracePP "subtr 1" σ1) $ tracePP "subtr locs 2" $ apply θ $ heapLocs σ2
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of
                              [] -> return ()
@@ -725,3 +725,10 @@ varLookup γ l x
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
+    
+renames :: RSubst r -> RHeap r -> RHeap r -> RSubst r
+renames θ σ1 σ2     
+  = fromLists [] $ filter rename $ snd $ toLists θ
+    where l1s = heapLocs σ1
+          l2s = heapLocs σ2
+          rename (l1,l2) = l1 `elem` l1s && l2 `elem` l2s

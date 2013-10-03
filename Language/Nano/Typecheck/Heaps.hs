@@ -81,11 +81,11 @@ heapAddWith f l t (H h) = H $ M.insertWith f l t h
 heapDel :: Location -> Heap t -> Heap t
 heapDel l (H h) = H $ M.delete l h
 
-heapRead :: (PP t) => Location -> Heap t -> t
-heapRead l (H h) = if M.member l h then
+heapRead :: (PP t) => String -> Location -> Heap t -> t
+heapRead m l (H h) = if M.member l h then
                          fromJust (M.lookup l h)
                      else
-                         error $ printf "Location %s not in heap\n" l
+                         error $ printf "[%s] Location %s not in heap\n" m l
 
 -- | Combine a list of heaps
 heapCombine :: (PP t) => [Heap t] -> Heap t

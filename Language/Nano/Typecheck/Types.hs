@@ -552,6 +552,7 @@ data Fact_  r
   | LocInst    !Location
   | Assume     !(RType r)
   | AssumeH    !(RHeap r)
+  | Rename     ![(Location,Location)]
     deriving (Eq, Ord, Show, Data, Typeable)
 
 type Fact = Fact_ ()
@@ -587,6 +588,7 @@ instance PP Fact where
   pp (LocInst l)      = text "loc inst" <+> pp l
   pp (Assume t)       = text "assume" <+> pp t
   pp (AssumeH h)      = text "assume heap" <+> pp h
+  pp (Rename ls)    = text "Loc Rename" <+> pp ls
   pp (WindInst l i αs ls) = pp l
                         <+> pp αs
                         <+> pp ls
@@ -601,6 +603,7 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (LocInst l)    = text "loc inst" <+> pp l 
   pp (Assume t)     = text "assume" <+> pp t
   pp (AssumeH h)    = text "assume heap" <+> pp h
+  pp (Rename ls)    = text "Loc Rename" <+> pp ls
   pp (WindInst l i αs ls) = pp l
                         <+> pp αs
                         <+> pp ls

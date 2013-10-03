@@ -142,6 +142,7 @@ instance Substitutable () Fact where
   apply θ (LocInst l)     = LocInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
+  apply θ (Rename ls)     = Rename $ apply θ ls
   apply θ (WindInst l t αs ls) =
     WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
   apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
@@ -152,6 +153,7 @@ instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply θ (LocInst l)     = LocInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
+  apply θ (Rename ls)     = Rename $ apply θ ls
   apply θ (WindInst l t αs ls) =
     WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
   apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
@@ -165,6 +167,7 @@ instance Free Fact where
   free (AssumeH h)        = free h
   free (WindInst _ _ ts _) = free. snd . unzip $ ts
   free (UnwindInst _ _ _)  = S.empty
+  free (Rename ls)        = S.empty
 
 instance Free (Fact_ r) where
   free (PhiVar _)       = S.empty
@@ -174,6 +177,7 @@ instance Free (Fact_ r) where
   free (AssumeH h)      = free h
   free (WindInst _ _ ts _) = free. snd . unzip $ ts
   free (UnwindInst _ _ _)  = S.empty
+  free (Rename ls)      = S.empty
  
 ------------------------------------------------------------------------
 -- appTy :: Subst_ r -> RType r -> RType r
@@ -255,7 +259,7 @@ dotAccessRef ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) =>
   (Env (RType r), RHeap r) -> s -> RType r -> Maybe [ObjectAccess r]
 -------------------------------------------------------------------------------
 dotAccessRef (γ,σ) f (TApp (TRef l) _ _)
-  = dotAccessBase γ f (heapRead l σ)
+  = dotAccessBase γ f (heapRead "dotAccessRef" l σ)
 
 dotAccessRef (γ,σ) f _ = Nothing
 

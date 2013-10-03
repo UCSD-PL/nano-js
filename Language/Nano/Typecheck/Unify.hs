@@ -150,9 +150,9 @@ unifys' γ θ ts ts'
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
                                
-check (Su m _) (Su m' _) = vs == vs'
-  where vs  = map (toType <$>) $ (`M.lookup` m ) <$> ks
-        vs' = map (toType <$>) $ (`M.lookup` m') <$> ks
+check θ@(Su m l) θ'@(Su m' l') = vs == vs'
+  where vs  = map (toType . apply θ' <$>) $ (`M.lookup` m ) <$> ks
+        vs' = map (toType . apply θ  <$>) $ (`M.lookup` m') <$> ks
         ks  = M.keys $ M.intersection (clr tVar m) (clr tVar m')
         clr f = M.filterWithKey (\k v -> f k /= v)
 

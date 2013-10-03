@@ -364,7 +364,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
        case dotAccessRef (γ,σ) f t of
          Nothing -> return Nothing -- error "safeDotAccess: unsafe"
          Just as -> do a <- joinAccess <$> traverse freshen as
-                       castM e' (heapRead l σ) (ac_cast a)
+                       castM e' (heapRead "safeDotAccess'" l σ) (ac_cast a)
                        return $ Just (l, a) 
   where
     safeUnfoldTy [u] = u
@@ -710,7 +710,7 @@ subHeapM γ σ1 σ2
        when (l1s /= l2s) $ error "BUG: non-normalized heaps in subHeapM"
        ds <- uncurry subTypesM $ mapPair (readTs $ nub l1s) (σ1, σ2)
        return $ foldl (&*&) EqT ds
-  where readTs ls σ = map (`heapRead` σ) ls
+  where readTs ls σ = map (flip (heapRead "subHeapM") σ) ls
           
 normalizeHeaps γ l σ1 σ2       
   = do castEnvLocs l γ l2s
@@ -723,8 +723,8 @@ castEnvLocs a γ ls
   = mapM_ (castLocs ls) xs
     where 
       xs = [ (VarRef a (Id a s),t) | (Id _ s, t) <- envToList γ
-                            , F.symbol s /= returnSymbol
-                            , locs t `intersect` ls /= [] ]
+                                   , F.symbol s /= returnSymbol
+                                   , locs t `intersect` ls /= [] ]
       castLocs ls (e,t) = 
         case filterTypeLs ls t of
           Nothing -> addDeadCast e t

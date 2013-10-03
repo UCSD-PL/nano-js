@@ -69,6 +69,7 @@ module Language.Nano.Liquid.CGMonad (
 
 import           Data.Maybe                     (fromMaybe)
 import           Data.List
+import           Data.Tuple                     (swap)
 import           Data.Ord
 import           Data.Monoid                    (mempty)
 import qualified Data.HashMap.Strict            as M
@@ -84,6 +85,7 @@ import           Language.Nano.Misc
 import           Language.Nano.Typecheck.Types 
 import           Language.Nano.Typecheck.Heaps 
 import           Language.Nano.Typecheck.Subst
+import           Language.Nano.Typecheck.Unify
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
 
@@ -425,7 +427,7 @@ envJoin' l g g1 g2
 joinHeaps l γ g g1 g2
   = do let (σ1,σ2)        = mapPair rheap (g1,g2)
            (one,both,two) = heapSplit σ1 σ2
-           (t1s,t2s)      = unzip $ [mapPair (heapRead loc) (σ1,σ2) | loc <- both]
+           (t1s,t2s)      = unzip $ [mapPair (heapRead "joinHeaps" loc) (σ1,σ2) | loc <- both]
            σ1'            = restrictHeap one σ1
            σ2'            = restrictHeap two σ2
            t4             = zipWith (compareTs γ) t1s t2s
@@ -549,7 +551,7 @@ subTypeHeaps l g σ1 σ2 =
      -- let bothBs  = mapPair (sortBy (comparing fst)) (heapBinds σ1, heapBinds σ2)
      -- uncurry (zipWithM_ (subTypeContainers l g)) (mapPair (map snd) bothBs)
   where 
-    subTypeLoc loc = subTypeField {- subTypeContainers -} l g (heapRead loc σ1) (heapRead loc σ2)
+    subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
     diffLength = length (heapLocs σ1) /= length (heapLocs σ2)
     diffLocs   = not $ all (`elem` heapLocs σ2) $ heapLocs σ1
     errLength  = error $ "BUG: differently sized heaps – should have been fixed in TC phase:"
@@ -557,7 +559,9 @@ subTypeHeaps l g σ1 σ2 =
     errLocs    = error $ "BUG: heaps with different locs - should have been fixed in TC phase:"
                          ++ ppshow σ1 ++ "\n" ++ ppshow σ2
     
-subTypeField l g =  withAlignedM (subTypeContainers l g)
+subTypeField l g =  withAlignedM $ 
+                    \t1 t2 -> do subTypeContainers' "subTypeField" l g t1 t2 
+                                 subType' "subTypeField" l g t1 t2
   -- do γ <- getTDefs
      -- case tracePP "subTypeField" $ fth4 $ compareTs γ t1 t2 of
      --   Nth -> subTypeContainers' "dead" l g tTop (tTop `strengthen` F.predReft F.PFalse)
@@ -907,6 +911,8 @@ subTypeWUpdate l g tobj tobj'
    Where
      C[α...] = ∃! Σ₂' . l ↦ T'@{ ... xᵢ:Tᵢ' ... } 
 
+   Renaming/Consumption of locations is permitted...
+
    Constraints:
      Γ ⊢ T <: T'   %% Normal subtyping on folded record
      for each i, ∀ l ∈ loc(Tᵢ'), Γ,x:Ti ⊢ Σ₁|l <: Σ₂|l
@@ -914,17 +920,43 @@ subTypeWUpdate l g tobj tobj'
 -------------------------------------------------------------------------------
 subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeWind l g σ t1 t2 = withAlignedM (subTypeWindTys l g σ) t1 t2
+subTypeWind l g σ t1 t2 = tracePP msg ()`seq` {- withAlignedM -} (subTypeWindTys l g σ) t1 t2
+  where
+    msg = printf "subTypeWind %s/%s <: %s/%s" 
+          (ppshow $ toType t1) (ppshow $ fmap toType (rheap g)) (ppshow $ toType t2) (ppshow $ fmap toType σ)
+
 
 -------------------------------------------------------------------------------
 subTypeWindTys :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeWindTys l g σ t1@(TObj _ _) t2@(TObj _ _)
-  = do subTypeContainers' "Wind" l g t1 t2
-       mapM_ (uncurry $ subTypeWindHeaps l g σ) $  bkPaddedObject t1 t2
+  = do θ         <- tracePP "subTypeWindTys" <$> withAlignedM (renameLocations g σ) t1 t2
+       let σ'     = heapFromBinds $ (\(l,t) -> (apply θ l, apply θ t)) <$> heapBinds σ
+       (t1,t2')  <-  alignTsM t1 (apply θ t2)
+       tracePP (msg t1 (rheap g) t2' σ' θ) () `seq` subTypeContainers' "Wind" l g t1 t2'
+       mapM_ (uncurry $ subTypeWindHeaps l g σ') $ bkPaddedObject t1 t2'
+    where
+      msg t1 σ1 t2 σ2 θ = printf "subTypeWindTys Rename %s/%s <: %s/%s%s" 
+                          (ppshow $ toType t1) (ppshow $ fmap toType σ1)
+                          (ppshow $ toType t2) (ppshow $ fmap toType σ2)
+                          (ppshow θ)
 
 subTypeWindTys l g σ t1 t2
   = subTypeContainers' "Wind Non-Obj" l g t1 t2
+    
+renameLocations :: CGEnv -> RefHeap -> RefType -> RefType -> CGM (RSubst F.Reft)
+renameLocations g σ t1 t2 
+  = do γ              <- getTDefs
+       let envLocs     = concat [ locs t | (Id _ s,t) <- envToList g
+                                         , F.symbol s /= returnSymbol ]
+                         ++ heapLocs (rheap g)
+           ls          = filter (okRename (tracePP "envLocs" envLocs) σ) $ tracePP "rename" $ rename γ t1 t2
+       return $ fromLists [] ls
+    where
+      okRename locs σ (l2,l1) = l2 `notElem` locs && l1 `notElem` heapLocs σ
+      rename γ t1 t2          = case unify γ mempty t1 t2 of
+                                  Left msg -> error msg
+                                  Right θ  -> snd $ toLists θ
     
 -------------------------------------------------------------------------------
 subTypeWindHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
@@ -938,9 +970,9 @@ subTypeWindHeaps l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
   -- | not (l2 `heapMem` σ) = 
   --   subTypeContainers' "dead" l g tru fls
   | otherwise = do (x,g') <- envAddFresh l t1 g
-                   let th2 = heapRead l2 σ
+                   let th2 = heapRead "subTypeWindHeaps(a)" l2 σ
                        th1 = if heapMem l1 (rheap g') then 
-                               heapRead l1 (rheap g')
+                               heapRead "subTypeWindHeaps(b)" l1 (rheap g')
                              else
                                rType th2
                    subTypeWind l g' σ th1 th2
