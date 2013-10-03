@@ -1,14 +1,16 @@
-import "singly-linked-list.js"
+//import "singly-linked-list.js"
 
 // In below, separation between x and v in output IS obvious.
-/*@ append::(x1:list[A],x2:list[A])/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x1,h), keys(x2,h)) */
+/* append_desired::(x1:<l>+null,x2:<m>+null)/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x1,h), keys(x2,h)) */
 
+/*@ append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> list[A] * m |-> list[A] => <k>+null/k |-> list[A] */
 function append(x1, x2){
-  if (!x1){
-    return x2;
-  } else {
-    var t = append(x1.next, x2);
-    x1.next = t;
+  if (typeof(x1) != "null"){
+    var n = x1.next;
+    append(n, x2);
+    x1.next = n;
     return x1;
+  } else {
+    return x2;
   } 
 }

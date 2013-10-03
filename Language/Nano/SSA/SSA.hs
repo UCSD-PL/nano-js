@@ -271,5 +271,3 @@ phiAsgn l (x, (SI x1, SI x2))
        return $ (s1, s2) 
   where 
        mkPhiAsgn l x y = VarDeclStmt l [VarDecl l x (Just $ VarRef l y)]
-
-

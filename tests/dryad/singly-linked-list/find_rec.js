@@ -1,13 +1,15 @@
-import "singly-linked-list.js"
+//import "singly-linked-list.js"
+/*  v=1 <=> set_mem(k, keys(x)) */
 
-/*@ find :: (x:list[A], k:A) => {v:number|v=1 <=> set_mem(k, keys(x))} */
+/*@ find :: forall A. (x:<l>+null,k:A)/l |-> list[A] => {v:number | (v = 1 <=> set_mem(k, keys(x))) }/same */
 function find(x, k){
-  if (x){ 
+  if (typeof(x) != "null"){ 
     var xk = x.data; 
-    if (xk == k){
+    if (xk == k) {
       return 1;
     } else {
-      return find(x.next, k);
+      var r = find(x.next, k);
+      return r;
     }
   } 
   else {

@@ -183,7 +183,7 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
        let σ      = rheap g
            tref   = tracePP "1" $ envFindTy x3 g4
            tsto   = tracePP "2" $ envFindTy x2 g4
-           upds   = tracePP "upds" $ [(l,heapRead l σ) | l <- locs tref]
+           upds   = tracePP "upds" $ [(l,heapRead "consStmt e1.x = e2" l σ) | l <- locs tref]
            updFun = if length upds == 1 then sUpdateField else wUpdateField
        -- upds' <-  mapM (updFun tsto (F.symbol x) <$>) upds
        -- (upds', g4) <- foldM (\(upds,g) (l,t) -> 
@@ -374,7 +374,7 @@ consAccess l x g i = do locts     <- dotAccessM l g i (envFindTy x g)
                         -- return (x, g' { rheap = fixHeap (rheap g') loc t' (F.symbol i) })
   where
     sy                     = F.symbol i
-    fixHeap σ l tnew field = heapUpd l (updateField tnew field (heapRead l σ)) σ
+    fixHeap σ l tnew field = heapUpd l (updateField tnew field (heapRead "consAccess" l σ)) σ
     updLoc (xs,g) (m,t)    = do (x,g')  <- envAddFresh l t g
                                 let t'   = envFindTy x g'
                                     g''  = g' { rheap = fixHeap (rheap g') m t' sy }
@@ -383,8 +383,8 @@ consAccess l x g i = do locts     <- dotAccessM l g i (envFindTy x g)
 dotAccessM l g f u@(TApp TUn ts _)
   -- = do concat <$> mapM (dotAccessM l g f) ts 
   = do concat <$> mapM dotAccessStrong ts'
-  where (TApp TUn ts' _) = tracePP "==>" $ strengthenUnion $ tracePP "STR" u 
-        σ               = rheap g
+  where (TApp TUn ts' _) = strengthenUnion u 
+        σ                 = rheap g
         dotAccessStrong t = do (_, g') <- envAddFresh l t g 
                                dotAccessM l g' f t
 
@@ -392,7 +392,9 @@ dotAccessM l g f u@(TApp TUn ts _)
 dotAccessM _ g f t@(TApp (TRef l) _ _)
   = do γ <- getTDefs
        let results = fromJust $ dotAccessRef (γ,rheap g) f t
-       return $ [(l, foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
+       return $ [(l, tracePP msg $ foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
+    where msg = printf "Accessing %s in heap %s" (ppshow t) (ppshow $ rheap g)
+
 
 dotAccessM l g _ t = 
   subTypeContainers' "dead access" l g tru fls >> return []
@@ -525,8 +527,8 @@ consWind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM
 consWind l g (m, ty, θ) = 
   do 
     (σw, tw, t) <- freshTyWind g l (tracePP "inst" θ) ty
-    subTypeWind l g (tracePP "consWind heap" σw) (heapRead m (tracePP "consWind actual heap" $ rheap g)) (tracePP "consWind type" tw)
-    let ls = heapLocs $ restrictHeap [m] (rheap g)
+    subTypeWind l g (tracePP "consWind heap" σw) (heapRead "consWind" m (tracePP "consWind actual heap" $ rheap g)) (tracePP "consWind type" tw)
+    let ls = heapLocs $ restrictHeap [tracePP "consWind winding dis" m] (rheap g)
     return $ g { rheap = heapAdd m t $ heapDiff (rheap g) ls }
     where
       heapDiff σ ls = foldl (flip heapDel) σ ls
@@ -537,13 +539,16 @@ consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> C
 consUnwind l g (m, ty, θl) =
   do 
     (σ,t,αs) <- envFindTyDef ty
-    let θ = θl `mappend` fromLists (zip αs vs) []
-    return $ g { rheap = tracePP "consUnwind heap" $ heapCombine [ heapUpd m (apply θ t) (rheap g)
-                                     , apply θ σ
-                                     ]
+    let θ       = θl `mappend` fromLists (zip αs vs) []
+        s (l,t) = (apply θ l, apply θ t)
+        t'      = apply θ t
+        σ'      = heapFromBinds . map s . heapBinds $ σ
+    return $ g { rheap = tracePP "consUnwind heap" $ heapCombine [ heapUpd (tracePP "consUnwind of" m) t' (rheap g)
+                                                                 , σ'
+                                                                 ]
                }
   where 
-    vs = case heapRead m (rheap g) of
+    vs = case heapRead "consUnwind" m (rheap g) of
            TApp _ vs _  -> vs
            _            -> error "BUG: unwound something bad!"
     
