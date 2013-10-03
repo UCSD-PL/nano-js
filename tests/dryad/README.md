@@ -5,10 +5,12 @@ These are examples from the DRYAD suite:
 (ported to JS)
 
   + singly-linked-list
-  - doubly-linked-list
+  + doubly-linked-list
   - cyclic-list
-  - glib_glist
+    * dryad invariants are useless
+
   - glib_gslist
+  - glib_glist
   - sorted-list
   - bst
   - tree-traversals
