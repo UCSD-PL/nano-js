@@ -1,6 +1,6 @@
 import "singly-linked-list.js"
 
-/*@ insert :: (x:?list[A], k:A) => {v:list[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
+/*@ insert :: (x:?list[A], k:A)/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 function insert(x, k){
   if (x){
     var y  = x.next;
