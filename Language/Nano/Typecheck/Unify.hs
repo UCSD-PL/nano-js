@@ -188,8 +188,8 @@ unifyHeaps' γ r@(Right θ) bs1 bs2 =
     memBoth l = apply θ l `elem` ls1 && apply θ l `elem` ls2
     common    = L.nub $ L.filter memBoth ls
 
-    t1s       = tracePP "unifyHeaps' t1s" $ (fromJust . flip L.lookup bs1') <$> common
-    t2s       = tracePP "unifyHeaps' t2s" $ (fromJust . flip L.lookup bs2') <$> common
+    t1s       = (fromJust . flip L.lookup bs1') <$> common
+    t2s       = (fromJust . flip L.lookup bs2') <$> common
 
     bs1''      = filter (not . (`elem` common) . fst) bs1'
     bs2''      = filter (not . (`elem` common) . fst) bs2'

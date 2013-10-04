@@ -59,6 +59,7 @@ module Language.Nano.Typecheck.TCMonad (
   , recordWindExpr
   , recordingUnwind
   , recordUnwindExpr
+  , recordRenameM
   , getUnwound
   , setUnwound
   , addUnwound
@@ -125,7 +126,7 @@ import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
 import           Language.ECMAScript3.Parser    (SourceSpan (..))
 -- import           Language.ECMAScript3.PrettyPrint
-import           Language.ECMAScript3.Syntax
+import           Language.ECMAScript3.Syntax    as ES
 import           Language.ECMAScript3.Syntax.Annotations
 
 import           Text.Parsec.Pos
@@ -150,6 +151,8 @@ data TCState r = TCS {
                    , tc_winds    :: M.Map SourceSpan [WindCall r]
                    , tc_unwinds  :: M.Map SourceSpan [(Location, Id SourceSpan)]
                    , tc_heapexps :: M.Map SourceSpan [Expression (AnnSSA_ r)]
+                   -- Location Renaming
+                   , tc_renames  :: M.Map SourceSpan (RSubst r)
                    -- Cast map: 
                    , tc_casts    :: M.Map (Expression (AnnSSA_ r)) (Cast (RType r))
                    , tc_hcasts   :: M.Map (Expression (AnnSSA_ r)) (Cast (RHeap r))
@@ -443,6 +446,7 @@ initState verb pgm = TCS { tc_errss   = []
                          , tc_casts   = M.empty
                          , tc_heapexps= M.empty
                          , tc_hcasts  = M.empty
+                         , tc_renames = M.empty
                          , tc_defs    = defs pgm
                          , tc_fun     = Nothing
                          , tc_tdefs   = tDefs pgm
@@ -576,6 +580,22 @@ unfoldSafeTC :: (PP r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r, RSub
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
+recordRenameM :: (Ord r, PP r, F.Reftable r) =>
+  SourceSpan -> (RSubst r, RSubst r) -> TCM r ()
+-------------------------------------------------------------------------------
+recordRenameM l (θ,θr)  
+  = setSubst θ >> setRename θr
+  where
+    setRename θr = do m <- tc_renames <$> get
+                      when (M.member l m) $ tcError l "Multiple Renames"
+                      when (toLists θr /= ([],[])) $ do 
+                        addRename θr
+                        addAnn l . Rename . snd $ toLists θr
+    addRename θr = modify $ \s -> s {
+      tc_renames = M.insert l θr (tc_renames s)
+      }
+  
+-------------------------------------------------------------------------------
 recordWindExpr :: (PP r, F.Reftable r) => 
   SourceSpan -> WindCall r -> RSubst r -> TCM r ()
 -------------------------------------------------------------------------------
@@ -584,7 +604,7 @@ recordWindExpr l p@(loc,t) θ
   where
     windInst = uncurry (WindInst loc t) $ toLists θ
     addWind  = modify $ \s -> s {
-      tc_winds = M.insertWith (flip (++)) l [tracePP "RECORDING WIND" p `seq`p] $ tc_winds s
+      tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
       }
 
 -------------------------------------------------------------------------------
@@ -604,7 +624,10 @@ recordingUnwind l action
 -- recordUnwindExpr :: (PP r, F.Reftable r) => SourceSpan -> (Location, Id SourceSpan) -> TCM r ()
 -------------------------------------------------------------------------------
 recordUnwindExpr l p@(loc, id, θi) 
-  = do getUnwound >>= \lst -> if (loc `elem` map fst3 (tracePP "lst" lst)) then tcError l ("Already unwound " ++ loc) else return ()
+  = do getUnwound >>= \lst -> if (loc `elem` map fst3 lst) then 
+                                tcError l ("Already unwound " ++ loc) 
+                              else 
+                                return ()
        -- Sigh, now I see the folly of my naming...
        -- "unwound" is a stack of currently unwound....
        addUnwound p 
@@ -612,7 +635,7 @@ recordUnwindExpr l p@(loc, id, θi)
   where 
     unwindInst = UnwindInst loc id (snd $ toLists θi)
     addUnwind  = modify $ \s -> s {
-      tc_unwinds = M.insertWith (flip (++)) l [tracePP "added" (loc,id)`seq`(loc,id)] $ tc_unwinds s
+      tc_unwinds = M.insertWith (flip (++)) l [(loc,id)] $ tc_unwinds s
       }
 
 -------------------------------------------------------------------------------
@@ -742,7 +765,7 @@ filterTypeLs ls t@(TObj bs r)
   = Just $ TObj [ B b t | (b, Just t) <- zip (b_sym <$> bs) bs' ] r
   where bs' = filterTypeLs ls . b_type <$> bs
         
-filterTypeLs _ t = Just $ tracePP "OK" t        
+filterTypeLs _ t = Just t
 
 --------------------------------------------------------------------------------
 --  cast Helpers ---------------------------------------------------------------
@@ -836,9 +859,29 @@ patchPgmM pgm =
       hc       <- tc_hcasts   <$> get
       winds    <- tc_winds    <$> get
       unwinds  <- tc_unwinds  <$> get
-      hexs <- tc_heapexps <$> get
-      pgm' <- heapPatchPgm winds unwinds hexs pgm
-      return $ fst $ runState (everywhereM' (mkM transform) pgm') (PS c hc)
+      renames  <- tc_renames  <$> get
+      hexs     <- tc_heapexps <$> get
+      pgm'     <- heapPatchPgm winds unwinds hexs pgm
+      pgm''    <- renamePatchPgm renames pgm'
+      return $ fst $ runState (everywhereM' (mkM transform) pgm'') (PS c hc)
+
+data RState r = RS { rs_renames :: M.Map SourceSpan (RSubst r) }
+type RM     r = State (RState r)
+
+renamePatchPgm renamem pgm = 
+  return $ fst $ runState (everywhereM' (mkM go) pgm) (RS renamem)
+  where go :: Statement (AnnSSA_ r) -> RM r (Statement (AnnSSA_ r))
+        go s = do m <- rs_renames <$> get
+                  let l = ann . getAnnotation $ s
+                  put $ RS { rs_renames = M.delete l m }
+                  return $ case M.lookup l m of
+                             Nothing -> s
+                             Just θr -> rename θr s
+        display l θ = VarRef l $ Id l $ ppshow $ snd $ toLists θ
+        rename θ s  = let l = getAnnotation s
+                      in patchRename (RenameLocs l [display l θ]) s
+        patchRename s' (BlockStmt l ss) = BlockStmt l (s':ss)
+        patchRename s' s                = BlockStmt (getAnnotation s) [s',s]
 
 data PState r = PS { m :: Casts_ r, hm :: HCasts_ r}
 type PM     r = State (PState r)
@@ -887,7 +930,7 @@ patchStmt pre ws (IfSingleStmt l e s) =
   IfStmt l e s (BlockStmt l ws)                                      
 
 patchStmt pre ws s                    = 
-  BlockStmt (getAnnotation $ tracePP "s" s) $ if tracePP "pre" pre then ws ++[s] else (s:ws)
+  BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])

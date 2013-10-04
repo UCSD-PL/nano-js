@@ -115,7 +115,7 @@ instance Substitutable r Location where
 instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
     Substitutable r (Heap (RType r)) where
   apply θ h =
-      heapFromBinds $ map (apply θ) $ heapBinds h
+      heapFromBinds $ map (\(l,t) -> (apply θ l, apply θ t)) $ heapBinds h
 
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)

@@ -431,12 +431,9 @@ joinHeaps l γ g g1 g2
            σ1'            = restrictHeap one σ1
            σ2'            = restrictHeap two σ2
            t4             = zipWith (compareTs γ) t1s t2s
-           --
        ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
        _                 <- mapM (wellFormed l g) ts
        let σ'             = heapCombine [heapFromBinds (zip both ts), σ2', σ1']
-       -- let combine γ t1 t2 = fst4 $ compareTs γ (tracePP "joinHeaps1" t1) (tracePP "joinHeaps2" t2)
-       -- let σ'             = heapCombineWith (combine γ) [σ1,σ2]
        -- Subtype the common heap locations
        zipWithM_ (subTypeContainers l g1) (map snd4 t4) ts
        zipWithM_ (subTypeContainers l g2) (map thd4 t4) ts
@@ -541,23 +538,10 @@ subType' msg l g t1 t2 =
 subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2 = 
-  do -- Don't need these here I guess?
-     -- TC phase *should* insert all casts
-     -- to make sure heap subtyping is legit
-     -- when diffLength errLength
-     -- when diffLocs   errLocs
-     let (_,ls,_) = heapSplit σ1 σ2
+  do let (_,ls,_) = heapSplit σ1 σ2
      forM_ ls $ subTypeLoc 
-     -- let bothBs  = mapPair (sortBy (comparing fst)) (heapBinds σ1, heapBinds σ2)
-     -- uncurry (zipWithM_ (subTypeContainers l g)) (mapPair (map snd) bothBs)
   where 
     subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
-    diffLength = length (heapLocs σ1) /= length (heapLocs σ2)
-    diffLocs   = not $ all (`elem` heapLocs σ2) $ heapLocs σ1
-    errLength  = error $ "BUG: differently sized heaps – should have been fixed in TC phase:"
-                         ++ ppshow σ1 ++ "\n" ++ ppshow σ2
-    errLocs    = error $ "BUG: heaps with different locs - should have been fixed in TC phase:"
-                         ++ ppshow σ1 ++ "\n" ++ ppshow σ2
     
 subTypeField l g =  withAlignedM $ 
                     \t1 t2 -> do subTypeContainers' "subTypeField" l g t1 t2 
@@ -892,7 +876,6 @@ bsplitC g ci t1 t2
     
 subTypeWUpdate l g tobj tobj'
   = do γ            <- getTDefs
-       -- (tt,tl,tr,_) <- tracePP "WELP" <$> (withAlignedM ((return.) . compareTs γ)) tobj tobj'
        (tt,tl,tr,_) <- return $ compareTs γ tobj tobj'
        t            <- freshTy "weak" (toType tt) 
        (x,g')       <- envAddFresh l t g
@@ -920,7 +903,7 @@ subTypeWUpdate l g tobj tobj'
 -------------------------------------------------------------------------------
 subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeWind l g σ t1 t2 = tracePP msg ()`seq` {- withAlignedM -} (subTypeWindTys l g σ) t1 t2
+subTypeWind l g σ t1 t2 = tracePP msg ()`seq` withAlignedM (subTypeWindTys l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s" 
           (ppshow $ toType t1) (ppshow $ fmap toType (rheap g)) (ppshow $ toType t2) (ppshow $ fmap toType σ)
@@ -930,16 +913,8 @@ subTypeWind l g σ t1 t2 = tracePP msg ()`seq` {- withAlignedM -} (subTypeWindTy
 subTypeWindTys :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeWindTys l g σ t1@(TObj _ _) t2@(TObj _ _)
-  = do θ         <- tracePP "subTypeWindTys" <$> withAlignedM (renameLocations g σ) t1 t2
-       let σ'     = heapFromBinds $ (\(l,t) -> (apply θ l, apply θ t)) <$> heapBinds σ
-       (t1,t2')  <-  alignTsM t1 (apply θ t2)
-       tracePP (msg t1 (rheap g) t2' σ' θ) () `seq` subTypeContainers' "Wind" l g t1 t2'
-       mapM_ (uncurry $ subTypeWindHeaps l g σ') $ bkPaddedObject t1 t2'
-    where
-      msg t1 σ1 t2 σ2 θ = printf "subTypeWindTys Rename %s/%s <: %s/%s%s" 
-                          (ppshow $ toType t1) (ppshow $ fmap toType σ1)
-                          (ppshow $ toType t2) (ppshow $ fmap toType σ2)
-                          (ppshow θ)
+  = do subTypeContainers' "Wind" l g t1 t2
+       mapM_ (uncurry $ subTypeWindHeaps l g σ) $ bkPaddedObject t1 t2
 
 subTypeWindTys l g σ t1 t2
   = subTypeContainers' "Wind Non-Obj" l g t1 t2
