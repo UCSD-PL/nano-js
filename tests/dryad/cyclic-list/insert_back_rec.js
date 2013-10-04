@@ -15,5 +15,6 @@ function insert(p, q, k){
     p.next = z;
   } else {
     // p.next != q
-    insert(t, q, k);
+    p.next = insert(t, q, k);
   }
+}
