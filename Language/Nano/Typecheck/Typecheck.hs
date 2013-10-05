@@ -213,7 +213,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        checkSigWellFormed l ts t σ σ'
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
-       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
+       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList $ tracePP "tcFun a" a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
@@ -266,7 +266,7 @@ envAddFun _ f αs xs ts t = envAdds tyBinds . envAdds (varBinds xs ts) . envAddR
     -- tyBinds              = [(Loc (srcPos l) α, tVar α) | α <- αs]
 
 validInst γ (l, ts)
-  = case [β | β <-  HS.toList $ free ts, not ((tVarId β) `envMem` γ)] of
+  = case [β | β <-  HS.toList $ free $ ts, not ((tVarId β) `envMem` γ)] of
       [] -> Nothing
       βs -> Just (l, errorFreeTyVar βs)
    
@@ -361,11 +361,11 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         let rt             = envFindReturn γ 
         (σ_in, σ_out)     <- getFunHeaps γ
         θ                 <- unifyTypeM l "Return" eo t rt 
-        -- Now we may need to wind up any new locations so that
-        -- heap subtyping and unification will go through
-        (γ,σ')            <- windSpecLocations (γ,σ') l σ_out -- t
         -- Now unify heap
         θ                 <- unifyHeapsM l "Return" σ' σ_out
+        -- Now we may need to wind up any new locations so that
+        -- heap subtyping and unification will go through
+        (γ,σ')            <- windSpecLocations (γ,σ') l σ_out
         -- Apply the substitutions
         let (rt', t')       = mapPair (apply θ) (rt,t)
         σ'                <- safeHeapSubstM σ'
@@ -379,7 +379,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- necessary based on the direction of the subtyping outcome
         -- eHeap             <- freshHeapVar l "return_heap"
         maybeM_ (\e -> castM e t' rt') eo
-        castHeapM γ l σ' σ_out
+        castHeapM γ l (tracePP "sig out" σ') σ_out
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -405,10 +405,11 @@ windLocations (γ,σ) l = getUnwound >>= windLocations' (γ,σ) l
 windLocations' (γ,σ) l = foldM (windLocation l) (γ,σ) . uwOrder σ
 
 windLocation l (γ,σ) (loc, tWind, _)
-  = do let σt       = restrictHeap [loc] σ
-       let σc       = foldl (flip heapDel) σ $ heapLocs σt
-       (_, _, t')  <- windType γ l loc tWind σt
-       σ           <- safeHeapSubstM (heapUpd loc t' σc)
+  = do let σt       = restrictHeap [loc] $ tracePP ("winding " ++ loc) σ
+       -- let σc       = foldl (flip heapDel) σ $ heapLocs σt
+       (_, σe, t')  <- windType γ l loc tWind σt
+       let σc       = foldl (flip heapDel) σ $ heapLocs σe
+       σ           <- tracePP ("wound heap " ++ loc) <$> safeHeapSubstM (heapUpd loc t' σc)
        uw          <- getUnwound
        setUnwound $ (filter (not.(== loc).fst3)) uw
        return (γ,σ)
@@ -417,19 +418,21 @@ windType γ l loc tWind@(Id _ i) σ
   = do (θα,t')      <- freshApp l tWind
        (σe, t'',θl) <- unwindTC t'
        let ls        = L.nub $ loc : heapLocs σe ++ locs t''
-       et           <- freshHeapVar l ("wind<" ++ i ++ ">")
-       eh           <- freshHeapVar l ("wind<" ++ i ++ ">_heap")
-       let σ'        = heapAdd loc t'' σe
-       θ            <- unifyHeapsM l "Wind(heap)" σ' σ
+       let σ'        = heapAdd "windType" loc t'' σe
+       θ'            <- tracePP ("Theta of winding " ++ loc) <$> unifyHeapsM l "Wind(heap)" (tracePP "wind prime" σ') (tracePP "wind" σ)
+       (σ_in,σ_out) <- getFunHeaps γ
+       let (θ,θr)    = tracePP "renames" $ partitionRenames θ' σ_in σ_out 
+       recordRenameM (ann l) (θ,θr)
        let θ_inst    = θα `mappend` θl
-           (σ1, σ2)  = mapPair (apply θ) (σ, σ')
+           (σ1, σ2)  = mapPair (apply θ) (σ,σ')
            ls'       = apply θ ls
        -- There may be locations (never unwound) that need to get wound up at this point
-           wls       = filter (needWind σ1) $ woundLocations σ2
+           σe'       = apply θ σe
+           wls       = filter (needWind σe') $ woundLocations σ2
        (_,σ1')      <- windLocations' (γ,σ1) l wls
        castHeapM γ l σ1' σ2
-       recordWindExpr (ann l) (loc, tWind) θ_inst 
-       return (θ,apply θ σe,apply θ t')
+       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst `mappend` θ)
+       return (θ,σe',apply θ t')
   where 
     dropThird (a,b,_)  = (a,b)
     needWind σ (l,t,_) = case L.lookup l $ map dropThird $ woundLocations σ of
@@ -449,8 +452,8 @@ uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
 windSpecLocations (γ,σ) l σ_spec
   = do θ         <- getSubst
        σ         <- safeHeapSubstM σ
-       let wls    = woundLocations σ_spec
-       let tlocs  = heapLocs σ
+       let wls    = tracePP "windSpecLocations spec" $ woundLocations σ_spec
+       let tlocs  = tracePP "windSpecLocations locs" $ heapLocs σ
        let uwls   = [ (l,i,θ) | (l,i,θ) <- wls
                               , (apply θ l) `elem` tlocs
                               , not . isWoundTy $ heapRead "windSpecLocations" l σ ]
@@ -507,7 +510,8 @@ tcDotAsgn (γ,σ) l x f e
        let updFun        = if length ls == 1 then updHeapField else wUpdHeapField
        -- ts'              <- mapM (updHeapField σ' t) ls
        ts'              <- mapM (updFun σ' t) ls
-       return $ Just (γ, heapCombineWith const [heapFromBinds $ zip ls ts', σ])
+       let σ_asgn        = heapFromBinds "tcDotAsgn" $ zip ls ts'
+       return $ Just (γ, heapCombineWith const [σ_asgn, σ'])
        -- return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ' $ zip ls ts')
   where  
     updHeapField  σ t loc = return $ updateField t (F.symbol f) (heapRead "updHeapField"  loc σ)
@@ -623,7 +627,7 @@ tcCall (γ,σ) l fn es ft
         castsM es ts' its' 
         castHeapM γ l σ' σi
         checkDisjoint σo
-        let σ_out = heapCombine [subtr θ σ' σi, apply θ σo]
+        let σ_out = heapCombine "tcCall" [subtr θ σ' σi, apply θ σo]
         return (apply θ ot, apply θ σ_out)
     where
       subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
@@ -645,7 +649,7 @@ tcObject (γ,σ) l bs
        (ts,σ')      <- foldM (tcExprs γ) ([],σ) es
        let bts       =  zipWith B (map F.symbol ps) ts
        let t         = TObj bts F.top 
-       return (tRef loc, heapAdd loc t σ')
+       return (tRef loc, heapAdd "tcObject" loc t σ')
 
 ----------------------------------------------------------------------------------
 tcAccess ::  (Ord r, F.Reftable r, PP r, F.Symbolic s,
@@ -673,9 +677,9 @@ unpackAccess l σ acc
        return env
   where
     env             = (mkUnion rs, heapCombineWith const [σ_unfold,σ_new,σ])
-    (ls, ls')       = mapPair heapLocs (σ,σ_new)
-    σ_new           = heapCombine   $ catMaybes hs 
-    σ_unfold        = heapFromBinds $ [ (l,t) | (l, Just t) <-  ufs ]
+    (ls, ls')       = mapPair heapLocs (σ, σ_new)
+    σ_new           = heapCombine   "unpackAccess new" $ catMaybes hs 
+    σ_unfold        = heapFromBinds "unpackAccess unfold" $ [ (l,t) | (l, Just t) <-  ufs ]
     (rs, hs, ufs)   = unzip3 $ unpk <$> acc
     unwinds         = [(l,i) | (l, Just i) <- map (fmap (fmap fst3 . ac_unfold)) acc ]
     unpk (l,a)      = (ac_result a, ac_heap a, (l, thd3 <$> ac_unfold a))

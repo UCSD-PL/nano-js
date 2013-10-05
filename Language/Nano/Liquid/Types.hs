@@ -301,7 +301,7 @@ mapReftBindM f (B x t)         = B x <$> mapReftM f t
 
 mapReftHeapM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RHeap a -> m (RHeap b)
 mapReftHeapM f h               =
-    mapM mapBindM (heapBinds h) >>= (return . heapFromBinds)
+    mapM mapBindM (heapBinds h) >>= (return . heapFromBinds "mapReftHeapM")
         where mapBindM (l, t) = do t' <- mapReftM f t
                                    return (l, t')
 

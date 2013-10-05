@@ -170,7 +170,7 @@ data TCState r = TCS {
                    }
 
 type TCM r    = ErrorT String (State (TCState r))
-type WindCall r = (Location, Id SourceSpan)
+type WindCall r = (Location, [Location], Id SourceSpan)
 
 -------------------------------------------------------------------------------
 whenLoud :: TCM r () -> TCM r ()
@@ -375,7 +375,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
     joinAccess as = Access { ac_result = mkUnion $ ac_result <$> as
                            , ac_cast   = mkUnion $ ac_cast   <$> as
                            , ac_unfold = safeUnfoldTy <$> traverse ac_unfold as
-                           , ac_heap   = heapCombine  <$> traverse ac_heap as
+                           , ac_heap   = heapCombine "safeDotAccess" <$> traverse ac_heap as
                            }
     freshen a = case ac_heap a of
                   Nothing -> return a
@@ -544,7 +544,9 @@ freshHeap :: (PP r, Ord r, F.Reftable r) =>
   RHeap r -> TCM r (RSubst r,RSubst r,RHeap r)
 -------------------------------------------------------------------------------
 freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
-                   return (θ, θ', apply θ h)
+                   γ      <- getTDefs
+                   let σ' = eitherHeap "freshHeap" id $ safeHeapSubst γ θ (Right <$> h)
+                   return (θ, θ', σ')
   where
     nilSub           = (mempty,mempty)
     freshen (θ,θ') l =
@@ -599,12 +601,12 @@ recordRenameM l (θ,θr)
 recordWindExpr :: (PP r, F.Reftable r) => 
   SourceSpan -> WindCall r -> RSubst r -> TCM r ()
 -------------------------------------------------------------------------------
-recordWindExpr l p@(loc,t) θ 
+recordWindExpr l p@(loc,locs,t) θ 
   = addWind >> addAnn (srcPos l) windInst
   where
-    windInst = uncurry (WindInst loc t) $ toLists θ
+    windInst = uncurry (WindInst loc locs t) $ toLists θ
     addWind  = modify $ \s -> s {
-      tc_winds = M.insertWith (flip (++)) l [p] $ tc_winds s
+      tc_winds = M.insertWith (++) l [p] $ tc_winds s
       }
 
 -------------------------------------------------------------------------------
@@ -645,9 +647,9 @@ unwindTC :: (PP r, Ord r, F.Reftable r) =>
 unwindTC = go heapEmpty mempty
   where go σ θ' t@(TApp (TDef _) _ _) = do
           (σu, tu, θ'') <- unfoldSafeTC t
-          (θ''',_,σu') <- freshHeap σu
+          (θ''',_,σu')  <- freshHeap σu
           let θ = θ' `mappend` θ'' `mappend` θ'''
-              σ' = heapCombine [σu',σ]
+              σ' = heapCombine "unwindTC" [σu',σ]
           case tu of
             t'@(TApp (TDef _) _ _) -> go σ' θ (apply θ t')
             _                      -> return (σ', apply θ tu, θ)
@@ -690,12 +692,15 @@ safeHeapSubstM :: (Ord r, PP r, F.Reftable r) =>
 safeHeapSubstM σ = do
   θ <- getSubst
   γ <- getTDefs
-  return $ heapFromBinds [(l,t) | (l, Right t) <- heapBinds $ safeHeapSubst γ θ (Right <$> σ)]
+  return . eitherHeap "safeHeapSubstM" id $ safeHeapSubst γ θ (Right <$> σ)
+  -- return $ heapFromBinds [(l,t) | (l, Right t) <- heapBinds $ safeHeapSubst γ θ (Right <$> σ)]
                                       
 safeHeapSubstWithM f σ = do
   θ <- getSubst
   γ <- getTDefs
   return $ safeHeapSubstWith f γ θ (Right <$> σ)
+  
+eitherHeap msg f = (either (error msg) f <$>)
 
 ----------------------------------------------------------------------------------
 unifyTypeM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l) =>
@@ -739,7 +744,8 @@ normalizeHeaps γ l σ1 σ2
   = do castEnvLocs l γ l2s
        return $ mapPair (buildHeap both) (σ1, σ2)
   where
-    buildHeap ls σ   = heapFromBinds . filter (flip elem ls.fst) . heapBinds $ σ
+    buildHeap ls σ   = heapFromBinds "normalizeHeaps" . normFilter ls . heapBinds $ σ
+    normFilter ls    = filter (flip elem ls . fst)
     (l1s, both, l2s) = heapSplit σ1 σ2
     
 castEnvLocs a γ ls 
@@ -902,35 +908,41 @@ heapPatchPgm winds unwinds hm pgm =
                            }
           return $ case (ws, uws) of
                      ([],[])  -> s
-                     ([],uws) -> buildWindCalls True  UnwindAll uws s
-                     (ws,[])  -> buildWindCalls True  WindAll   ws  s
+                     ([],uws) -> buildUnwindCalls uws s
+                     (ws,[])  -> buildWindCalls ws  s
                      _        -> error $ errorSameLoc s
         clearAnnot l = M.delete (ann l)
         lookupStmt l = M.findWithDefault [] (ann l)
         errorSameLoc s = (printf "BUG: wind and unwind at %s" (ppshow s))
 
-buildWindCalls pre fn ws s 
-  = patchStmt pre windStmts s 
+buildWindCalls ws s 
+  = patchStmt windStmts s 
   where 
-    display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
-    windStmts                 = [fn l $ map display ws] -- map (buildWind l) ws
+    display (j,ls,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow (j:ls)) (ppshow i))
+    windStmts                 = [WindAll l $ map display ws] -- map (buildWind l) ws
     l                         = getAnnotation s
     
-patchStmt _   ws (ReturnStmt l e)     = 
+buildUnwindCalls uws s
+  = patchStmt unwindStmts s 
+  where 
+    display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
+    unwindStmts               = [UnwindAll l $ map display uws] -- map (buildWind l) ws
+    l                         = getAnnotation s
+    
+patchStmt ws (ReturnStmt l e)     = 
   BlockStmt l $ ws ++ [ReturnStmt l e]
 
-patchStmt pre ws (BlockStmt l ss)     = 
-  BlockStmt l $ -- if pre then ws ++ ss else
-                  ss ++ ws
+patchStmt ws (BlockStmt l ss)     = 
+  BlockStmt l $ ss ++ ws
 
-patchStmt pre ws (IfStmt l e s1 s2)   = 
-  IfStmt l e s1 (patchStmt pre ws s2)
+patchStmt ws (IfStmt l e s1 s2)   = 
+  IfStmt l e s1 (patchStmt ws s2)
                                       
-patchStmt pre ws (IfSingleStmt l e s) = 
+patchStmt ws (IfSingleStmt l e s) = 
   IfStmt l e s (BlockStmt l ws)                                      
 
-patchStmt pre ws s                    = 
-  BlockStmt (getAnnotation s) $ if pre then ws ++[s] else (s:ws)
+patchStmt ws s                    = 
+  BlockStmt (getAnnotation s) $  ws ++ [s]
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])

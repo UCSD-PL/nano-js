@@ -78,8 +78,8 @@ windFnTemplate n αs σ σ'
 woundType d αs = TApp d (fmap tVar αs) F.top
                                    
 locArg  = B (F.symbol windLoc) (tRef windLoc)
-locHeap t   = heapAdd windLoc t $ heapEmpty
-locPreWindHeap t σ = heapCombine [locHeap t, σ]
+locHeap t   = heapAdd "locHeap" windLoc t $ heapEmpty
+locPreWindHeap t σ = heapCombine "locPreWindHeap" [locHeap t, σ]
 locWindHeap d =locHeap d
                
 foldAlls [] t = t               

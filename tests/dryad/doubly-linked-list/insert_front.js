@@ -1,12 +1,18 @@
-import "doubly-linked-list.js"
+//import "doubly-linked-list.js"
 
-/*@ insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/v |-> keys(v) = set_cup(keys(x,h), set_singleton(k))} */
+/*@ type dlist[A,S,P] exists! l |-> dlist[A, <l>, S] . { data: A, next:<l>+null, prev:P } */
+
+/* insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/v |-> keys(v) = set_cup(keys(x,h), set_singleton(k))} */
+
+/*@ insert :: forall A. (x:<x>+{null | true}, k:A)/x |-> dlist[A,<x>,null] => <v>/v |-> dlist[A,<v>,null] */
 function insert(x, k){
   var y  = {};
-  y.prev = null;
   y.data = k;
   y.next = x;
-  if (x) { x.prev = y; }
+  y.prev = null;
+  if (typeof(x) != "null") {
+      x.prev = y;
+  }
   return y;
 }
 

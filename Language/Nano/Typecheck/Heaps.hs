@@ -64,13 +64,13 @@ heapEmpty :: Heap t
 heapEmpty = H M.empty
 
 -- | List of Bindings -> Heap
-heapFromBinds :: (PP t) => [(Location, t)] -> Heap t
-heapFromBinds bs = foldl (\h (l,t) -> heapAdd l t h) heapEmpty bs
+heapFromBinds :: (PP t) => String -> [(Location, t)] -> Heap t
+heapFromBinds m bs = foldl (\h (l,t) -> heapAdd m l t h) heapEmpty bs
 
 -- | Add a binding to a heap
-heapAdd :: (PP t) => Location -> t -> Heap t -> Heap t
-heapAdd l t (H h) | not (M.member l h) = heapUpd l t (H h)
-heapAdd l _ h = error "Adding duplicate location to heap"
+heapAdd :: (PP t) => String -> Location -> t -> Heap t -> Heap t
+heapAdd m l t (H h) | not (M.member l h) = heapUpd l t (H h)
+heapAdd m l _ h = error $ m ++ ": Adding duplicate location to heap"
 
 heapUpd :: Location -> t -> Heap t -> Heap t
 heapUpd l t (H h) = H $ M.insert l t h                                      
@@ -88,8 +88,8 @@ heapRead m l (H h) = if M.member l h then
                          error $ printf "[%s] Location %s not in heap\n" m l
 
 -- | Combine a list of heaps
-heapCombine :: (PP t) => [Heap t] -> Heap t
-heapCombine = heapFromBinds . join . map heapBinds 
+heapCombine :: (PP t) => String -> [Heap t] -> Heap t
+heapCombine m = heapFromBinds m . join . map heapBinds 
 
 heapCombineWith :: (t -> t -> t) -> [Heap t] -> Heap t               
 heapCombineWith f hs = foldl combine heapEmpty hs

@@ -9,13 +9,15 @@
 /*@ remove :: forall A. (x:<l>+null, k:A)/l |-> list[A] => <m>+null/m |-> list[A] */
 function remove(x, k){
   if (typeof(x) != "null") {
-    var n = remove(x.next, k);
-    if (x.data == k) {
-      return n;
-    } else {
-      x.next = n;
-      return x;
-    }
+    var xn = x.next;
+    var n = remove(xn, k);
+    // if (x.data == k) {
+    //   return n;
+    // } else {
+    //   // x.next = n;
+    //   return x;
+    // }
+      return null;
   } else {
     return null;
   } 

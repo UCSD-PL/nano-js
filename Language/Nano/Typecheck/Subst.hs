@@ -115,7 +115,7 @@ instance Substitutable r Location where
 instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
     Substitutable r (Heap (RType r)) where
   apply θ h =
-      heapFromBinds $ map (\(l,t) -> (apply θ l, apply θ t)) $ heapBinds h
+      heapFromBinds "apply" $ map (\(l, t) -> (apply θ l,apply θ t)) $ heapBinds h
 
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
@@ -143,8 +143,8 @@ instance Substitutable () Fact where
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
   apply θ (Rename ls)     = Rename $ apply θ ls
-  apply θ (WindInst l t αs ls) =
-    WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
+  apply θ (WindInst l wls t αs ls) =
+    WindInst (apply θ l) (apply θ wls) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
   apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
 
 instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
@@ -154,8 +154,8 @@ instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
   apply θ (Rename ls)     = Rename $ apply θ ls
-  apply θ (WindInst l t αs ls) =
-    WindInst (apply θ l) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
+  apply θ (WindInst l wls t αs ls) =
+    WindInst (apply θ l) (apply θ wls) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
   apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
 
 
@@ -165,7 +165,7 @@ instance Free Fact where
   free (LocInst _)        = S.empty
   free (Assume t)         = free t
   free (AssumeH h)        = free h
-  free (WindInst _ _ ts _) = free. snd . unzip $ ts
+  free (WindInst _ _ _ ts _) = free. snd . unzip $ ts
   free (UnwindInst _ _ _)  = S.empty
   free (Rename ls)        = S.empty
 
@@ -175,7 +175,7 @@ instance Free (Fact_ r) where
   free (LocInst _)      = S.empty
   free (Assume t)       = free t
   free (AssumeH h)      = free h
-  free (WindInst _ _ ts _) = free. snd . unzip $ ts
+  free (WindInst _ _ _ ts _) = free. snd . unzip $ ts
   free (UnwindInst _ _ _)  = S.empty
   free (Rename ls)      = S.empty
  
@@ -192,7 +192,7 @@ appTy θ@(Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α (apply θ h) (apply (S
 
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (go h) (go h') r
-      where go            = heapFromBinds . map appBind . heapBinds 
+      where go            = heapFromBinds "appTyFun" . map appBind . heapBinds 
             appBind (l,t) = (apply θ l, apply θ t)
 -- | Unfold the FIRST TDef at any part of the type @t@.
 -------------------------------------------------------------------------------

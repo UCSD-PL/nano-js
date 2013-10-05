@@ -124,7 +124,7 @@ heapP
   =  (reserved "emp" >> return heapEmpty)
  <|> do (l,t) <- heapBindP
         h     <- (try (reserved "*" >> heapP)) <|> return heapEmpty 
-        return (heapAdd l t h)
+        return (heapAdd "heapP" l t h)
 
 heapBindP
   = do l <- locationP

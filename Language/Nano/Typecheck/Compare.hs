@@ -522,7 +522,7 @@ bkPaddedObject t1@(TObj xt1s _) t2@(TObj xt2s _) =
   where 
     checkB b b' | b_sym b == b_sym b' = (b_type b, b_type b')
     checkB _ _                        = 
-      errorstar (printf "unimplemented: bkPaddedObject: cannot split %s %s" (ppshow t1) (ppshow t2))
+      errorstar (printf "unimplemented: bkPaddedObject: cannot split %s %s" (ppshow $ toType t1) (ppshow $ toType t2))
 bkPaddedObject _ _                    = 
   errorstar "bkPaddedObject: can only break objects"
 
