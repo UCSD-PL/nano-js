@@ -10,9 +10,11 @@ function insert(x, k){
   y.data = k;
   y.next = x;
   y.prev = null;
+
   if (typeof(x) != "null") {
       x.prev = y;
   }
+
   return y;
 }
 

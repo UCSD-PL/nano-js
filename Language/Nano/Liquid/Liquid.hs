@@ -263,7 +263,7 @@ consStmt g s@(FunctionStmt _ _ _ _)
 consStmt g (WindAll l _)    
   = Just <$> foldM (consWind l) g ws
   where
-    ws = reverse [ (l,wls,t,fromLists αs ls) | WindInst l wls t αs ls <- ann_fact l ]
+    ws = tracePP "consWind winding" $ [ (l,wls,t,fromLists αs ls) | WindInst l wls t αs ls <- ann_fact l ]
 
 consStmt g (UnwindAll l _)    
   = Just <$> foldM (consUnwind l) g ws
@@ -459,7 +459,7 @@ consCall :: (PP a)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
 consCall g l _ es ft 
-  = do (_,its,hi,ho,ot)   <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+  = do (_,its,hi,ho,ot)  <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')         <- consScan consExpr g es
        let (su, ts')     = renameBinds its xes
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] ts'
@@ -522,8 +522,9 @@ consWind :: AnnTypeR -> CGEnv -> (Location, [Location], Id SourceSpan, RSubst F.
 ---------------------------------------------------------------------------------
 consWind l g (m, wls, ty, θ) = 
   do 
+    -- let θ = θ' `mappend` head [ fromLists [] ls | Rename ls <- ann_fact l ]
     (σw, tw, t) <- tracePP ("winding up " ++ m) <$> freshTyWind g l θ ty
-    subTypeWind l g σw (heapRead "consWind" m $ (tracePP "consWind heap" (fmap toType $ rheap g) `seq` rheap g)) tw
+    subTypeWind l g σw (heapRead "consWind" (apply θ m) $ (tracePP "consWind heap" (fmap toType $ rheap g) `seq` rheap g)) tw
     -- let ls = tracePP "winding: restrict locs" $ heapLocs $ restrictHeap [m] (rheap g)
     return $ g { rheap = tracePP "winding: new" $ heapAdd "consWind" m t $ heapDiff (rheap g) $ tracePP "consWind wls" (m:wls) }
     where
@@ -554,7 +555,7 @@ consRename :: AnnTypeR -> CGEnv -> RSubst F.Reft -> CGM (CGEnv)
 ---------------------------------------------------------------------------------
 consRename _ g θ
   = do return g { renv  = envMap (apply θ') (renv g)
-                , rheap = apply θ' (rheap g)
+                , rheap = (\h -> tracePP "renamed heap" (fmap toType h) `seq`h )$ apply θ' (tracePP "heap to rename" (toType <$> rheap g)`seq`rheap g)
                 }
     where
       θ'          = fromLists [] . filter okSub . snd . toLists $ θ :: RSubst F.Reft

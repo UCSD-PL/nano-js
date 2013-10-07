@@ -237,7 +237,7 @@ withFun f m = do fOld <- tc_fun <$> get
                  return r
 
 -------------------------------------------------------------------------------
-extSubst :: (F.Reftable r, PP r) => [TVar] -> TCM r ()
+extSubst :: (PP r, Ord r, F.Reftable r) => [TVar] -> TCM r ()
 -------------------------------------------------------------------------------
 extSubst βs = getSubst >>= setSubst . (`mappend` θ')
   where 
@@ -257,7 +257,7 @@ logError l msg x = (modify $ \st -> st { tc_errss = (l,msg):(tc_errss st)}) >> r
 
 
 -------------------------------------------------------------------------------
-freshFun :: (PP r, PP fn, F.Reftable r) =>
+freshFun :: (PP r, PP fn, Ord r, F.Reftable r) =>
   AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 -------------------------------------------------------------------------------
 freshFun l fn ft
@@ -275,7 +275,7 @@ freshFun l fn ft
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
     
-freshApp :: (F.Reftable r, PP r) => AnnSSA_ r -> Id SourceSpan -> TCM r (RSubst r, RType r) 
+freshApp :: (F.Reftable r, Ord r, PP r) => AnnSSA_ r -> Id SourceSpan -> TCM r (RSubst r, RType r) 
 freshApp l i@(Id _ d)
   = do γ <- getTDefs
        case envFindTy d γ of
@@ -298,12 +298,12 @@ freshLocation l = do loc <- freshLocation'
                      return loc
        
 -------------------------------------------------------------------------------
-freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r ([RType r],RType r)
+freshTyArgs :: (PP r, Ord r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r ([RType r],RType r)
 -------------------------------------------------------------------------------
 freshTyArgs l (αs, t) 
   = (`apply` (tVar <$> αs,t)) <$> freshSubst l αs
 
-freshSubst :: (PP r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
+freshSubst :: (PP r, Ord r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
 freshSubst l αs
   = do
       fUnique αs
@@ -370,22 +370,27 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _)
                        castM e' (heapRead "safeDotAccess'" l σ) (ac_cast a)
                        return $ Just (l, a) 
   where
-    safeUnfoldTy [u] = u
+    safeUnfoldTy [u]     = u
     safeUnfoldTy _       = error $ "TBD: handle fancy unions"
     joinAccess as = Access { ac_result = mkUnion $ ac_result <$> as
                            , ac_cast   = mkUnion $ ac_cast   <$> as
                            , ac_unfold = safeUnfoldTy <$> traverse ac_unfold as
                            , ac_heap   = heapCombine "safeDotAccess" <$> traverse ac_heap as
                            }
-    freshen a = case ac_heap a of
-                  Nothing -> return a
-                  Just σ  -> do (θ,_,σ') <- freshHeap σ
-                                return $ a { ac_result = apply θ  $ ac_result a
-                                           , ac_cast   = apply θ  $ ac_cast a
-                                           , ac_heap   = Just σ'
-                                           , ac_unfold = appUf θ <$> ac_unfold a
-                                           }
-    appUf θ (l,θ',t) = (l, θ' `mappend` θ, apply θ t)
+    freshen a = case (snd3 <$> ac_unfold a, ac_heap a) of
+                  (Nothing, Nothing) -> return a
+                  (Just θ,  Nothing) -> return $ a { ac_result = apply θ  $ ac_result a
+                                                   , ac_cast   = apply θ  $ ac_cast a
+                                                   , ac_unfold = appUf θ <$> ac_unfold a
+                                                   }
+                  (Just θ, Just σ)   -> do (θi,_,σ') <- freshHeap σ
+                                           return $ a { ac_result = apply θ . apply θi  $ ac_result a
+                                                      , ac_cast   = apply θ . apply θi  $ ac_cast a
+                                                      , ac_heap   = Just . apply θ $ σ'
+                                                      , ac_unfold = appUf θ . appUf θi <$> ac_unfold a
+                                                      }
+                  _                  -> error "BUG: safeDotAccess' didn't expect heap without unfold"
+    appUf θ (l,θ',t) = (l, θ `mappend` θ', apply θ t)
 
 safeDotAccess' σ f _ = return Nothing
     
@@ -426,7 +431,8 @@ accumAnn check act
        modify $ \st -> st {tc_anns = m} {tc_annss = m' : tc_annss st}
 
 -------------------------------------------------------------------------------
-execute     ::  (PP r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCM r a -> Either [(SourceSpan, String)] a
+execute     ::  (PP r, Ord r, F.Reftable r) 
+                => V.Verbosity -> Nano z (RType r) -> TCM r a -> Either [(SourceSpan, String)] a
 -------------------------------------------------------------------------------
 execute verb pgm act 
   = case runState (runErrorT act) $ initState verb pgm of 
@@ -434,7 +440,7 @@ execute verb pgm act
       (Right x, st) ->  applyNonNull (Right x) Left (reverse $ tc_errss st)
 
 
-initState :: (PP r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCState r
+initState :: (PP r, Ord r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCState r
 initState verb pgm = TCS { tc_errss   = []
                          , tc_subst   = mempty
                          , tc_cnt     = 0
@@ -571,21 +577,21 @@ freshHeapVar l x
 
 -- | Monadic unfolding
 -------------------------------------------------------------------------------
-unfoldFirstTC :: (PP r, F.Reftable r) => RType r -> TCM r (RType r)
+unfoldFirstTC :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RType r)
 -------------------------------------------------------------------------------
 unfoldFirstTC t = getTDefs >>= \γ -> return $ unfoldFirst γ t
 
 
 -------------------------------------------------------------------------------
-unfoldSafeTC :: (PP r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r, RSubst r)
+unfoldSafeTC :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
 recordRenameM :: (Ord r, PP r, F.Reftable r) =>
-  SourceSpan -> (RSubst r, RSubst r) -> TCM r ()
+  SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r ()
 -------------------------------------------------------------------------------
-recordRenameM l (θ,θr)  
+recordRenameM l (θ,θr,θrInv)  
   = setSubst θ >> setRename θr
   where
     setRename θr = do m <- tc_renames <$> get
@@ -593,6 +599,7 @@ recordRenameM l (θ,θr)
                       when (toLists θr /= ([],[])) $ do 
                         addRename θr
                         addAnn l . Rename . snd $ toLists θr
+                        
     addRename θr = modify $ \s -> s {
       tc_renames = M.insert l θr (tc_renames s)
       }
@@ -648,8 +655,8 @@ unwindTC = go heapEmpty mempty
   where go σ θ' t@(TApp (TDef _) _ _) = do
           (σu, tu, θ'') <- unfoldSafeTC t
           (θ''',_,σu')  <- freshHeap σu
-          let θ = θ' `mappend` θ'' `mappend` θ'''
-              σ' = heapCombine "unwindTC" [σu',σ]
+          let θ = θ''' `mappend` θ' `mappend` θ''
+              σ' = heapCombine "unwindTC" [apply θ σu',σ]
           case tu of
             t'@(TApp (TDef _) _ _) -> go σ' θ (apply θ t')
             _                      -> return (σ', apply θ tu, θ)

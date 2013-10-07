@@ -11,13 +11,12 @@ function remove(x, k){
   if (typeof(x) != "null") {
     var xn = x.next;
     var n = remove(xn, k);
-    // if (x.data == k) {
-    //   return n;
-    // } else {
-    //   // x.next = n;
-    //   return x;
-    // }
-      return null;
+    if (x.data == k) {
+      return n;
+    } else {
+      x.next = n;
+      return x;
+    }
   } else {
     return null;
   } 

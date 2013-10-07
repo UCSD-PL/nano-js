@@ -918,7 +918,7 @@ subTypeWindTys :: [Location] -> AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefTy
 -------------------------------------------------------------------------------
 subTypeWindTys seen l g σ t1@(TObj _ _) t2@(TObj _ _)
   = do (t1', t2') <- alignTsM t1 t2 
-       subTypeContainers' "Wind" l g ((tracePP "subTypeWindTys" $ toType t1')`seq`t1') ((tracePP "subTypeWindTys" $ toType t2')`seq`t2')
+       subTypeContainers' "Wind" l g (tracePP "subTypeWindTys" t1') (tracePP "subTypeWindTys" t2')
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) $ bkPaddedObject t1 t2
 
 subTypeWindTys seen l g σ t1 t2

@@ -9,23 +9,50 @@
       => <r>/ u |-> rdlist[A,<u>,<r>] * r |-> { dlist[A,<u>] | keys(ret) = set_cup(set_singleton(k), keys(v,h))} 
  */
 
-/*@ insert_at_middle :: forall A.
-      (u:{<u>|true}, k:A, v:<v>)/u |-> { data:A, next:<v>, prev:null } * v |-> dlist[A,<v>,<u>]
-      => <r>/u |-> { data:A, next:<r>, prev:null } * r |-> dlist[A,<r>,<u>]
+/* insert_at_middle :: forall A.
+      (u:{<u>|true}+null, k:A, v:<v>+null)/u |-> { data:A, next:<v>+null, prev:null } * v |-> dlist[A,<v>,<u>+null]
+      => <r>/r |-> { data:A, next:<v>+null, prev:null } * v |-> dlist[A,<v>+null,<r>+null]
  */
-function insert_at_middle (u, k, v){
-  var ret  = {};
-  ret.data = k;
-  ret.next = v;
-  ret.prev = u;
 
-  if (typeof(u) != "null") {
+/*@ insert_at_middle :: forall A.
+      (u:{<u>|true}+null, k:A, s:{<v>| true}+null)/u |-> { data:A, next:<v>, prev:null } * v |-> dlist[A,<v>,<u>+null]
+      => <r>/r |-> dlist[A,<r>,null]
+ */
+function insert_at_middle (u, k, s) {
+  if (typeof(u) == "null") {
+      var ret  = {};
+      ret.data = k;
+      ret.next = s;
+      ret.prev = null;
+
+      if (typeof(s) != "null") {
+          s.prev = ret;
+      }
+
+      return ret;
+  } else {
+      return null;
+      // return u;
+  }
+   /* else {
+      var ret  = {};
+      ret.data = k;
+      ret.next = v;
+      ret.prev = u;
       u.next = ret;
-  }
+      if (typeof(v) != "null") {
+         v.prev = ret; 
+      }
+      return ret;
+  }*/
 
-  if (typeof(v) != "null") {
-      v.prev = ret;
-  }
+  // if (typeof(u) != "null") {
+  //     u.next = ret;
+  // }
 
-  return ret;
+  // if (typeof(v) != "null") {
+  //     v.prev = ret;
+  // }
+
+  // return ret;
 }

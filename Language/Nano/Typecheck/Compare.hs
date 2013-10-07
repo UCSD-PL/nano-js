@@ -570,7 +570,8 @@ zipType1 γ f t1 t2 = zipType2 γ f t2 t1
 -- This function @t2@ with the refinements from @t1@ by matching equivalent 
 -- parts of the two types.
 --------------------------------------------------------------------------------
-zipType2 :: (PP r, F.Reftable r) => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
+zipType2 :: (PP r, Ord r, F.Reftable r)
+  => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
 --------------------------------------------------------------------------------
 zipType2 γ f (TApp TUn ts r) (TApp TUn ts' r')  = 
   TApp TUn (zipTypes γ f ts <$> ts') $ f r r'

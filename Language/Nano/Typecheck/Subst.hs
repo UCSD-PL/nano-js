@@ -120,12 +120,12 @@ instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
 
-instance (PP r, F.Reftable r) => Substitutable r (RType r) where 
+instance (PP r, Ord r, F.Reftable r) => Substitutable r (RType r) where 
   apply θ t = appTy θ t
 --     where 
 --       msg   = printf "apply [θ = %s] [t = %s]" (ppshow θ) (ppshow t)
 
-instance (PP r, F.Reftable r) => Substitutable r (Bind r) where 
+instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where 
   apply θ (B z t) = B z $ appTy θ t
 
 instance Free (RType r) where
@@ -147,7 +147,7 @@ instance Substitutable () Fact where
     WindInst (apply θ l) (apply θ wls) t (map (apply θ <$>) αs) (map (apply θ <$>) ls)
   apply θ (UnwindInst l t ls) = UnwindInst (apply θ l) t (map (apply θ <$>) ls)
 
-instance (PP r, F.Reftable r) => Substitutable r (Fact_ r) where
+instance (PP r, Ord r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply _ x@(PhiVar _)    = x
   apply θ (FunInst ts ls) = FunInst (map (apply θ <$>) ts) (map (apply θ <$>) ls)
   apply θ (LocInst l)     = LocInst (apply θ l)
@@ -183,6 +183,7 @@ instance Free (Fact_ r) where
 -- appTy :: Subst_ r -> RType r -> RType r
 ------------------------------------------------------------------------
 appTy (Su _ m) (TApp (TRef l) t z)    = TApp (TRef $ M.lookupDefault l l m) t z
+appTy θ (TApp TUn ts z)               = mkUnionR z (nub $ apply θ ts)
 appTy θ (TApp c ts z)                 = TApp c (apply θ ts) z 
 appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
@@ -196,7 +197,7 @@ appTyFun θ ts t h h' r =
             appBind (l,t) = (apply θ l, apply θ t)
 -- | Unfold the FIRST TDef at any part of the type @t@.
 -------------------------------------------------------------------------------
-unfoldFirst :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
+unfoldFirst :: (PP r, Ord r, F.Reftable r) => Env (RType r) -> RType r -> RType r
 -------------------------------------------------------------------------------
 unfoldFirst env t = go t
   where 
@@ -222,12 +223,13 @@ unfoldFirst env t = go t
 
 -- TODO: Make sure toplevel refinements are the same.
 -------------------------------------------------------------------------------
-unfoldMaybe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> Either String (RHeap r, RType r, RSubst r)
+unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
+  Env (RType r) -> [Location] -> RType r -> Either String (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                in (apply θ h, apply θ bd, θ)
+                                                in (h, bd, θ)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
@@ -236,7 +238,8 @@ unfoldMaybe _ t                           = Right (heapEmpty, t, mempty)
 
 -- | Force a successful unfolding
 -------------------------------------------------------------------------------
-unfoldSafe :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> (RHeap r, RType r, RSubst r)
+unfoldSafe :: (PP r, Ord r, F.Reftable r) =>
+  Env (RType r) -> RType r -> (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldSafe env = either error id . unfoldMaybe env
 
@@ -292,7 +295,7 @@ dotAccessBase _ _ t               = error $ "dotAccessBase " ++ (ppshow t)
                                 
 dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccessBase γ f t_unfold
   where  
-    (σ_unfold, t_unfold, θ_unfold) = unfoldSafe γ t
+    (σ_unfold, t_unfold, θ_unfold) = unfoldSafe γ $ tracePP "dotAccessDef unfolding" t
     addUnfolded access             = 
       case (ac_heap access, ac_unfold access) of
         (Just x, Just y) -> error $ (printf "BUG: already unfolded and got %s %s" (ppshow x) (ppshow (fst3 y, thd3 y)))
