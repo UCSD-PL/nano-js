@@ -1,23 +1,30 @@
-
 /*@ type dlist[A,S,P] exists! l |-> dlist[A, <l>, S] . { data: A, next:<l>+null, prev:P } */
+
 /* remove :: (x:dlist[A, null], k:A)/h => {v:dlist[A, null]}/v |-> keys(v) = set_minus(keys(x,h), set_singleton(k)) */
 
 /*@ remove :: forall A P.
-  (x:<l>+null,k:A)/ l |-> dlist[A,<l>,P] => <v>+null/v |-> dlist[A,<v>,P] */
+  (x:<l>+{null | true},k:A)/ l |-> dlist[A,<l>,P] => <v>+null/v |-> dlist[A,<v>,null] */
 function remove(x, k){
   if (typeof(x) == "null"){
-    return x;
+      return null;
   } else {
-    var d = x.data;
-    var n = x.next;
+      var d = x.data;
+      var r = remove(x.next,k);
+      x.prev = null;
+      x.next = r;
 
-    if (d == k) {
-        return remove(n,k);
-    } else {
-        var t = remove(n,k);
-        x.next = t;
-        t.prev = x;
-        return x;
-    } 
+      if (d != k) {
+          if (typeof(r) != "null") {
+              r.prev = x;
+          } else {
+          }
+          return x;
+      } else {
+          if (typeof(r) != "null") {
+              r.prev = null;
+          } else {
+          }
+          return r;
+      }
   }
 }

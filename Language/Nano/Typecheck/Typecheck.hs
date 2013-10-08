@@ -192,7 +192,7 @@ tcNano' pgm@(Nano {code = Src fs})
        M.unions <$> getAllAnns
 
 -- patchAnn              :: AnnInfo -> (AnnSSA_ r) -> (AnnType_ r)
-patchAnn m (Ann l fs) = Ann l $ sortNub $ (M.lookupDefault [] l m) ++ fs
+patchAnn m (Ann l fs) = Ann l $ {- sortNub $ -} (M.lookupDefault [] l m) ++ fs
 
 -------------------------------------------------------------------------------
 -- | (RType r) Check Environment ---------------------------------------------------
@@ -214,7 +214,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        checkSigWellFormed l ts t σ σ'
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
-       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList $ tracePP "tcFun a" a))) $  
+       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
@@ -222,7 +222,10 @@ tcFun (γ,_) (FunctionStmt l f xs body)
 
     
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
-
+             
+-- fixupSub as = getSubst >>= \θ -> setSubst (θ `mappend` θr)
+--   where θr = fromList [] $ concat [ map swap ls | Rename ls <- map snd as ]             
+             
 checkSigWellFormed l ts t σ σ'
   = do when (not . all (`heapMem` σ) $ concatMap locs ts) $
          tcError (ann l) (printf "Arguments refer to locations not in %s" (ppshow σ))
@@ -378,10 +381,8 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         recordRenameM (ann l) (tracePP "tcStmt renames" $ partitionRenames θ σ_in σ_out)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
-        -- eHeap             <- freshHeapVar l "return_heap"
         maybeM_ (\e -> castM e t' rt') eo
         castHeapM γ l (tracePP "sig out" σ') σ_out
-        -- error "need to fix up rename stuff!!!!"
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -431,9 +432,11 @@ windType γ l loc tWind@(Id _ i) σ
            σe'       = tracePP "sige'" $ apply θ $ tracePP ("sige loc: " ++ loc) σe
            wls       = tracePP "dependents" $ filter (needWind (tracePP "dependents reference" σ1)) $ tracePP "dependents wound" $ woundLocations $ tracePP ("dependents heap " ++ loc) σ2
        (_,σ1')      <- (\(g,h) -> (g,tracePP "wind recursive result" h)) <$> windLocations' (γ,tracePP "wind recursive" σ1) l wls
+       θ' <- unifyHeapsM l "Wind(heap)" σ2 σ1'
+       let θf = θ `mappend` θ'
        castHeapM γ l σ1' σ2
-       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst `mappend` θ)
-       return (θ, foldl (flip heapDel) σ1' $ heapLocs σe', apply θ t')
+       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst `mappend` θf)
+       return (θf, foldl (flip heapDel) σ1' $ heapLocs σe', apply θf t')
        -- return (θ, tracePP ("windType returning wound up " ++ loc) $ σe',apply θ t')
   where 
     dropThird (a,b,_)  = (a,b)
@@ -510,11 +513,9 @@ tcDotAsgn (γ,σ) l x f e
        (rs,σ')          <- unpackAccess l σ acc
        let ls            = locs x
        let updFun        = if length ls == 1 then updHeapField else wUpdHeapField
-       -- ts'              <- mapM (updHeapField σ' t) ls
        ts'              <- mapM (updFun σ' t) ls
        let σ_asgn        = heapFromBinds "tcDotAsgn" $ zip ls ts'
        return $ Just (γ, heapCombineWith const [σ_asgn, σ'])
-       -- return $ Just (γ, foldl (\σ (l,t) -> heapUpd l t σ) σ' $ zip ls ts')
   where  
     updHeapField  σ t loc = return $ updateField t (F.symbol f) (heapRead "updHeapField"  loc σ)
     wUpdHeapField σ t loc =
@@ -617,19 +618,20 @@ tcCall (γ,σ) l fn es ft
         -- Typecheck argument
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
+        -- θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
+        θ <- unifyTypesM l "tcCall" ts its >> unifyHeapsM l "tcCall" σi σ'
         -- Apply the substitution
         let (ts',its')    = mapPair (apply θ) (ts,its)
         -- This function call may require some locations
         -- to be folded up. Who are we to argue?
         ls                <- maybe (error "BUG: no statement") getAnnotation <$> getStmt
-        (γ,σ')            <- windSpecLocations (γ, σ') ls (apply θ σi)
+        (γ,σ')            <- windSpecLocations (γ, (tracePP "tcCall actual heap wind sub" $ apply θ $ tracePP "tcCall actual heap wind" σ')) ls (tracePP "tcCall formal heap wind sub" $ apply θ $ tracePP "tcCall formal heap wind" σi)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         castsM es ts' its' 
-        castHeapM γ l σ' σi
+        castHeapM γ l (apply θ σ') (apply θ σi)
         checkDisjoint σo
-        let σ_out = heapCombine "tcCall" [subtr θ σ' σi, apply θ σo]
+        let σ_out = tracePP "sig out" $ heapCombine "tcCall" [subtr (tracePP "theta call" θ) (tracePP "actual sig in" σ') (tracePP "spec sig in" σi), tracePP "sig out" $ apply θ σo]
         return (apply θ ot, apply θ σ_out)
     where
       subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
@@ -662,7 +664,7 @@ tcAccess (γ,σ) l e f =
   do (r,σ') <- tcExpr (γ,σ) e
      tcAccess' l σ' r f
 
-tcAccess' l σ t f = safeDotAccess σ f t >>= unpackAccess l σ
+tcAccess' l σ t f = safeDotAccess ((tracePP "safeDotAccess" (σ,f,t))`seq`σ) f t >>= unpackAccess l σ
 
 -- After accessing a field on the heap, unpack the results and:
 --   1. Return the result of the access

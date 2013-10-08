@@ -1,4 +1,4 @@
-import "singly-linked-list.js"
+//import "singly-linked-list.js"
 
 /*@ insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 

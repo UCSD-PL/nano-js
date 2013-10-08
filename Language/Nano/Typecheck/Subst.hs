@@ -224,7 +224,7 @@ unfoldFirst env t = go t
 -- TODO: Make sure toplevel refinements are the same.
 -------------------------------------------------------------------------------
 unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
-  Env (RType r) -> [Location] -> RType r -> Either String (RHeap r, RType r, RSubst r)
+  Env (RType r) -> RType r -> Either String (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of

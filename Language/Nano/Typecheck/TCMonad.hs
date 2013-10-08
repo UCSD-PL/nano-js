@@ -403,14 +403,14 @@ getAnns :: (Ord r, F.Reftable r, Substitutable r (Fact_ r)) => TCM r (AnnInfo_ r
 -------------------------------------------------------------------------------
 getAnns = do θ     <- tc_subst <$> get
              m     <- tc_anns  <$> get
-             let m' = fmap (apply θ . sortNub) m
+             let m' = fmap (apply θ {- . sortNub -}) m
              _     <- modify $ \st -> st { tc_anns = m' }
              return m' 
 
 -------------------------------------------------------------------------------
 addAnn :: SourceSpan -> Fact_ r -> TCM r () 
 -------------------------------------------------------------------------------
-addAnn l f = modify $ \st -> st { tc_anns = inserts l f (tc_anns st) } 
+addAnn l f = do modify $ \st -> st { tc_anns = inserts l f (tc_anns st) } 
 
 -------------------------------------------------------------------------------
 getAllAnns :: TCM r [AnnInfo_ r]  
@@ -560,7 +560,8 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
              return $ (mappend θ  (Su HM.empty (HM.singleton l l')),
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
 
-freshLocation' = tick >>= \n -> return ("_?L" ++ show n)
+-- freshLocation' = tick >>= \n -> return ("_?L" ++ show n)
+freshLocation' = tick >>= \n -> return ("?" ++ show n)
 
 -------------------------------------------------------------------------------
 freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))
@@ -588,12 +589,19 @@ unfoldSafeTC :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RHeap r, RType 
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
-recordRenameM :: (Ord r, PP r, F.Reftable r) =>
+recordRenameM :: (Ord r, PP r, F.Reftable r,
+                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
   SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r ()
 -------------------------------------------------------------------------------
 recordRenameM l (θ,θr,θrInv)  
-  = setSubst θ >> setRename θr
+  = do setSubst θ
+       setRename θr
+       modify $ \st -> st { tc_anns = map fixup <$> tc_anns st }
   where
+    -- fixup f@(FunInst ts ls) = apply θf f
+    -- fixup f                 = f
+    -- fixup f                 = tracePP "!!!Not doing any fixups!!!" f
+    θf                      = θ `mappend` θrInv
     setRename θr = do m <- tc_renames <$> get
                       when (M.member l m) $ tcError l "Multiple Renames"
                       when (toLists θr /= ([],[])) $ do 
