@@ -4,7 +4,8 @@
 
 -- | Top Level for Refinement Type checker
 
-module Language.Nano.Liquid.Liquid (verifyFile) where
+-- module Language.Nano.Liquid.Liquid (verifyFile) where
+module Language.Nano.Liquid.Liquid  where
 
 import           Text.Printf                        (printf)
 -- import           Text.PrettyPrint.HughesPJ          (Doc, text, render, ($+$), (<+>))
@@ -261,7 +262,7 @@ consStmt g s@(FunctionStmt _ _ _ _)
   = Just <$> consFun g s
     
 consStmt g (WindAll l _)    
-  = Just <$> (tracePP "consWind winding" (fst4 <$> ws) `seq` foldM (consWind l) g ws)
+  = Just <$> (tracePP ("consWind winding " ++ (show $ ann l)) (fst4 <$> ws) `seq` foldM (consWind l) g ws)
   where
     ws = reverse [ (l,wls,t,fromLists αs ls) | WindInst l wls t αs ls <- ann_fact l ]
 
@@ -395,7 +396,7 @@ dotAccessM l g f u@(TApp TUn _ _)
 
 dotAccessM _ g f t@(TApp (TRef l) _ _)
   = do γ <- getTDefs
-       let results = fromJust $ dotAccessRef (γ,rheap g) f t
+       let results = fromJust $ dotAccessRef (γ, tracePP "access here" $ rheap g) f t
        return $ [(l, tracePP msg $ foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
     where msg = printf "Accessing %s in heap %s" (ppshow t) (ppshow $ rheap g)
 
@@ -480,7 +481,7 @@ instantiate l g t
     (αs, tbody) = bkAll t
     τs          = map snd ts
     θl          = fromLists [] ls :: RSubst F.Reft
-    (ts,ls)     = head [ (ts,ls) | FunInst ts ls <- ann_fact l ]
+    (ts,ls)     = tracePP ("instantiate " ++ (ppshow $ ann l)) $ head $ tracePP "instantiate pre" [ (ts,ls) | FunInst ts ls <- ann_fact l ]
     {-msg           = printf "instantiate [%s] %s %s" (ppshow $ ann l) (ppshow αs) (ppshow tbody)-}
 
 ---------------------------------------------------------------------------------
@@ -522,10 +523,9 @@ consWind :: AnnTypeR -> CGEnv -> (Location, [Location], Id SourceSpan, RSubst F.
 ---------------------------------------------------------------------------------
 consWind l g (m, wls, ty, θ) = 
   do 
-    -- let θm = case [fromLists [] ls | Rename ls <- ann_fact l ] of
-    --            [θ]    -> θ :: RSubst F.Reft
-    --            _       -> mempty
-    let θm = θ
+    let θm = case [fromLists [] ls | Rename ls <- ann_fact l ] of
+               [θ]    -> θ :: RSubst F.Reft
+               _       -> mempty
     -- let θ = θ' `mappend` head [ fromLists [] ls | Rename ls <- ann_fact l ]
     (σw, tw, t) <- tracePP ("winding up " ++ (apply θm m)) <$> freshTyWind g l (θ`mappend`θm) ty
     subTypeWind l g σw (heapRead "consWind" (apply θm m) $ (tracePP "consWind heap" (fmap toType $ rheap g) `seq` rheap g)) tw
@@ -543,10 +543,10 @@ consUnwind _ g (m, ty, θl) =
     let θ       = θl `mappend` fromLists (zip αs vs) []
         s (l,t) = (apply θ l, apply θ t)
         t'      = apply θ t
-        σ'      = heapFromBinds "consUnwind σ'" . map s . heapBinds $ σ
-    return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ heapUpd  m t' (rheap g)
-                                     , σ'
-                                     ]
+        σ'      = heapFromBinds ("consUnwind σ'") . map s . heapBinds $ σ
+    return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ heapUpd  m t' $ tracePP ("consUnwind "++ m ++" pre") (rheap g)
+                                                                             , σ'
+                                                                             ]
                }
   where 
     vs = case heapRead "consUnwind" m (rheap g) of

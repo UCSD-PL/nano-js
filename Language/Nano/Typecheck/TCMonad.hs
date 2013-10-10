@@ -7,6 +7,7 @@
 {-# LANGUAGE ImpredicativeTypes        #-}
 {-# LANGUAGE LiberalTypeSynonyms       #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE IncoherentInstances       #-}
 
 -- | This module has the code for the Type-Checker Monad. 
 
@@ -51,6 +52,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Annotations
   , accumAnn
   , getAllAnns
+  , undoRenamesM
 
   -- * Unfolding
   , unfoldFirstTC
@@ -113,11 +115,14 @@ import           Language.Nano.Typecheck.WindFuns
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Unify
+import           Language.Nano.Dominators
 import           Language.Nano.Errors
 import           Data.Function                  (on)                  
 import           Data.Monoid                  
+import           Data.Tuple                  
 import qualified Data.HashMap.Strict            as HM
 import qualified Data.Map                       as M
+import qualified Data.Set                       as S
 import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
 import           Data.List                      (find, partition, nub, sort, unzip4, intersect, deleteFirstsBy)
@@ -146,6 +151,7 @@ data TCState r = TCS {
                    -- Annotations
                    , tc_anns     :: AnnInfo_ r
                    , tc_annss    :: [AnnInfo_ r]
+                   , tc_tos      :: M.Map SourceSpan SourceSpan -- Map to containing statement
                    -- Heap bookkeeping
                    , tc_unwound  :: [(Location, Id SourceSpan, RSubst r)] 
                    , tc_winds    :: M.Map SourceSpan [WindCall r]
@@ -270,7 +276,7 @@ freshFun l fn ft
        let (σi',σo')      = mapPair (apply θl) (σi, σo)
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
-       addAnn (srcPos l) $ FunInst (zip (fst bkft) τs) (zip ls ls')
+       addAnn (srcPos l) $ tracePP ("funInst " ++ (ppshow $ ann l)) $ FunInst (zip (fst bkft) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
@@ -410,7 +416,11 @@ getAnns = do θ     <- tc_subst <$> get
 -------------------------------------------------------------------------------
 addAnn :: SourceSpan -> Fact_ r -> TCM r () 
 -------------------------------------------------------------------------------
-addAnn l f = do modify $ \st -> st { tc_anns = inserts l f (tc_anns st) } 
+addAnn l f = do stmt <- getStmt
+                let l' = maybe l (ann . getAnnotation . tracePP "addAnn" ) stmt
+                modify $ \st -> st { tc_anns = inserts l f (tc_anns st) 
+                                   , tc_tos  = M.insert l l' (tc_tos st)
+                                   } 
 
 -------------------------------------------------------------------------------
 getAllAnns :: TCM r [AnnInfo_ r]  
@@ -432,7 +442,7 @@ accumAnn check act
 
 -------------------------------------------------------------------------------
 execute     ::  (PP r, Ord r, F.Reftable r) 
-                => V.Verbosity -> Nano z (RType r) -> TCM r a -> Either [(SourceSpan, String)] a
+                => V.Verbosity -> Nano (AnnSSA_ r) (RType r) -> TCM r a -> Either [(SourceSpan, String)] a
 -------------------------------------------------------------------------------
 execute verb pgm act 
   = case runState (runErrorT act) $ initState verb pgm of 
@@ -440,12 +450,13 @@ execute verb pgm act
       (Right x, st) ->  applyNonNull (Right x) Left (reverse $ tc_errss st)
 
 
-initState :: (PP r, Ord r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCState r
+initState :: (PP r, Ord r, F.Reftable r) => V.Verbosity -> Nano (AnnSSA_ r) (RType r) -> TCState r
 initState verb pgm = TCS { tc_errss   = []
                          , tc_subst   = mempty
                          , tc_cnt     = 0
                          , tc_anns    = HM.empty
                          , tc_annss   = []
+                         , tc_tos     = M.empty
                          , tc_unwound = []
                          , tc_winds   = M.empty
                          , tc_unwinds = M.empty
@@ -591,15 +602,16 @@ unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 -------------------------------------------------------------------------------
 recordRenameM :: (Ord r, PP r, F.Reftable r,
                   Substitutable r (Fact_ r), Free (Fact_ r)) =>
-  SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r ()
+  SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r (RSubst r)
 -------------------------------------------------------------------------------
 recordRenameM l (θ,θr,θrInv)  
   = do setSubst θ
        setRename θr
        modify $ \st -> st { tc_anns = map fixup <$> tc_anns st }
+       return (θ `mappend` θr)
   where
-    -- fixup f@(FunInst ts ls) = apply θf f
-    -- fixup f                 = f
+    -- fixup f@(FunInst ts ls) = apply (tracePP "recordRenameM" θf) $ tracePP "recordRenameM" f
+    fixup f                 = f
     -- fixup f                 = tracePP "!!!Not doing any fixups!!!" f
     θf                      = θ `mappend` θrInv
     setRename θr = do m <- tc_renames <$> get
@@ -996,6 +1008,35 @@ patchExpr m hm e = go a2 AssumeH $ go a1 Assume e
 --     fs = ann_fact a
 --     a  = getAnnotation e
 
-
-
-
+--------------------------------------------------------------------------------
+undoRenamesM :: (Ord r, F.Reftable r, PP r,
+                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
+                (AnnInfo_ r, M.Map (AnnSSA_ r) (S.Set (AnnSSA_ r))) -> TCM r (AnnInfo_ r)
+--------------------------------------------------------------------------------
+undoRenamesM (a, m)
+  = do θ   <- getSubst 
+       toS <- tc_tos <$> get
+       return $ HM.foldlWithKey' (undoRename θ toS m') a a
+  where
+    m' = M.mapKeys ann $ M.map (S.map ann) m
+    
+--------------------------------------------------------------------------------
+undoRename :: (Ord r, F.Reftable r, PP r, 
+                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
+              RSubst r -> M.Map SourceSpan SourceSpan -> M.Map SourceSpan (S.Set SourceSpan) -> AnnInfo_ r -> SourceSpan -> [Fact_ r] -> AnnInfo_ r
+--------------------------------------------------------------------------------
+undoRename θ rev m a l f = HM.insert l (map (fixup θ') f) a
+  where 
+    postDoms = M.findWithDefault S.empty (M.findWithDefault l l rev) m
+    annots   = S.toList $ S.map (flip (HM.lookupDefault []) a) postDoms
+    θ'       = case tracePP "foo" [ rs | fs <- annots, (Rename rs) <- fs ] of
+                 [rs] -> tracePP "subbbb" $ mappend θ $ fromLists [] $ map swap rs
+                 _    -> mempty
+        
+--------------------------------------------------------------------------------
+fixup :: (Ord r, F.Reftable r, PP r, 
+                  Substitutable r (Fact_ r), Free (Fact_ r)) => 
+         RSubst r -> Fact_ r -> Fact_ r
+--------------------------------------------------------------------------------
+-- fixup θ f@(FunInst ts ls) = apply (tracePP "fixup" θ) $ tracePP "fixup fact" f
+fixup _ f                 = f

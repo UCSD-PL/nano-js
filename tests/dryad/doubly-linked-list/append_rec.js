@@ -8,8 +8,8 @@
                => {v:dlist[A,null]}/ v |-> keys(v) = set_cup(keys(x1,h), keys(x2,h)) */
 
 /*@ append :: forall A P.
-  (x1:<l>+null, x2:<m>)/l |-> dlist[A,<l>,P] * m |-> dlist[A,<m>,null]
-    => <k>/k |->dlist[A,<k>,{null | true}] */
+  (x1:<l>+null, x2:<m>+null)/l |-> dlist[A,<l>,P] * m |-> dlist[A,<m>,null]
+    => <k>+null/k |->dlist[A,<k>,{null | true}] */
 function append(x1, x2) {
     if (typeof(x1) != "null") {
         var t = append(x1.next, x2);

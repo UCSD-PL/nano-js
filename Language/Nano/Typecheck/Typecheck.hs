@@ -37,6 +37,7 @@ import           Language.Nano.Typecheck.TCMonad
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Lower
 import           Language.Nano.SSA.SSA
+import           Language.Nano.Dominators
 --import           Language.Nano.HeapTypes.HeapTypes
 
 import qualified Language.Fixpoint.Types            as F
@@ -189,7 +190,13 @@ tcNano p@(Nano {code = Src fs})
 -------------------------------------------------------------------------------
 tcNano' pgm@(Nano {code = Src fs}) 
   = do tcStmts (specs pgm, heapEmpty) fs
-       M.unions <$> getAllAnns
+       -- tcStmts figured out where some
+       -- "meta-statements" need to go (e.g.) renames. 
+       -- However, this was figured out ex-post-facto, so
+       -- undo these renames 
+       as  <- getAllAnns
+       as' <- mapM undoRenamesM (zip as $ postDominators pgm)
+       return $ M.unions as'
 
 -- patchAnn              :: AnnInfo -> (AnnSSA_ r) -> (AnnType_ r)
 patchAnn m (Ann l fs) = Ann l $ {- sortNub $ -} (M.lookupDefault [] l m) ++ fs
@@ -223,9 +230,6 @@ tcFun (γ,_) (FunctionStmt l f xs body)
     
 tcFun _  _ = error "Calling tcFun not on FunctionStatement"
              
--- fixupSub as = getSubst >>= \θ -> setSubst (θ `mappend` θr)
---   where θr = fromList [] $ concat [ map swap ls | Rename ls <- map snd as ]             
-             
 checkSigWellFormed l ts t σ σ'
   = do when (not . all (`heapMem` σ) $ concatMap locs ts) $
          tcError (ann l) (printf "Arguments refer to locations not in %s" (ppshow σ))
@@ -243,16 +247,14 @@ checkHeapClosed l σ =
     ls       = L.nub $ heapLocs σ
     ls'      = L.nub $ concatMap locs $ heapTypes σ
 
-checkLocSubs θ σ =
-    if check locs then
-        return ()
-    else
-        error "Body unifies locations distinct in callee"
+checkLocSubs σ =
+  do θ <- getSubst
+     when (not $ check θ locs) $ error "Body unifies locations distinct in callee"
   where
-    check ls = sameLocs $ mapPair L.nub (ls, apply θ ls)
+    check θ ls = sameLocs $ mapPair L.nub (ls, apply θ ls)
     sameLocs (ls, ls') | length ls == length ls' = all (`elem` ls) ls'
-    sameLocs _         | otherwise               = False
-    locs = heapLocs σ
+    sameLocs _                                   = False
+    locs      = heapLocs σ
 
 
 funTy l f xs 
@@ -340,8 +342,8 @@ tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
     -- TODO: Will have to suppert truthy/falsy later.
         unifyTypeM l "If condition" e t tBool
         uw <- getUnwound
-        e1 <- preWind uw s1 $ tcStmt' (γ, σe) s1
-        e2 <- preWind uw s2 $ tcStmt' (γ, σe) s2
+        e1 <- preWind uw s1 $ tcStmt (γ, σe) s1
+        e2 <- preWind uw s2 $ tcStmt (γ, σe) s2
         envJoin l (γ,σe) e1 e2
     where
       msg s = printf "Unwound in IfStatement %s on statement %s" (ppshow ifstmt) (ppshow s)
@@ -364,25 +366,27 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (t,σ')            <- maybe (return (tVoid,σ')) (tcExpr (γ, tracePP "return heap2" σ')) eo
         let rt             = envFindReturn γ 
         (σ_in, σ_out)     <- getFunHeaps γ
+        θ_old             <- getSubst
         θ                 <- unifyTypeM l "Return" eo t rt
         -- Now unify heap
         θ                 <- unifyHeapsM l "Return" (tracePP "return heap4" σ') σ_out
         -- Apply the substitutions
         let (rt', t')      = mapPair (apply θ) (rt,t)
         σ'                <- safeHeapSubstM σ' 
-        -- Now we may need to wind up any new locations so that
-        -- heap subtyping and unification will go through
-        (γ,σ')            <- windSpecLocations (γ, tracePP "return heap3" σ') l σ_out
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
         -- this location does not appear in the 
         -- output spec
-        checkLocSubs θ σ_out
-        recordRenameM (ann l) (tracePP "tcStmt renames" $ partitionRenames θ σ_in σ_out)
+        θ <- recordRenameM (ann l) (tracePP "tcStmt renames" $ partitionRenames θ_old θ σ_in σ_out)
+        -- Now we may need to wind up any new locations so that
+        -- heap subtyping and unification will go through
+        (γ,σ')            <- windSpecLocations (γ, tracePP "return heap3" (apply θ σ')) l σ_out
+        unifyHeapsM l "Return" σ' σ_out
+        checkLocSubs σ_out
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        castHeapM γ l (tracePP "sig out" σ') σ_out
+        castHeapM γ l (tracePP "sig out" σ') (tracePP "sig out spec" σ_out)
         return Nothing
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
@@ -619,7 +623,7 @@ tcCall (γ,σ) l fn es ft
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
         -- θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
-        θ <- unifyTypesM l "tcCall" ts its >> unifyHeapsM l "tcCall" σi σ'
+        θ <- tracePP "call subst" <$> (unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi)
         -- Apply the substitution
         let (ts',its')    = mapPair (apply θ) (ts,its)
         -- This function call may require some locations
@@ -685,7 +689,7 @@ unpackAccess l σ acc
     σ_new           = tracePP "unpackAccess new" $ heapCombine   "unpackAccess new" $ catMaybes hs 
     σ_unfold        = tracePP "unpackAccess unfold" $ heapFromBinds "unpackAccess unfold" $ [ (l,t) | (l, Just t) <-  ufs ]
     (rs, hs, ufs)   = unzip3 $ unpk <$> acc
-    unwinds         = [(l,i) | (l, Just i) <- map (fmap (fmap fst3 . ac_unfold)) acc ]
+    -- unwinds         = [(l,i) | (l, Just i) <- map (fmap (fmap fst3 . ac_unfold)) acc ]
     unpk (l,a)      = (ac_result a, ac_heap a, (l, thd3 <$> ac_unfold a))
     
 ckDisjoint l l' = 
@@ -739,27 +743,44 @@ varLookup γ l x
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
     
-partitionRenames θ σ1 σ2 = (θ', θr, θrInv)
+partitionRenames :: (F.Reftable r, PP r, Ord r) =>    
+  RSubst r -> RSubst r -> RHeap r -> RHeap r -> (RSubst r, RSubst r, RSubst r)
+partitionRenames θ_old θ σ1 σ2 = (θ', θr, θrInv)
     where 
-      θ'              = tracePP "partitionRenames" $ fromLists (map (apply θrInv <$>) vsubs) lsubs'
-      (θr,θrInv)      = tracePP "renames" $ renames θ σ1 σ2
+      -- θ'             = tracePP "partitionRenames" $ fromLists (map (apply θrInv <$>) vsubs) lsubs'
+      -- (θr,θrInv)     = tracePP "renames" $ renames θ σ1 σ2
+      θ'             = foldl (revertSub θ_old renameLocs) (tracePP "undoing this chap" θ) $ map fst lsubs
+      -- 
+      renameLocs     = tracePP "renames are" . M.keys . locSub $ θrInv
+      -- lsubs'         = L.filter ((`notElem` renameLocs) . fst) lsubs
+      (_, lsubs) = toLists θ
+      -- 
+      (θr,θrInv)     = (fromLists [] sub, fromLists [] (map swap sub))
+      sub            = filter rename $ snd $ toLists θ
+      l1s            = heapLocs σ1
+      l2s            = heapLocs σ2
+      -- rename (l1,l2) = l1 `elem` l1s && l2 `elem` l2s
+      rename (_,l2) = l2 `elem` l2s && l2 `notElem` l1s
 
-      renameLocs      = M.keys . locSub $ θr
-      
-      lsubs'         = L.filter ((`notElem` renameLocs) . fst) lsubs
 
-      (vsubs, lsubs)  = toLists θ
+revertSub :: (F.Reftable r, PP r, Ord r) => RSubst r -> [Location] -> RSubst r -> Location -> RSubst r
+revertSub θ_old renames θ l = 
+  if l `notElem` renames && l' `elem` renames then 
+    doRevert undo vs ls
+  else
+    θ
+  where
+    l'      = apply θ l 
+    (vs,ls) = toLists θ
+    undo    = fromLists [] [(l', apply θ_old l)]
 
-      -- θ'              = delRenames θ θr
-      -- ls              = locSub θ
-      -- delLocs         = foldl (flip M.delete)
-      -- subLocs         = M.keys . locSub
-      -- delRenames θ θr = Su (tySub θ) . delLocs (locSub θ) $ subLocs θr
-    
-renames :: RSubst r -> RHeap r -> RHeap r -> (RSubst r, RSubst r)
-renames θ σ1 σ2     
-  = (fromLists [] sub, fromLists [] (map swap sub))
-    where sub = filter rename $ snd $ toLists θ
-          l1s = heapLocs σ1
-          l2s = heapLocs σ2
-          rename (l1,l2) = l1 `elem` l1s && l2 `elem` l2s
+doRevert :: (F.Reftable r, PP r, Ord r) => RSubst r -> [(TVar, RType r)] -> [(Location, Location)] -> RSubst r
+doRevert θ vs ls       
+  = fromLists (map (apply θ <$>) vs) (map (apply θ <$>) ls)
+-- renames :: RSubst r -> RHeap r -> RHeap r -> (RSubst r, RSubst r)
+-- renames θ σ1 σ2     
+--   = (fromLists [] sub, fromLists [] (map swap sub))
+--     where sub = filter rename $ snd $ toLists θ
+--           l1s = heapLocs σ1
+--           l2s = heapLocs σ2
+--           rename (l1,l2) = l1 `elem` l1s && l2 `elem` l2s
