@@ -1,11 +1,9 @@
-// type list[A] = exists! l |-> list[A]. {  data : A, next : <l> + null }
 
-/*@ measure len :: (?<l>)/l |-> list[A] => number
-  measure len(x) {
-    | (x :: null) => 0 
-    | (x :: <l> ) => 1 + len(x.next) 
-  }
-*/
+/*@ type list[A]<P :: A -> A -> Prop> = 
+       exists! l |-> list[{v:A| (P data v)}]<P>. { data : A, next : <l> + null }
+ */
+
+/*@ type incList[A] = list[A]<{\x y -> x <= y}> */
 
 /*@ measure keys :: (<l> + null) / l |-> list[A] => set[A] 
   measure keys(x) {
