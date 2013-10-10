@@ -429,12 +429,14 @@ joinHeaps l γ g g1 g2
   = do let (σ1,σ2)        = mapPair rheap (g1,g2)
            (one,both,two) = heapSplit σ1 σ2
            (t1s,t2s)      = unzip $ [mapPair (heapRead "joinHeaps" loc) (σ1,σ2) | loc <- both]
-           σ1'            = restrictHeap one σ1
-           σ2'            = restrictHeap two σ2
+           -- σ1'            = restrictHeap one σ1
+           -- σ2'            = restrictHeap two σ2
            t4             = zipWith (compareTs γ) t1s t2s
        ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
        _                 <- mapM (wellFormed l g) ts
        let σ'             = heapCombine "joinHeaps combine " [σj, σ2', σ1']
+           σ1'            = heapFromBinds "joinHeaps one" $ zip one $ map (flip (heapRead "joinHeaps one") σ1) one
+           σ2'            = heapFromBinds "joinHeaps two" $ zip two $ map (flip (heapRead "joinHeaps two") σ2) two
            σj             = heapFromBinds "joinHeaps σj" $ zip both ts
        -- Subtype the common heap locations
        zipWithM_ (subTypeContainers l g1) (map snd4 t4) ts

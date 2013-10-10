@@ -248,7 +248,7 @@ checkHeapClosed l σ =
     ls'      = L.nub $ concatMap locs $ heapTypes σ
 
 checkLocSubs σ =
-  do θ <- getSubst
+  do θ <- tracePP "checkLockSubs" <$> getSubst
      when (not $ check θ locs) $ error "Body unifies locations distinct in callee"
   where
     check θ ls = sameLocs $ mapPair L.nub (ls, apply θ ls)

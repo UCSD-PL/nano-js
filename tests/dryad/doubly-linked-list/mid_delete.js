@@ -9,18 +9,22 @@
       => void/ u |-> {rdlist[A,v] | keys(u) = keys(u,h)} * v |-> { dlist[A,<u>] | keys(v) = keys(v,h)} 
  */
 
-/*@ delete_at_middle :: forall A P R.
-      (p:<p>+null, q:<q>, r:<r>+null)/p |-> dlist[A,<p>,P] * q |-> dlist[A,<q>,<p>+null] * r |-> dlist[A,<r>,R]
-      => void/p |-> dlist[A,<p>,P] * r |-> dlist[A,<r>,<p>+null]
+/*@ delete_at_middle :: forall A.
+      (p:<p>+null, q:<q>, r:<r>+null)/p |-> { data:A, next:{v:<q> | v = q}, prev:null }
+                                    * q |-> { data:A, next:{v:<r> | v = r} + {v:null | v = r}, prev:{v:<p> | v = p} + {v:null | v = p} }
+                                    * r |-> dlist[A,<r>,{v:<q> | v = q}]
+      => void/p |-> { data:A, next:<r>+null, prev:null} * r |-> dlist[A,<r>,<p>+null] 
  */
 function delete_at_middle (p, q, r){
-
+  q.next = null;
+  q.prev = null;
+    
   if (typeof(p) != "null") {
-    p.next = r;
+      p.next = r;
   }
 
   if (typeof(r) != "null") {
-    r.prev = p;
+      r.prev = p;
   }
 
   return;
