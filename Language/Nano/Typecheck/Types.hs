@@ -82,11 +82,12 @@ module Language.Nano.Typecheck.Types (
     
   , restrictHeap  
   , locs
+  , deleteLocsTy
   ) where 
 
 import           Text.Printf
 import           Data.Hashable
-import           Data.Maybe                     (fromMaybe)
+import           Data.Maybe                     (fromMaybe, catMaybes)
 import           Data.Monoid                    hiding ((<>))            
 import qualified Data.List                      as L
 import qualified Data.HashMap.Strict            as M
@@ -203,6 +204,26 @@ locs' (TRef l) = [l]
 locs' _        = []
 
 -- | RHeap utils
+deleteLocsTy :: [Location] -> RType r -> RType r                 
+deleteLocsTy = foldl (\f l -> (deleteLocTy l . f)) id
+
+deleteLocTy l (TObj bs r) = TObj bs' r
+  where
+    bs' = map filterLoc bs
+    filterLoc (B i t) = B i $ deleteLocTy l t
+
+deleteLocTy l t@(TApp _ [] _) = t
+deleteLocTy l   (TApp c ts r) = case ts' of
+                                  [] -> err
+                                  _  -> TApp c ts' r
+  where 
+    ts' = catMaybes $ map (filterLoc l . deleteLocTy l) ts
+    err = errorstar "deleteLocTy: Empty type"
+    filterLoc l (TApp (TRef l') _ _) | l == l' = Nothing
+    filterLoc l t                              = Just t
+
+deleteLocTy _ t               = t      
+                 
 restrictHeap :: (F.Reftable r) => [Location] -> RHeap r -> RHeap r
 restrictHeap [] _ = heapEmpty
 restrictHeap ls h = heapCombineWith const [h1, h2]
@@ -556,6 +577,7 @@ data Fact_  r
   | Assume     !(RType r)
   | AssumeH    !(RHeap r)
   | Rename     ![(Location,Location)]
+  | Delete     ![Location]
     deriving (Eq, Ord, Show, Data, Typeable)
 
 type Fact = Fact_ ()
@@ -592,6 +614,7 @@ instance PP Fact where
   pp (Assume t)       = text "assume" <+> pp t
   pp (AssumeH h)      = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
+  pp (Delete ls)    = text "Loc Delete" <+> pp ls
   pp (WindInst l wls i αs ls) = pp (l:wls)
                             <+> pp αs
                             <+> pp ls
@@ -607,6 +630,7 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (Assume t)     = text "assume" <+> pp t
   pp (AssumeH h)    = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
+  pp (Delete ls)    = text "Loc Delete" <+> pp ls
   pp (WindInst l wls i αs ls) = pp (l:wls)
                         <+> pp αs
                         <+> pp ls

@@ -254,17 +254,26 @@ consStmt g r@(ReturnStmt l (Just e))
         return Nothing
 
 -- return
-consStmt g r@(ReturnStmt _ Nothing)
-  = consReturnHeap g r >> return Nothing 
+consStmt g r@(ReturnStmt l Nothing)
+  = consReturnHeap g' r >> return Nothing 
+  where           
+    dels = tracePP "return deletes" $ concat [ ls | Delete ls <- ann_fact l ]
+    g'   = g { rheap = deleteLocsTy dels <$> rheap g
+             , renv  = envMap (deleteLocsTy dels) $ renv g
+             }
 
 -- function f(x1...xn){ s }
 consStmt g s@(FunctionStmt _ _ _ _)
   = Just <$> consFun g s
     
 consStmt g (WindAll l _)    
-  = Just <$> (tracePP ("consWind winding " ++ (show $ ann l)) (fst4 <$> ws) `seq` foldM (consWind l) g ws)
+  = Just <$> (tracePP ("consWind winding " ++ (show $ ann l)) (fst4 <$> ws) `seq` foldM (consWind l) g' ws)
   where
-    ws = reverse [ (l,wls,t,fromLists αs ls) | WindInst l wls t αs ls <- ann_fact l ]
+    ws   = reverse [ (l,wls,t,fromLists αs ls) | WindInst l wls t αs ls <- ann_fact l ]
+    dels = tracePP "windall deletes" $ concat [ ls | Delete ls <- ann_fact l ]
+    g'   = g { rheap = deleteLocsTy dels <$> rheap g
+             , renv  = envMap (deleteLocsTy dels) $ renv g
+             }
 
 consStmt g (UnwindAll l _)    
   = Just <$> foldM (consUnwind l) g ws

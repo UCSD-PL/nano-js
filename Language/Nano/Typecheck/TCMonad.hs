@@ -62,6 +62,7 @@ module Language.Nano.Typecheck.TCMonad (
   , recordingUnwind
   , recordUnwindExpr
   , recordRenameM
+  , recordDeleteM
   , getUnwound
   , setUnwound
   , addUnwound
@@ -600,6 +601,11 @@ unfoldSafeTC :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RHeap r, RType 
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
+recordDeleteM :: SourceSpan -> [Location] -> TCM r ()
+-------------------------------------------------------------------------------
+recordDeleteM l ls = addAnn l $ Delete ls
+
+-------------------------------------------------------------------------------
 recordRenameM :: (Ord r, PP r, F.Reftable r,
                   Substitutable r (Fact_ r), Free (Fact_ r)) =>
   SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r (RSubst r)
@@ -895,13 +901,13 @@ patchPgmM pgm =
       renames  <- tc_renames  <$> get
       hexs     <- tc_heapexps <$> get
       pgm'     <- heapPatchPgm winds unwinds hexs pgm
-      pgm''    <- renamePatchPgm renames pgm'
+      pgm''    <- locPatchPgm renames pgm'
       return $ fst $ runState (everywhereM' (mkM transform) pgm'') (PS c hc)
 
 data RState r = RS { rs_renames :: M.Map SourceSpan (RSubst r) }
 type RM     r = State (RState r)
 
-renamePatchPgm renamem pgm = 
+locPatchPgm renamem pgm = 
   return $ fst $ runState (everywhereM' (mkM go) pgm) (RS renamem)
   where go :: Statement (AnnSSA_ r) -> RM r (Statement (AnnSSA_ r))
         go s = do m <- rs_renames <$> get
