@@ -1,22 +1,31 @@
-import "doubly-linked-list.js";
+//import "doubly-linked-list.js";
 
 // fix this modulo nulls
 
-/*@ delete_at_middle ::  
+/*@ type dlist[A,S,P] exists! l |-> dlist[A, <l>, S] . { data: A, next:<l>+null, prev:P } */
+
+/* delete_at_middle ::  
       (u:?rdlist[A,<l>], p:<l>, v:?dlist[A,<l>])/h
       => void/ u |-> {rdlist[A,v] | keys(u) = keys(u,h)} * v |-> { dlist[A,<u>] | keys(v) = keys(v,h)} 
  */
-function delete_at_middle (u, p, v){
-  var ret  = {};
-  ret.data = k;
-  ret.next = v;
-  ret.prev = u;
 
-  if (u){
-    u.next = ret;
+/*@ delete_at_middle :: forall A.
+      (p:<p>+null, q:<q>, r:<r>+null)/p |-> { data:A, next:{v:<q> | v = q}, prev:null }
+                                    * q |-> { data:A, next:{v:<r> | v = r} + {v:null | v = r}, prev:{v:<p> | v = p} + {v:null | v = p} }
+                                    * r |-> dlist[A,<r>,{v:<q> | v = q}]
+      => void/p |-> { data:A, next:<r>+null, prev:null} * r |-> dlist[A,<r>,<p>+null] 
+ */
+function delete_at_middle (p, q, r){
+  q.next = null;
+  q.prev = null;
+    
+  if (typeof(p) != "null") {
+      p.next = r;
   }
-  if (v){
-    v.prev = ret;
+
+  if (typeof(r) != "null") {
+      r.prev = p;
   }
-  return ret;
+
+  return;
 }

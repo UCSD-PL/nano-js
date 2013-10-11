@@ -522,7 +522,7 @@ bkPaddedObject t1@(TObj xt1s _) t2@(TObj xt2s _) =
   where 
     checkB b b' | b_sym b == b_sym b' = (b_type b, b_type b')
     checkB _ _                        = 
-      errorstar (printf "unimplemented: bkPaddedObject: cannot split %s %s" (ppshow t1) (ppshow t2))
+      errorstar (printf "unimplemented: bkPaddedObject: cannot split %s %s" (ppshow $ toType t1) (ppshow $ toType t2))
 bkPaddedObject _ _                    = 
   errorstar "bkPaddedObject: can only break objects"
 
@@ -570,7 +570,8 @@ zipType1 γ f t1 t2 = zipType2 γ f t2 t1
 -- This function @t2@ with the refinements from @t1@ by matching equivalent 
 -- parts of the two types.
 --------------------------------------------------------------------------------
-zipType2 :: (PP r, F.Reftable r) => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
+zipType2 :: (PP r, Ord r, F.Reftable r)
+  => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
 --------------------------------------------------------------------------------
 zipType2 γ f (TApp TUn ts r) (TApp TUn ts' r')  = 
   TApp TUn (zipTypes γ f ts <$> ts') $ f r r'

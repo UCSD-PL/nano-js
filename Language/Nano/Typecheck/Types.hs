@@ -8,6 +8,7 @@
 {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE NoMonomorphismRestriction   #-}
+{-# LANGUAGE IncoherentInstances #-}
 
 module Language.Nano.Typecheck.Types (
 
@@ -203,9 +204,11 @@ locs' _        = []
 
 -- | RHeap utils
 restrictHeap :: (F.Reftable r) => [Location] -> RHeap r -> RHeap r
-restrictHeap [] h = heapEmpty
-restrictHeap ls h = heapCombine [restrictHeap ls' (heapFromBinds nbs), heapFromBinds bs]
+restrictHeap [] _ = heapEmpty
+restrictHeap ls h = heapCombineWith const [h1, h2]
   where
+    h1       = restrictHeap ls' (heapFromBinds "restrictHeap h1" nbs)
+    h2       = heapFromBinds "restrictHeap h2" bs
     (bs,nbs) = L.partition ((`elem` ls) . fst) $ heapBinds h
     ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
@@ -547,7 +550,7 @@ ppTC TUndef           = text "Undefined"
 data Fact_  r
   = PhiVar     !(Id SourceSpan) 
   | FunInst    ![(TVar,RType r)] ![(Location,Location)]
-  | WindInst   !Location !(Id SourceSpan) ![(TVar,RType r)] ![(Location,Location)]
+  | WindInst   !Location ![Location] !(Id SourceSpan) ![(TVar,RType r)] ![(Location,Location)]
   | UnwindInst !Location !(Id SourceSpan) ![(Location,Location)]
   | LocInst    !Location
   | Assume     !(RType r)
@@ -589,11 +592,11 @@ instance PP Fact where
   pp (Assume t)       = text "assume" <+> pp t
   pp (AssumeH h)      = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
-  pp (WindInst l i αs ls) = pp l
-                        <+> pp αs
-                        <+> pp ls
-                        <+> text "↦" <+> pp i
-                        <+> text "↦" <+> pp i
+  pp (WindInst l wls i αs ls) = pp (l:wls)
+                            <+> pp αs
+                            <+> pp ls
+                            <+> text "↦" <+> pp i
+                            <+> text "↦" <+> pp i
   pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
   
 
@@ -604,7 +607,7 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (Assume t)     = text "assume" <+> pp t
   pp (AssumeH h)    = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
-  pp (WindInst l i αs ls) = pp l
+  pp (WindInst l wls i αs ls) = pp (l:wls)
                         <+> pp αs
                         <+> pp ls
                         <+> text "↦" <+> pp i
