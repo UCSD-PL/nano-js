@@ -23,10 +23,10 @@ Must
     * merge_sort_rec  (NOT IN DRYAD)
     * quick_sort_rec  (NOT IN DRYAD) 
 
-  - bst (HEREHEREHEREHERE)
-  - tree-traversals
+  + bst 
+  - max-heap   <---- HEREHEREHEREHERE
   - avl-tree
-  - max-heap
+  - tree-traversals
 
 May
 ---

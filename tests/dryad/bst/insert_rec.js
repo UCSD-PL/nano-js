@@ -1,3 +1,4 @@
+import "bst.js";
 
 /* insert :: (x:?bst[A], k:A) => {v:bst[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
 function insert(x, k){
