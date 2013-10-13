@@ -24,15 +24,15 @@ Must
     * quick_sort_rec  (NOT IN DRYAD) 
 
   + bst 
-  - max-heap   <---- HEREHEREHEREHERE
-  - avl-tree
+  + max-heap
+  - avl-tree          ---- HEREHEREHEREHERE
+  - rb-tree
   - tree-traversals
 
 May
 ---
 
   - treap
-  - rb-tree
 
 Might
 -----
