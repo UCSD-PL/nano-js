@@ -1,3 +1,4 @@
+import "cyclic_lists.js";
 
 /*@ insert :: (x:clist[A,<x>], k:A) 
            => <ret>/ x |-> {data: A, next: <ret>} * ret |-> clist[A, <x>]
