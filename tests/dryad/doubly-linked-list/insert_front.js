@@ -4,7 +4,7 @@
 
 /* insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/v |-> keys(v) = set_cup(keys(x,h), set_singleton(k))} */
 
-/*@ insert :: forall A. (x:<x>+{null | true}, k:A)/x |-> dlist[A,<x>,null] => <v>/v |-> dlist[A,<v>,null] */
+/*@ insert :: forall A. (x:<x>+{null | true}, k:A)/x |-> dlist[A,<x>,null] => <v>/v |-> dlist[A,<v>,{null | true}] */
 function insert(x, k){
   var y  = {};
   y.data = k;

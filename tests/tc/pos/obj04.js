@@ -1,4 +1,3 @@
-
 /*@ foo :: () => <l>/l |-> { } */
 function foo() {
   var r = { };

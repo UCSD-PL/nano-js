@@ -190,7 +190,7 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
        -- upds' <-  mapM (updFun tsto (F.symbol x) <$>) upds
        -- (upds', g4) <- foldM (\(upds,g) (l,t) -> 
        (upds', g4) <- foldM (updFieldM updFun (F.symbol x) tsto) ([],g3) upds
-       let σ'   = heapCombineWith const [heapFromBinds "consStmt e1.x = e2" $ tracePP "upds'" upds', σ]
+       let σ'   = heapCombineWith const [heapFromBinds "consStmt e1.x = e2" $ tracePP ("upds' " ++ (ppshow $ ann l2))  upds', σ]
        return $ Just g4 { rheap = σ' }
     where
       updFieldM updF f t (upds,g) (l,tobj) = 

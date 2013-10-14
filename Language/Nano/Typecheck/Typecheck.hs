@@ -365,9 +365,6 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- End of basic block --> Wind up locations
         (σ_in, σ_out) <- getFunHeaps γ
         (γ,σ')        <- windLocations (γ,σ) l
-        -- May be "free"ing some locations, so lets
-        -- get rid of those pesky chaps
-        (γ,σ')        <- deleteLocationsM l (γ,σ') σ_in σ_out
         (t,σ')        <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
         θ_old         <- getSubst
         θ             <- unifyTypeM l "Return" eo t rt
@@ -375,15 +372,19 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         θ             <- unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
         -- Apply the substitutions
         let (rt', t')  = mapPair (apply θ) (rt,t)
-        σ'            <- safeHeapSubstM σ' 
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
         -- this location does not appear in the 
         -- output spec
-        θ             <- recordRenameM (ann l) (partitionRenames θ_old θ σ_in σ_out)
+        -- θ             <- recordRenameM (ann l) (tracePP "partitionRenames" $ partitionRenames θ_old θ σ_in σ_out)
+        -- May be "free"ing some locations, so lets
+        -- get rid of those pesky chaps
+        -- (γ,σ')        <- deleteLocationsM l (γ,σ') σ_in σ_out
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
+        (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
         (γ,σ')        <- windSpecLocations (γ, apply θ σ') l σ_out
+        σ'            <- safeHeapSubstM σ' 
         -- One last chance to unify any TVars that appeared
         -- in the winding step
         unifyHeapsM l "Return" σ' σ_out
@@ -739,42 +740,78 @@ getPhiType l (γ1,σ1) (γ2,σ2) x =
                             then tcError (ann l) "Oh no, the HashMap GREMLIN is back...1"
                             else tcError (ann l) (bugUnboundPhiVar x)
 
+-- ----------------------------------------------------------------------------------
+-- deleteLocationsM :: (Ord r, F.Reftable r, PP r) =>
+--   Annot b SourceSpan -> (Env (RType r), RHeap r) -> RHeap r -> RHeap r -> TCM r (Env (RType r), RHeap r)
+-- ----------------------------------------------------------------------------------
+-- deleteLocationsM l (γ,σ) σi σo
+--   = do θ <- tracePP "deleteLocationsM sub" <$> getSubst
+--        setSubst . tracePP "deleteLocationsM new sub" . uncurry fromLists . fmap (filter ((`notElem` del) . fst)) $ toLists θ
+--        -- Locations...begone!
+--        recordDeleteM (ann l) del
+--        return $ (envMap (deleteLocsTy del) γ, restrictHeap keep $ (deleteLocsTy del) <$> σ)
+--     where 
+--       (del, keep) = tracePP "deleteLocationsM" $ L.partition deadLoc $ L.nub $ (heapLocs σ ++ heapLocs σi)
+--       deadLoc l   = l `elem` heapLocs σi && l `notElem` heapLocs σo
+  
 ----------------------------------------------------------------------------------
-deleteLocationsM :: (Ord r, F.Reftable r, PP r) =>
-  Annot b SourceSpan -> (Env (RType r), RHeap r) -> RHeap r -> RHeap r -> TCM r (Env (RType r), RHeap r)
+renameAndDeleteLocsM :: (Ord r, F.Reftable r, PP r, Free (Fact_ r), Substitutable r (Fact_ r)) =>  
+                        Annot b SourceSpan -> 
+                        (Env (RType r), RHeap r) -> 
+                        RHeap r -> 
+                        RHeap r -> 
+                        RSubst r -> 
+                        TCM r (Env (RType r), RHeap r)
 ----------------------------------------------------------------------------------
-deleteLocationsM l (γ,σ) σi σo
-  = do θ <- getSubst
-       setSubst . uncurry fromLists . fmap (filter ((`notElem` del) . fst)) $ toLists θ
-       -- Locations...begone!
+renameAndDeleteLocsM l (γ, σ) σ1 σ2 θ
+  = do θ'                <- (tracePP "old sub" θ)`seq` tracePP "rename cur sub" <$> getSubst
+       let (gone,keep)   = tracePP "gone,keep" $ L.partition dead $ L.nub $ (heapLocs σ ++ heapLocs σ1 ++ map fst sub)
+           rename        = tracePP "renames"   $ L.filter (renamed θ') gone
+           del           = tracePP "deletes"   $ L.filter (deleted θ' rename) gone
+           sub           = snd $ toLists θ'
+           rsub          = zip rename $ apply θ' rename 
+           (θr,θri)      = tracePP "rename is" $ mapPair (fromLists []) (rsub, map swap rsub)
+           -- undo renames
+           θ''           = tracePP "no renames" $ foldl (revertSub (tracePP "old sub" θ) (apply θ' rename)) θ' $ map fst sub
+           -- undo deletes
+           θ'''          = tracePP "no deletes" $ uncurry fromLists . fmap (filter ((`notElem` del) . fst)) $ toLists θ''
+           -- θ'''          = tracePP "deletes renames" $ foldl (revertSub (tracePP "orig sub" θ) (apply θ' del)) θ'' $ map fst sub
+           -- σ'            = tracePP "renamed heap" $ (deleteLocsTy del) <$> (tracePP "unrenamed heap" $ fixHeap θr σ)
+           σ'            = tracePP "fixed heap" $ fixHeap del θr σ
+           γ'            = envMap (deleteLocsTy del) γ
+       recordRenameM (ann l) (θ''',θr,θri)
        recordDeleteM (ann l) del
-       return $ (envMap (deleteLocsTy del) γ, restrictHeap keep $ (deleteLocsTy del) <$> σ)
-    where 
-      (del, keep) = L.partition deadLoc $ heapLocs σ
-      deadLoc l   = l `elem` heapLocs σi && l `notElem` heapLocs σo
-      
+       setSubst θ'''
+       return (γ', σ')
+  where
+    -- sub          = tracePP "sub" $ snd $ toLists θ
+    dead l        = {- l `elem` heapLocs σ1 && -} l `notElem` heapLocs σ2
+    deleted θ' rename l = l `elem` heapLocs σ1
+                  && l `notElem` heapLocs σ2
+                  && l `elem` heapLocs σ
+                  && l `notElem` (map fst3 $ woundLocations σ2)
+                  && l `notElem` rename
+    renamed θ' l   = --- l `elem` gone        
+                   -- && apply θ l `notElem` heapLocs σ
+                   l `notElem` (map fst $ snd $ toLists θ)
+                   && apply θ' l `notElem` heapLocs σ1
+                   && apply θ' l `elem`    heapLocs σ2
 
-forceCheck x (γ,_) 
-  = elem x $ fst <$> envToList γ
+fixHeap :: (F.Reftable r, PP r, Ord r) => [Location] -> RSubst r -> RHeap r -> RHeap r
+fixHeap del θ σ = heapFromBinds "FixHeap" . map (\(l,t) -> (apply θ l, deleteLocsTy del $ apply θ t)) $ filter ((`notElem` del) . fst) $ tracePP "fixing heap" $ heapBinds σ
 
-varLookup γ l x
-  = case envFindTy x γ of 
-      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
-      Just z  -> return z
-    
-partitionRenames :: (F.Reftable r, PP r, Ord r) =>    
-  RSubst r -> RSubst r -> RHeap r -> RHeap r -> (RSubst r, RSubst r, RSubst r)
-partitionRenames θ_old θ σ1 σ2 = (θ', θr, θrInv)
-    where 
-      θ'             = foldl (revertSub θ_old renameLocs) θ $ map fst lsubs
-      renameLocs     = M.keys . locSub $ θrInv
-      (_, lsubs) = toLists θ
-      -- 
-      (θr,θrInv)     = (fromLists [] sub, fromLists [] (map swap sub))
-      sub            = filter rename $ snd $ toLists θ
-      (l1s,l2s)      = mapPair heapLocs (σ1,σ2)
-      rename (_,l2) = l2 `elem` l2s && l2 `notElem` l1s
-
+-- partitionRenames :: (F.Reftable r, PP r, Ord r) =>    
+--   RSubst r -> RSubst r -> RHeap r -> RHeap r -> (RSubst r, RSubst r, RSubst r)
+-- partitionRenames θ_old θ σ1 σ2 = (θ', θr, θrInv)
+--     where 
+--       θ'             = foldl (revertSub θ_old renameLocs) θ $ map fst lsubs
+--       renameLocs     = M.keys . locSub $ θrInv
+--       (_, lsubs) = toLists θ
+--       -- 
+--       (θr,θrInv)     = (fromLists [] sub, fromLists [] (map swap sub))
+--       sub            = filter rename $ snd $ toLists θ
+--       (l1s,l2s)      = mapPair heapLocs (σ1,σ2)
+--       rename (_,l2) = l2 `elem` l2s && l2 `notElem` l1s
 
 revertSub :: (F.Reftable r, PP r, Ord r) => RSubst r -> [Location] -> RSubst r -> Location -> RSubst r
 revertSub θ_old renames θ l = 
@@ -790,3 +827,11 @@ revertSub θ_old renames θ l =
 doRevert :: (F.Reftable r, PP r, Ord r) => RSubst r -> [(TVar, RType r)] -> [(Location, Location)] -> RSubst r
 doRevert θ vs ls       
   = fromLists (map (apply θ <$>) vs) (map (apply θ <$>) ls)
+
+forceCheck x (γ,_) 
+  = elem x $ fst <$> envToList γ
+
+varLookup γ l x
+  = case envFindTy x γ of 
+      Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
+      Just z  -> return z

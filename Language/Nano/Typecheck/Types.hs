@@ -204,13 +204,22 @@ locs' (TRef l) = [l]
 locs' _        = []
 
 -- | RHeap utils
-deleteLocsTy :: [Location] -> RType r -> RType r                 
+---------------------------------------------------------------------------------
+deleteLocsTy :: (F.Reftable r, Ord r, PP r) => [Location] -> RType r -> RType r                 
+---------------------------------------------------------------------------------
 deleteLocsTy = foldl (\f l -> (deleteLocTy l . f)) id
 
 deleteLocTy l (TObj bs r) = TObj bs' r
   where
     bs' = map filterLoc bs
     filterLoc (B i t) = B i $ deleteLocTy l t
+
+deleteLocTy l   (TApp TUn ts r) = case ts' of
+                                  [] -> err
+                                  _  -> mkUnionR r ts'
+  where
+    ts' = catMaybes $ map (filterLoc l . deleteLocTy l) ts
+    err = errorstar "deleteLocTy: Empty type"
 
 deleteLocTy l t@(TApp _ [] _) = t
 deleteLocTy l   (TApp c ts r) = case ts' of
@@ -219,12 +228,15 @@ deleteLocTy l   (TApp c ts r) = case ts' of
   where 
     ts' = catMaybes $ map (filterLoc l . deleteLocTy l) ts
     err = errorstar "deleteLocTy: Empty type"
-    filterLoc l (TApp (TRef l') _ _) | l == l' = Nothing
-    filterLoc l t                              = Just t
-
+    
 deleteLocTy _ t               = t      
+
+filterLoc l (TApp (TRef l') _ _) | l == l' = Nothing
+filterLoc l t                              = Just t
                  
+---------------------------------------------------------------------------------
 restrictHeap :: (F.Reftable r) => [Location] -> RHeap r -> RHeap r
+---------------------------------------------------------------------------------
 restrictHeap [] _ = heapEmpty
 restrictHeap ls h = heapCombineWith const [h1, h2]
   where
