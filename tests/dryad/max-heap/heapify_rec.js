@@ -1,12 +1,12 @@
 // Short form
-/*@ type tree[A]<P :: A->A->Prop> <Q :: A->A->Prop> 
+/* type tree[A]<P :: A->A->Prop> <Q :: A->A->Prop> 
       = { key    : A
         , left  : ?tree[A<P data>]<P, Q>
         , right : ?tree[A<Q data>]<P, Q>
         }
  */
 
-/*@ type tree[A] 
+/* type tree[A] 
       exists! l |-> tree[A<P data>]<P,Q> 
             * r |-> tree[A<Q data>]<P,Q> 
             . { left:<l>+null
@@ -14,7 +14,16 @@
               , right:<r>+null 
               } */
 
-/*@ type heap[A] = tree[A]<{\k v -> v < k}, {\k v -> v < k}> */
+/* type heap[A] = tree[A]<{\k v -> v < k}, {\k v -> v < k}> */
+
+/*@
+  type heap[A]
+       exists! l |-> heap[A] * r |-> heap[A]
+               . { left:<l>+null
+                 , key:A
+                 , right:<r>+null
+                 }
+*/
 
 /*@ swapRoot :: (<p>,<c>+null)/p |-> heap[{number|true}] * c |-> heap[number] => void/same*/
 function swapRoot(x,c) {
