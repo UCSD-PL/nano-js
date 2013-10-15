@@ -793,8 +793,8 @@ renameAndDeleteLocsM l (γ, σ) σ1 σ2 θ
                   && l `notElem` rename
     renamed θ' l   = --- l `elem` gone        
                    -- && apply θ l `notElem` heapLocs σ
-                   l `notElem` (map fst $ snd $ toLists θ)
-                   && apply θ' l `notElem` heapLocs σ1
+                   -- l `notElem` (map fst $ snd $ toLists θ)
+                   {- && -} apply θ' l `notElem` heapLocs σ1
                    && apply θ' l `elem`    heapLocs σ2
 
 fixHeap :: (F.Reftable r, PP r, Ord r) => [Location] -> RSubst r -> RHeap r -> RHeap r
@@ -822,7 +822,7 @@ revertSub θ_old renames θ l =
   where
     l'      = apply θ l 
     (vs,ls) = toLists θ
-    undo    = fromLists [] [(l', apply θ_old l)]
+    undo    = tracePP "undo sub" $ fromLists [] [(l', apply θ_old l)]
 
 doRevert :: (F.Reftable r, PP r, Ord r) => RSubst r -> [(TVar, RType r)] -> [(Location, Location)] -> RSubst r
 doRevert θ vs ls       
