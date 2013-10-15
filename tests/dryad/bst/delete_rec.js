@@ -1,39 +1,52 @@
-import "bst.js";
+//import "bst.js";
+/*@
+  type tree[A] exists! l |-> tree[A] * r |-> tree[A] . { data: A, left:<l>+null, right:<r>+null } 
+ */
 
-/*@ removeRoot :: (x:bst[A]) => {v:?bst[A] | keys(v) = set_minus(keys(x,h), set_singleton(root(x,h))} */
-
-function removeRoot(k, x){
+/*@
+  removeRoot :: forall A. (x:{v:<t> | true})/t |-> tree[A] => <k>+null/k |-> tree[A]
+*/
+function removeRoot(x){
   var xl = x.left;
   var xr = x.right;
-  if (xl == null){
+
+  if (typeof(xl) == "null") {
+    x.right = null;
     return xr;
-  }
-  if (xr == null){
+  } else if (typeof(xr) == "null") {
+    x.left = null;
     return xl;
+  } else {
+   var xrl = xr.left;
+ //  xr.left = null;     // extra, to cut sharing
+   x.right = xrl;
+   var t = removeRoot(x);
+   xr.left = t;
+   return xr;
   }
-  var xrl = xr.left;
-  xr.left = null;     // extra, to cut sharing
-  x.right = xrl;
-  xr.left = removeRoot(k, x);
-  return xr;
 }
 
-/*@ remove :: (x:bst[A], k:A) => {v:?bst[A] | keys(v) = set_minus(keys(x,h), set_singleton(k)} */
+//{v:?bst[A] | keys(v) = set_minus(keys(x,h), set_singleton(k)} */
+
+/*@ remove :: (x:<x>+null, k:number)/x |-> tree[number] => <v>+null/v |-> tree[{number | true}] */
 function remove(x, k){
-  if (x == null){
+  if (typeof(x) == "null"){
     return null;
   }
  
   var xk = x.data;
   
   if (k < xk) {
-    x.left = remove(x.left, k);
+    var xl = x.left;
+    x.left = remove(xl, k);
     return x;
-  }
-  if (xk < k) {
-    x.right = remove(x.right, k);
+  } else if (xk < k) {
+    var xr = x.right;
+    x.right = remove(xr, k);
     return x;
+  } else {
+    // k == xk
+    var r = removeRoot(x);
+    return r;
   }
-  // k == xk
-  return removeRoot(x);
 }

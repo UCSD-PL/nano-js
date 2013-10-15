@@ -195,8 +195,7 @@ tcNano' pgm@(Nano {code = Src fs})
        -- However, this was figured out ex-post-facto, so
        -- undo these renames 
        as  <- getAllAnns
-       as' <- mapM undoRenamesM (zip as $ postDominators pgm)
-       return $ M.unions as'
+       return $ M.unions as
 
 -- patchAnn              :: AnnInfo -> (AnnSSA_ r) -> (AnnType_ r)
 patchAnn m (Ann l fs) = Ann l $ {- sortNub $ -} (M.lookupDefault [] l m) ++ fs
@@ -221,7 +220,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        checkSigWellFormed l ts t σ σ'
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
-       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
+       accumAnn (\a -> catMaybes (map (validInst γ'') (tracePP "offending a" $ M.toList a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
             θ              <- getSubst
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
@@ -426,7 +425,7 @@ windLocation l (γ,σ) (loc, tWind, _)
        let σc       = foldl (flip heapDel) σ $ heapLocs σt
        (_, σe, t')  <- tracePP ("result of windType " ++ loc) <$> windType γ l loc tWind σt
        σr       <- tracePP "sigma r" <$> (safeHeapSubstM $ heapUpd loc t' $ heapCombineWith const [σe, σc])
-       uw          <- getUnwound
+       uw       <- getUnwound
        setUnwound $ (filter (not.(== loc).fst3)) uw
        return (γ,σr)
 
@@ -446,7 +445,7 @@ windType γ l loc tWind@(Id _ i) σ
        θ' <- unifyHeapsM l "Wind(heap)" σ2 σ1'
        let θf = θ `mappend` θ'
        castHeapM γ l σ1' σ2
-       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst `mappend` θf)
+       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst {- `mappend` θf -})
        return (θf, foldl (flip heapDel) σ1' $ heapLocs σe', apply θf t')
        -- return (θ, tracePP ("windType returning wound up " ++ loc) $ σe',apply θ t')
   where 
@@ -639,6 +638,7 @@ tcCall (γ,σ) l fn es ft
         (γ,σ')            <- windSpecLocations (γ, (tracePP "tcCall actual heap wind sub" $ apply θ $ tracePP "tcCall actual heap wind" σ')) ls (tracePP "tcCall formal heap wind sub" $ apply θ $ tracePP "tcCall formal heap wind" σi)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
+        θ <- unifyHeapsM l "tcCall" σ' (apply θ σi)
         castsM es ts' its' 
         castHeapM γ l (apply θ σ') (apply θ σi)
         checkDisjoint σo
