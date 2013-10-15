@@ -553,8 +553,8 @@ consUnwind _ g (m, ty, θl) =
         s (l,t) = (apply θ l, apply θ t)
         t'      = apply θ t
         σ'      = heapFromBinds ("consUnwind σ'") . map s . heapBinds $ σ
-    return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ heapUpd  m t' $ tracePP ("consUnwind "++ m ++" pre") (rheap g)
-                                                                             , σ'
+    return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ tracePP "consUnwind updated heap" $ heapUpd  m t' $ tracePP ("consUnwind "++ m ++" pre") (rheap g)
+                                                                             , tracePP "consUnwind prime" σ'
                                                                              ]
                }
   where 
