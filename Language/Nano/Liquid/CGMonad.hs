@@ -352,7 +352,7 @@ envFindTyDef ty
   = do γ <- getTDefs
        case E.envFindTy ty γ of
          Just (TBd t) -> 
-           return (td_heap t, td_body t, td_args t)
+           return (b_type <$> td_heap t, td_body t, td_args t)
          Nothing -> error "BARF!!!"
 ---------------------------------------------------------------------------------------
 envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
@@ -978,8 +978,8 @@ splitW (W g i (TFun ts t h h' _))
        g'     <- envTyAdds i ts g 
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]
        ws'    <-            splitW (W g' i t)
-       ws''   <- concatMapM splitW $ W g' i <$> heapTypes h
-       ws'''  <- concatMapM splitW $ W g' i <$> heapTypes h'
+       ws''   <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h)
+       ws'''  <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h')
        return  $ bws ++ ws ++ ws' ++ ws'' ++ ws'''
 
 splitW (W g i (TAll _ t)) 

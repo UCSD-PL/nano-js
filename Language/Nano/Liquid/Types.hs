@@ -274,8 +274,8 @@ emapReft f γ (TAll α t)          = TAll α (emapReft f γ t)
 emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts) (emapReft f γ' t) hi' ho' (f γ r) 
   where 
     γ'                           = (b_sym <$> xts) ++ γ 
-    hi'                          = fmap (emapReft f γ) hi
-    ho'                          = fmap (emapReft f γ) ho
+    hi'                          = fmap (emapReftBind f γ) hi
+    ho'                          = fmap (emapReftBind f γ) ho
     -- ts                           = b_type <$> xts 
 emapReft f γ (TObj bs r)         = TObj (emapReftBind f γ' <$> bs) (f γ r)
   where 
@@ -299,10 +299,10 @@ mapReftM _ _                   = error "Not supported in mapReftM"
 
 mapReftBindM f (B x t)         = B x <$> mapReftM f t
 
-mapReftHeapM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RHeap a -> m (RHeap b)
+mapReftHeapM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RHeapEnv a -> m (RHeapEnv b)
 mapReftHeapM f h               =
     mapM mapBindM (heapBinds h) >>= (return . heapFromBinds "mapReftHeapM")
-        where mapBindM (l, t) = do t' <- mapReftM f t
+        where mapBindM (l, t) = do t' <- (mapReftBindM f) t
                                    return (l, t')
 
 ------------------------------------------------------------------------------------------
@@ -323,7 +323,7 @@ efoldReft g f γ z (TAll _ t)          = efoldReft g f γ z t
 efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z ts) t  
   where 
     γ'                                = foldr (efoldExt g) γ xts
-    ts                                = (b_type <$> xts) ++ heapTypes h ++ heapTypes h'
+    ts                                = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
 efoldReft g f γ z (TObj xts r)        = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
   where 
     γ'                                = foldr (efoldExt g) γ xts

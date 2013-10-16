@@ -24,7 +24,8 @@ module Language.Nano.Typecheck.Types (
   -- , sigsNano
 
   -- * (Refinement) Types
-  , RHeap
+  , RHeap    -- l |-> T
+  , RHeapEnv -- l |-> x:T
   , RType (..)
   , Bind (..)
   , toType
@@ -141,7 +142,7 @@ instance F.Symbolic a => F.Symbolic (Located a) where
 data TBody r 
    = TD { td_con  :: !TCon          -- TDef name ...
         , td_args :: ![TVar]        -- Type variables
-        , td_heap :: !(RHeap r)     -- An existentially quantified heap
+        , td_heap :: !(RHeapEnv r)     -- An existentially quantified heap
         , td_body :: !(RType r)     -- int or bool or fun or object ...
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
@@ -161,13 +162,14 @@ data TCon
     deriving (Ord, Show, Data, Typeable)
 
 type RHeap r = Heap (RType r)    
+type RHeapEnv r = Heap (Bind r)
 
 -- | (Raw) Refined Types 
 data RType r  
-  = TApp  TCon [RType r]                         r
-  | TVar  TVar                                   r 
-  | TFun  [Bind r] (RType r) (RHeap r) (RHeap r) r
-  | TObj  [Bind r]                               r
+  = TApp  TCon [RType r]                               r
+  | TVar  TVar                                         r 
+  | TFun  [Bind r] (RType r) (RHeapEnv r) (RHeapEnv r) r
+  | TObj  [Bind r]                                     r
   | TBd   (TBody r)
   | TAll  TVar (RType r)
     deriving (Ord, Show, Functor, Data, Typeable)
@@ -233,6 +235,9 @@ deleteLocTy _ t               = t
 
 filterLoc l (TApp (TRef l') _ _) | l == l' = Nothing
 filterLoc l t                              = Just t
+
+heapEnvToHeap :: RHeapEnv r -> RHeap r
+heapEnvToHeap h = b_type <$> h
                  
 ---------------------------------------------------------------------------------
 restrictHeap :: (F.Reftable r) => [Location] -> RHeap r -> RHeap r
@@ -248,7 +253,7 @@ restrictHeap ls h = heapCombineWith const [h1, h2]
 bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'
-             return        (αs, xts, h, h', t'')
+             return (αs, xts, heapEnvToHeap h, heapEnvToHeap h', t'')
 
 bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
 bkArr _                   = Nothing
@@ -385,7 +390,7 @@ noUnion :: (F.Reftable r) => RType r -> Bool
 ---------------------------------------------------------------------------------------
 noUnion (TApp TUn _ _)      = False
 noUnion (TApp _  rs _)      = and $ map noUnion rs
-noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ heapTypes h ++ heapTypes h')
+noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h'))
 noUnion (TObj bs    _)      = and $ map noUnion $ map b_type bs 
 noUnion (TBd  _      )      = error "noUnion: cannot have TBodies here"
 noUnion (TAll _ t    )      = noUnion t

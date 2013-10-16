@@ -1,4 +1,4 @@
-/*@ to_zeroes :: (<l>)/ l |-> list[{number|v = 1}] => void/l |-> list[{number | v = 0 }] */
+/*@ to_zeroes :: (<l>)/ l |-> xs:list[{number|v = 1}] => void/l |-> xs:list[{number | v = 0 }] */
 function to_zeroes(x) {
     var xn = x.next;
     x.data = 0;

@@ -112,7 +112,6 @@ import           Language.Nano.Misc             (unique, everywhereM', zipWith3M
 import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
-import           Language.Nano.Typecheck.WindFuns
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Unify

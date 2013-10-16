@@ -131,7 +131,7 @@ heapBindP
        spaces
        reserved "|->"
        spaces
-       t <- bareTypeP
+       t <- bareArgP -- bareTypeP
        return (l, t)
 
 bareArgP 

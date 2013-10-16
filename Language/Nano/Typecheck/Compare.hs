@@ -90,7 +90,7 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   -- Functions need to be exactly the same - no padding can happen here
   equiv γ (TFun b o h h' _)    (TFun b' o' g g' _)    = 
     equiv γ (b_type <$> b) (b_type <$> b') && equiv γ o o' &&
-    equiv γ h g && equiv γ h' g'
+    equiv γ (b_type <$> h) (b_type <$> g) && equiv γ (b_type <$> h') (b_type <$> g')
 
   -- Any two objects can be combined - so they should be equivalent
   equiv _ (TObj _ _  )         (TObj _ _   )          = True
@@ -598,7 +598,7 @@ zipType2 _ f (TVar v r) (TVar v' r') | v == v' = TVar v $ f r r'
 
 zipType2 γ f (TFun xts t ih oh r) (TFun xts' t' ih' oh' r') = 
   TFun (safeZipWith "zipType2:TFun" (zipBind2 γ f) xts xts') (zipType2 γ f t t') zih zoh $ f r r'
-  where zipHeaps h1 h2 = heapCombineWith (zipType2 γ f) [h1,h2]
+  where zipHeaps h1 h2 = heapCombineWith (zipBind2 γ f) [h1,h2]
         zih            = zipHeaps ih ih'
         zoh            = zipHeaps oh oh'
 

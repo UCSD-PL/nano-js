@@ -203,3 +203,5 @@ function unwind(x) {
 
 
 /*@ top_level :: () => void */
+
+/* type mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null } */                         

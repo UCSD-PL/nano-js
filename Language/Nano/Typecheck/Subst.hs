@@ -112,8 +112,8 @@ instance Substitutable r a => Substitutable r [a] where
 instance Substitutable r Location where
   apply (Su _ lsub) l = M.lookupDefault l l lsub
 
-instance (PP r, F.Reftable r, Substitutable r (RType r)) =>
-    Substitutable r (Heap (RType r)) where
+instance (PP r, PP b, F.Reftable r, Substitutable r b) =>
+    Substitutable r (Heap b) where
   apply θ h =
       heapFromBinds "apply" $ map (\(l, t) -> (apply θ l,apply θ t)) $ heapBinds h
 
@@ -131,7 +131,7 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where
 instance Free (RType r) where
   free (TApp _ ts _)        = S.unions   $ free <$> ts
   free (TVar α _)           = S.singleton α 
-  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes h ++ heapTypes h'
+  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
   free (TAll α t)           = S.delete α $ free t 
   free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ α h t _ ))= foldr S.delete (free t) α
@@ -205,7 +205,7 @@ unfoldFirst :: (PP r, Ord r, F.Reftable r) => Env (RType r) -> RType r -> RType 
 -------------------------------------------------------------------------------
 unfoldFirst env t = go t
   where 
-    go (TFun its ot h h' r)         = TFun (appTBi go <$> its) (go ot) (fmap go h) (fmap go h') r
+    go (TFun its ot h h' r)    = TFun (appTBi go <$> its) (go ot) (appTBi go <$> h) (appTBi go <$> h') r
     go (TObj bs r)             = TObj (appTBi go <$> bs) r
     go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
     go (TAll v t)              = TAll v $ go t
@@ -233,7 +233,7 @@ unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                in (h, bd, θ)
+                                                in (b_type <$> h, bd, θ)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
