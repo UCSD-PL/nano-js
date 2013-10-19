@@ -49,6 +49,9 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
+
+  -- * RefHeaps
+  , safeRefReadHeap
   
   , AnnTypeR
   ) where
@@ -76,7 +79,7 @@ import           Control.Applicative
 
 type RefType     = RType F.Reft
 type REnv        = Env RefType
-type RefHeap     = RHeap F.Reft
+type RefHeap     = Heap (Id SourceSpan)
 type NanoRefType = Nano (AnnType_ F.Reft) RefType 
 
 type AnnTypeR    = AnnType_ F.Reft
@@ -85,12 +88,12 @@ type AnnTypeR    = AnnType_ F.Reft
 -- | Constraint Generation Environment  ---------------------------------------------
 -------------------------------------------------------------------------------------
 
-data CGEnv   
+data CGEnv
   = CGE { 
         -- TODO: add opts 
         --opts   :: OptionConf
           renv   :: !(Env RefType) -- ^ bindings in scope 
-        , rheap  :: !RefHeap      
+        , rheap  :: !RefHeap       
         , fenv   :: F.IBindEnv     -- ^ fixpoint bindings
         , guards :: ![F.Pred]      -- ^ branch target conditions  
         }
@@ -359,4 +362,7 @@ infixOpRTy :: InfixOp -> CGEnv -> RefType
 ------------------------------------------------------------------------------------------
 infixOpRTy o g = infixOpTy o $ renv g
 
-
+safeRefReadHeap :: String -> CGEnv -> RefHeap -> Location -> (Id SourceSpan, RefType)
+safeRefReadHeap m g σ l = (x, t)
+  where x = heapRead m l σ
+        t = maybe (error m) id (envFindTy x $ renv g)

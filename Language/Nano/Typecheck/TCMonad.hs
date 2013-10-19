@@ -268,12 +268,12 @@ freshFun :: (PP r, PP fn, Ord r, F.Reftable r) =>
 -------------------------------------------------------------------------------
 freshFun l fn ft
   = do let bkft           = bkAll ft
-       (τs,t')          <- freshTyArgs (srcPos l) bkft
-       (ts,ibs,σi,σo :: RHeap r,ot) <- maybe err return $ bkFun t'
+       (τs,t')           <- freshTyArgs (srcPos l) bkft
+       (ts,ibs,σi,σo :: RHeapEnv r,ot) <- maybe err return $ bkFun t'
        let ls             = nub $ heapLocs σi ++ heapLocs σo
        ls'               <- mapM (const freshLocation') ls
        let θl             = fromLists [] (zip ls ls') :: RSubst r
-       let (σi',σo')      = mapPair (apply θl) (σi, σo)
+       let (σi',σo')      = mapPair (apply θl) (b_type <$> σi, b_type <$> σo)
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
        addAnn (srcPos l) $ tracePP ("funInst " ++ (ppshow $ ann l)) $ FunInst (zip (fst bkft) τs) (zip ls ls')

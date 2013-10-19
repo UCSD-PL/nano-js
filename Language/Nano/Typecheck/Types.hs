@@ -250,10 +250,10 @@ restrictHeap ls h = heapCombineWith const [h1, h2]
     (bs,nbs) = L.partition ((`elem` ls) . fst) $ heapBinds h
     ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
-bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeap r, RHeap r, RType r)
+bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeapEnv r, RHeapEnv r, RType r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'
-             return (αs, xts, heapEnvToHeap h, heapEnvToHeap h', t'')
+             return (αs, xts, h, h', t'')
 
 bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
 bkArr _                   = Nothing
@@ -264,7 +264,7 @@ bkAll t              = go [] t
     go αs (TAll α t) = go (α : αs) t
     go αs t          = (reverse αs, t)
 
-funHeaps :: RType r -> Maybe (RHeap r, RHeap r)
+funHeaps :: RType r -> Maybe (RHeapEnv r, RHeapEnv r)
 funHeaps = (stripHeaps =<<) . bkFun
   where
     stripHeaps (_,_,σ,σ',_) = return (σ,σ')

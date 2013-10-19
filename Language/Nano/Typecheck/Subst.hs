@@ -117,6 +117,11 @@ instance (PP r, PP b, F.Reftable r, Substitutable r b) =>
   apply θ h =
       heapFromBinds "apply" $ map (\(l, t) -> (apply θ l,apply θ t)) $ heapBinds h
 
+instance (PP r, PP b, F.Reftable r, Substitutable r b) =>
+    Substitutable r (Heap (Id b)) where
+  apply θ h =
+      heapFromBinds "apply" $ map (\(l, i) -> (apply θ l, i)) $ heapBinds h
+
 instance (Substitutable r a, Substitutable r b) => Substitutable r (a,b) where 
   apply f (x,y) = (apply f x, apply f y)
 

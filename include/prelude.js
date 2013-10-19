@@ -145,6 +145,7 @@ function unwind(x) {
 
 
 /*@ measure prop        :: (boolean) => bool                              */
+/*@ measure field       :: forall A B. (A, String) => B                   */
 
 /*************************************************************************/
 /************** Run-Time Tags ********************************************/
@@ -204,4 +205,34 @@ function unwind(x) {
 
 /*@ top_level :: () => void */
 
-/* type mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null } */                         
+/*
+  type l:mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null }
+
+    with keys(v) = Set_cup ((Set_sng A)
+                            (if (ttag next) = "null" then
+                               Set_emp
+                             else
+                               keys(xs))
+
+         length(v) = 1 + (if (ttag next) = "null" then
+                            0
+                          else
+                            length(xs))
+*/
+
+/*
+
+G |- H = H0 * H * l |-> x:T
+G |- C[A] = ∃! H' . T'
+T = { ... fⱼ:Tⱼ ... } 
+T' = { ... fⱼ':Tⱼ' ... }
+//... subtyping ...
+G |- Tf = {v:C[T] | ∧ θM_c }
+θ = [x/v;fⱼ/fⱼ'...]
+z fresh
+H' = H0 * l |-> {v | v = z}
+G' = G;z:Tf
+-------------------
+G,H |- fold l : G'/H'
+
+*/

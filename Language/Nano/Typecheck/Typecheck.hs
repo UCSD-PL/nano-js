@@ -217,11 +217,11 @@ type TCEnv r = Maybe (Env (RType r), RHeap r)
 
 tcFun (γ,_) (FunctionStmt l f xs body) 
   = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
-       checkSigWellFormed l ts t σ σ'
+       checkSigWellFormed l ts t (b_type <$> σ) (b_type <$> σ')
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts t γ'
        accumAnn (\a -> catMaybes (map (validInst γ'') (tracePP "offending a" $ M.toList a))) $  
-         do q              <- withFun (F.symbol f) $ tcStmts (γ'',σ) body
+         do q              <- withFun (F.symbol f) $ tcStmts (γ'', b_type <$> σ) body
             θ              <- getSubst
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
        return $ Just (γ', heapEmpty)
@@ -411,7 +411,7 @@ getFunHeaps γ
   = do f <- getFun
        case envFindTy f γ of
          Nothing -> error "Unknown current typed function"
-         Just z  -> return $ fromJust $ funHeaps z
+         Just z  -> return . mapPair (b_type <$>) . fromJust $ funHeaps z
 
 windLocations (γ,σ) l = getUnwound >>= windLocations' (γ,σ) l
 

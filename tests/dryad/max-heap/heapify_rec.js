@@ -1,5 +1,5 @@
 // Short form
-/* type tree[A]<P :: A->A->Prop> <Q :: A->A->Prop> 
+/* type t:tree[A]<P :: A->A->Prop> <Q :: A->A->Prop> 
       = { key    : A
         , left  : ?tree[A<P data>]<P, Q>
         , right : ?tree[A<Q data>]<P, Q>
@@ -13,6 +13,28 @@
               , key:A
               , right:<r>+null 
               } */
+
+/* type bst[A]
+      exists! l |-> bst[{v | v < key}] 
+            * r |-> bst[{v | v >= key}]
+            . { left:<l>+null
+              , key:A
+              , right:<r>+null 
+              }
+
+t |-> t:bst[A]
+==============
+t |-> { left:<l>+null
+      , key:int
+      , right:<r>+null
+      }
+*
+l |-> bst[{v | v < (field t key)}]      
+*
+r |-> bst[{v | v >= (field t key)}]      
+
+
+*/
 
 /* type heap[A] = tree[A]<{\k v -> v < k}, {\k v -> v < k}> */
 
