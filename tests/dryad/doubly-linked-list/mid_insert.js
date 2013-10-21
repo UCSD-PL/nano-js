@@ -17,16 +17,16 @@
 /*@ insert_at_middle :: forall A.
       (u:{<u>|true}+null, k:A, s:{<v>| true}+null)/u |-> { data:A, next:<v>+null, prev:null } * v |-> dlist[A,<v>,<u>+null]
       => <r>/r |-> dlist[A,<r>,null]
- */
+*/
 function insert_at_middle (u, k, s) {
     var ret = {};
     ret.data = k;
-    ret.prev = u;
     ret.next = s;
+    ret.prev = u;
 
     if (typeof(u) != "null") {
         u.next = ret;
-    }
+    } 
 
     if (typeof(s) != "null") {
         s.prev = ret;

@@ -50,10 +50,11 @@ unify :: (PP r, F.Reftable r, Ord r) =>
   Env (RType r) -> RSubst r -> RType r -> RType r -> Either String (RSubst r)
 -----------------------------------------------------------------------------
 unify _ θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
-  Right $ if l1' == l2' then θ else θ'
-    where l1'      = apply θ l1
-          l2'      = apply θ l2
-          θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
+  -- Right $ if l1' == l2' then θ else θ'
+  unifyLocs θ l1 l2
+    -- where l1'      = apply θ l1
+    --       l2'      = apply θ l2
+    --       θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
         
 unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _) 
   | any isTop [t,t']                    = Right θ
@@ -77,7 +78,7 @@ unify _  θ t              (TVar α _)    = varAsn θ α t
 -- e.g.  List[A] + B `unif` ... => this should not even be allowed!!!
 unify env θ t t' | any isUnion [t,t']     = 
   (uncurry $ unifys env θ) $ unzip $ fst3 -- $ tracePP "unify union"
-    $ unionPartsWithEq (unifEq env) t t'
+    $ unionPartsWithEq (unifEq env θ) t t'
 
 unify _ _ (TBd _) _   = error $ bugTBodiesOccur "unify"
 unify _ _ _ (TBd _)   = error $ bugTBodiesOccur "unify"
@@ -120,11 +121,13 @@ safeHeapSubst = safeHeapSubstWith safeAdd
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
 -- TODO: cycles
-unifEq _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
+unifEq _ _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
 -- unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (snd $ unfoldSafe γ t) t'
 -- unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (snd $ unfoldSafe γ t')
-unifEq _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     = True
-unifEq γ t t'                     = equiv γ t t'
+unifEq _ θ (TApp (TRef l) _ _) (TApp (TRef m) _ _)
+  | unassignedRef l θ || unassignedRef m θ = True
+  | otherwise                              = l == m
+unifEq γ _ t t'                     = equiv γ t t'
 
 -----------------------------------------------------------------------------
 unifys ::  (PP r, F.Reftable r, Ord r) =>  
@@ -221,5 +224,13 @@ varAsn θ α t
   | α `S.member` free t    = Left  $ errorOccursCheck α t 
   | unassigned α θ         = Right $ θ `mappend` (Su (M.singleton α t) (locSub θ))
   | otherwise              = Left  $ errorRigidUnify α t
+
+unifyLocs θ l1 l2
+  | apply θ l1 == apply θ l2 = Right $ θ
+  | unassignedRef l1 θ     = Right $ θ `mappend` (Su (tySub θ) (M.singleton l1 l2))
+  | unassignedRef l2 θ     = Right $ θ `mappend` (Su (tySub θ) (M.singleton l2 l1))
+  | otherwise              = Left  $ printf "Unable to unify rigid locations %s and %s" l1 l2
   
 unassigned α (Su m _) = M.lookup α m == Just (tVar α)
+
+unassignedRef l (Su _ m) = M.lookup l m == Just l

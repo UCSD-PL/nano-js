@@ -363,10 +363,11 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
   = do  let rt         = envFindReturn γ 
         -- End of basic block --> Wind up locations
         (σ_in, σ_out) <- getFunHeaps γ
-        (γ,σ')        <- windLocations (γ,σ) l
-        (t,σ')        <- maybe (return (tVoid,σ')) (tcExpr (γ,σ')) eo
-        θ_old         <- getSubst
+        (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
+        (θ,θr)        <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
         θ             <- unifyTypeM l "Return" eo t rt
+        (γ,σ')        <- windLocations (γ, apply θ σ') l
+        -- θ_old         <- getSubst
         -- Now unify heap
         θ             <- unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
         -- Apply the substitutions
@@ -381,14 +382,14 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- (γ,σ')        <- deleteLocationsM l (γ,σ') σ_in σ_out
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
-        (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
-        (γ,σ')        <- windSpecLocations (γ, apply θ σ') l σ_out
+        -- (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
+        (γ,σ')        <- windSpecLocations (γ, apply (tracePP "windSpecLocations theta" θ) σ') l σ_out
         σ'            <- safeHeapSubstM σ' 
         -- One last chance to unify any TVars that appeared
         -- in the winding step
         unifyHeapsM l "Return" σ' σ_out
         -- Now safe to check the output heap
-        checkLocSubs σ_out
+        -- checkLocSubs σ_out
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
@@ -442,7 +443,7 @@ windType γ l loc tWind@(Id _ i) σ
            σe'       = tracePP "sige'" $ apply θ $ tracePP ("sige loc: " ++ loc) σe
            wls       = tracePP "dependents" $ filter (needWind (tracePP "dependents reference" σ1)) $ tracePP "dependents wound" $ woundLocations $ tracePP ("dependents heap " ++ loc) σ2
        (_,σ1')      <- (\(g,h) -> (g,tracePP "wind recursive result" h)) <$> windLocations' (γ,tracePP "wind recursive" σ1) l wls
-       θ' <- unifyHeapsM l "Wind(heap)" (tracePP "sig2 unify wind" σe') (tracePP "sig1 unify wind" σ1')
+       θ' <- unifyHeapsM l "Wind(heap)" (tracePP "sig2 unify wind" σ2) (tracePP "sig1 unify wind" σ1')
        let θf = θ `mappend` θ'
        castHeapM γ l σ1' σ2
        recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst {- `mappend` θf -})

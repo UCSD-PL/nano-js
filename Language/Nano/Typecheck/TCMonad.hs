@@ -76,6 +76,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Unification
   , unifyTypeM, unifyTypesM
   , unifyHeapsM
+  , unifyTypeRenameM
 
   -- * Casts
   , getCasts, getHCasts
@@ -297,7 +298,7 @@ freshApp l i@(Id _ d)
       
 
 -------------------------------------------------------------------------------
-freshLocation :: AnnSSA_ r -> TCM r Location
+freshLocation :: (F.Reftable r, PP r, Ord r) => AnnSSA_ r -> TCM r Location
 -------------------------------------------------------------------------------
 freshLocation l = do loc <- freshLocation' 
                      addAnn (srcPos l) $ LocInst loc
@@ -572,7 +573,12 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
 
 -- freshLocation' = tick >>= \n -> return ("_?L" ++ show n)
-freshLocation' = tick >>= \n -> return ("?" ++ show n)
+freshLocation'
+  = do n <- tick
+       θ <- getSubst
+       let loc = ("?" ++ show n)
+       setSubst (θ `mappend` (Su (tySub θ) (HM.singleton loc loc)))
+       return loc
 
 -------------------------------------------------------------------------------
 freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))
@@ -739,6 +745,22 @@ unifyTypeM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l) =>
   l -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r)
 ----------------------------------------------------------------------------------
 unifyTypeM l m e t t' = unifyTypesM l msg [t] [t']
+  where 
+    msg              = errorWrongType m e t t'
+
+----------------------------------------------------------------------------------
+unifyTypeRenameM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
+  l -> [Location] -> [Location] -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r, RSubst r)
+----------------------------------------------------------------------------------
+unifyTypeRenameM l ls ls' m e t t'
+  = do θ0 <- getSubst
+       setSubst $ θ0 `mappend` fromLists [] (zip ls ls)
+       θ <- unifyTypeM l m e t t'
+       let rs = filter ((`elem` ls) . fst) $ snd $ toLists θ
+       let θri  = Su HM.empty (HM.fromList $ map swap rs)
+       setSubst θ0
+       recordRenameM (srcPos l) (θ0, fromLists [] rs, θri)
+       return (θ, θri)
   where 
     msg              = errorWrongType m e t t'
 
