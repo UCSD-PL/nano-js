@@ -1,0 +1,221 @@
+qualif EqTwo(v : int, ~N : int): (v = ~N)
+qualif EqN(v : A, ~N : int): (field([v; lit#n]) = ~N)
+qualif Bot(v : a): (0 = 1)
+qualif Bot(v : obj): (0 = 1)
+qualif Bot(v : bool): (0 = 1)
+qualif Bot(v : number): (0 = 1)
+qualif CmpZ(v : number): (v < 0)
+qualif CmpZ(v : number): (v <= 0)
+qualif CmpZ(v : number): (v > 0)
+qualif CmpZ(v : number): (v >= 0)
+qualif CmpZ(v : number): (v = 0)
+qualif CmpZ(v : number): (v != 0)
+qualif Cmp(v : number, ~X : number): (v < ~X)
+qualif Cmp(v : number, ~X : number): (v <= ~X)
+qualif Cmp(v : number, ~X : number): (v > ~X)
+qualif Cmp(v : number, ~X : number): (v >= ~X)
+qualif Cmp(v : a, ~X : a): (v = ~X)
+qualif Cmp(v : a, ~X : a): (v != ~X)
+qualif One(v : number): (v = 1)
+qualif True(v : bool): (? v)
+qualif False(v : bool): (~ ((? v)))
+qualif True1(v : Bool): (? Prop([v]))
+qualif False1(v : Bool): (~ ((? Prop([v]))))
+qualif Add(v : number, ~X : number, ~Y : number): (v = (~X + ~Y))
+qualif Sub(v : number, ~X : number, ~Y : number): (v = (~X - ~Y))
+
+constant Prop : func(2, [int; bool])
+constant field : func(2, [int; int; int])
+constant len : func(1, [int; int])
+constant ttag : func(1, [int; int])
+constant lit#boolean : int
+constant lit#n : int
+constant lit#number : int
+constant lit#ref : int
+bind 0 call_inc : {VV#19 : func(0, [int; int]) | []}
+bind 1 n : {v : int | [(ttag([v]) = lit#number)]}
+bind 2 lq_tmp_nano1 : {v : int | [(ttag([v]) = lit#number);
+                                  (v = 0)]}
+bind 3 lq_tmp_nano3 : {v : int | [(ttag([v]) = lit#number);
+                                  (v = 0);
+                                  (v = lq_tmp_nano1);
+                                  (v = field([lq_tmp_nano2; lit#n]));
+                                  (ttag([v]) = lit#number)]}
+bind 4 lq_tmp_nano4 : {v : int | [(ttag([v]) = lit#ref)]}
+bind 5 lq_tmp_nano2 : {VV : int | []}
+bind 6 r_SSA_0 : {v : int | [(ttag([v]) = lit#ref);
+                             (v = lq_tmp_nano4);
+                             (ttag([v]) = lit#ref)]}
+bind 7 lq_tmp_nano7 : {v : int | [(ttag([v]) = lit#number);
+                                  (v = 1)]}
+bind 8 lq_tmp_nano8 : {v : int | [((? Prop([v])) <=> (n = lq_tmp_nano7));
+                                  (ttag([v]) = lit#boolean)]}
+bind 9 lq_tmp_nano11 : {v : int | [(ttag([v]) = lit#number);
+                                   (v = field([lq_tmp_nano10; lit#n]));
+                                   (v = (field([lq_tmp_nano2; lit#n]) + 1))]}
+bind 10 lq_tmp_nano10 : {VV#8 : int | []}
+bind 11 lq_tmp_nano12 : {VV#5 : int | []}
+bind 12 lq_tmp_nano13 : {v : int | [(ttag([v]) = lit#number);
+                                    (v = lq_tmp_nano3);
+                                    (ttag([v]) = lit#number);
+                                    (v = 0);
+                                    (v = lq_tmp_nano1);
+                                    (v = field([lq_tmp_nano2; lit#n]));
+                                    (ttag([v]) = lit#number)]}
+bind 13 lq_tmp_nano15 : {v : int | [(ttag([v]) = lit#number);
+                                    (v = n);
+                                    (v = field([lq_tmp_nano14; lit#n]));
+                                    (ttag([v]) = lit#number)]}
+bind 14 lq_tmp_nano14 : {VV : int | []}
+bind 15 lq_tmp_nano20 : {VV#18 : int | [k_19]}
+bind 16 lq_tmp_nano20 : {VV#18 : int | [k_19]}
+bind 17 lq_tmp_nano20 : {VV#18 : int | [k_19]}
+bind 18 lq_tmp_nano23 : {v : int | [(ttag([v]) = lit#number);
+                                    (v = field([lq_tmp_nano22; lit#n]));
+                                    (v = (field([lq_tmp_nano20; lit#n]) + 1))]}
+bind 19 lq_tmp_nano22 : {VV#8 : int | []}
+bind 20 lq_tmp_nano24 : {VV#5 : int | []}
+bind 21 n : {v : int | [(ttag([v]) = lit#number); k_17[VV#16:=v]]}
+
+
+constraint:
+  env [0; 1; 17; 2; 18; 3; 19; 4; 20; 5; 6]
+  grd true
+  lhs {VV#F1 : int | [(ttag([VV#F1]) = lit#number);
+                      (VV#F1 = lq_tmp_nano23);
+                      (VV#F1 = field([lq_tmp_nano22; lit#n]));
+                      (VV#F1 = (field([lq_tmp_nano20; lit#n]) + 1));
+                      (ttag([VV#F1]) = lit#number)]}
+  rhs {VV#F1 : int | [(VV#F1 = (n + 1));
+                      (ttag([VV#F1]) = lit#number)]}
+  id 1 
+
+
+constraint:
+  env [0; 1; 17; 2; 18; 3; 19; 4; 20; 5; 6]
+  grd true
+  lhs {VV#F2 : int | [(ttag([VV#F2]) = lit#ref);
+                      (VV#F2 = r_SSA_0);
+                      (ttag([VV#F2]) = lit#ref);
+                      (VV#F2 = lq_tmp_nano4);
+                      (ttag([VV#F2]) = lit#ref)]}
+  rhs {VV#F2 : int | [(ttag([VV#F2]) = lit#ref)]}
+  id 2 
+
+
+constraint:
+  env [0; 1; 17; 2; 3; 4; 5; 6]
+  grd true
+  lhs {VV#F3 : int | [(ttag([VV#F3]) = lit#number);
+                      k_17[VV#16:=VV#F3][v:=VV#F3][VV#F:=VV#F3];
+                      k_19[VV#16:=VV#F3][v:=VV#F3][VV#F:=VV#F3]]}
+  rhs {VV#F3 : int | [(ttag([VV#F3]) = lit#number)]}
+  id 3 
+
+
+constraint:
+  env [0; 1; 17; 2; 3; 4; 5; 6]
+  grd true
+  lhs {VV#F4 : int | [(ttag([VV#F4]) = lit#ref);
+                      (VV#F4 = r_SSA_0);
+                      (ttag([VV#F4]) = lit#ref);
+                      (VV#F4 = lq_tmp_nano4);
+                      (ttag([VV#F4]) = lit#ref)]}
+  rhs {VV#F4 : int | [true; (ttag([VV#F4]) = lit#ref)]}
+  id 4 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7; 8; 12; 13; 14]
+  grd (~ ((? Prop([lq_tmp_nano8]))))
+  lhs {VV#F5 : int | [(ttag([VV#F5]) = lit#number);
+                      (VV#F5 = lq_tmp_nano15);
+                      (VV#F5 = n);
+                      (VV#F5 = field([lq_tmp_nano14; lit#n]));
+                      (ttag([VV#F5]) = lit#number)]}
+  rhs {VV#F5 : int | [(ttag([VV#F5]) = lit#number);
+                      k_17[VV#16:=VV#F5][v:=VV#F5][VV#F:=VV#F5];
+                      k_19[VV#16:=VV#F5][v:=VV#F5][VV#F:=VV#F5]]}
+  id 5 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11]
+  grd (? Prop([lq_tmp_nano8]))
+  lhs {VV#F6 : int | [(ttag([VV#F6]) = lit#number);
+                      (VV#F6 = lq_tmp_nano11);
+                      (VV#F6 = field([lq_tmp_nano10; lit#n]));
+                      (VV#F6 = (field([lq_tmp_nano2; lit#n]) + 1));
+                      (ttag([VV#F6]) = lit#number)]}
+  rhs {VV#F6 : int | [(ttag([VV#F6]) = lit#number);
+                      k_17[VV#16:=VV#F6][v:=VV#F6][VV#F:=VV#F6];
+                      k_19[VV#16:=VV#F6][v:=VV#F6][VV#F:=VV#F6]]}
+  id 6 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7; 8]
+  grd (? Prop([lq_tmp_nano8]))
+  lhs {VV#F7 : int | [(ttag([VV#F7]) = lit#number);
+                      (VV#F7 = 0);
+                      (VV#F7 = lq_tmp_nano1);
+                      (VV#F7 = lq_tmp_nano3);
+                      (VV#F7 = field([lq_tmp_nano2; lit#n]));
+                      (ttag([VV#F7]) = lit#number)]}
+  rhs {VV#F7 : int | [(ttag([VV#F7]) = lit#number)]}
+  id 7 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7; 8]
+  grd (? Prop([lq_tmp_nano8]))
+  lhs {VV#F8 : int | [(ttag([VV#F8]) = lit#ref);
+                      (VV#F8 = r_SSA_0);
+                      (ttag([VV#F8]) = lit#ref);
+                      (VV#F8 = lq_tmp_nano4);
+                      (ttag([VV#F8]) = lit#ref)]}
+  rhs {VV#F8 : int | [true; (ttag([VV#F8]) = lit#ref)]}
+  id 8 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7]
+  grd true
+  lhs {VV#F9 : int | [(ttag([VV#F9]) = lit#number);
+                      (VV#F9 = lq_tmp_nano7);
+                      (ttag([VV#F9]) = lit#number);
+                      (VV#F9 = 1)]}
+  rhs {VV#F9 : int | [(ttag([VV#F9]) = lit#number);
+                      true;
+                      k_6[VV#5:=VV#F9][x:=n][x:=n][y:=VV#F9][v:=VV#F9][VV#F:=VV#F9]]}
+  id 9 
+
+
+constraint:
+  env [0; 1; 2; 3; 4; 5; 6; 7]
+  grd true
+  lhs {VV#F10 : int | [(ttag([VV#F10]) = lit#number);
+                       (VV#F10 = n);
+                       (ttag([VV#F10]) = lit#number)]}
+  rhs {VV#F10 : int | [(ttag([VV#F10]) = lit#number);
+                       true;
+                       k_6[VV#5:=VV#F10][y:=lq_tmp_nano7][y:=lq_tmp_nano7][x:=VV#F10][v:=VV#F10][VV#F:=VV#F10]]}
+  id 10 
+
+
+wf:
+  env [0; 1; 2; 3; 4; 5; 6]
+  reft {VV#18 : int | [k_19]}
+  
+
+
+wf:
+  env [0; 1; 2; 3; 4; 5; 21; 6]
+  reft {VV#16 : int | [k_17]}
+  
+
+
+wf:
+  env [0; 1; 2; 3; 4; 5; 6]
+  reft {VV#5 : int | [k_6]}
+  
