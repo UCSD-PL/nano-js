@@ -434,7 +434,7 @@ windType γ l loc tWind@(Id _ i) σ
        (σe, t'',θl) <- tracePP (printf "UnwindTC [%s,%s]" (ppshow loc) (ppshow tWind)) <$> unwindTC t'
        let ls        = L.nub $ loc : heapLocs σe ++ locs t''
        let σe_up     = heapAdd "windType" loc t'' σe
-       θ            <- tracePP ("Theta of winding " ++ loc) <$> unifyHeapsM l "Wind(heap)" (tracePP "wind prime" σe_up) (tracePP "wind" σ)
+       θ            <- tracePP ("Theta of winding " ++ loc) <$> unifyHeapsM l "Wind(heap)" (tracePP "wind prime" σe_up) (tracePP "wind" σ) 
        let θ_inst    = θα `mappend` θl
            (σ1, σ2)  = mapPair (apply θ) (σ,σe_up)
            ls'       = apply θ ls
@@ -442,7 +442,7 @@ windType γ l loc tWind@(Id _ i) σ
            σe'       = tracePP "sige'" $ apply θ $ tracePP ("sige loc: " ++ loc) σe
            wls       = tracePP "dependents" $ filter (needWind (tracePP "dependents reference" σ1)) $ tracePP "dependents wound" $ woundLocations $ tracePP ("dependents heap " ++ loc) σ2
        (_,σ1')      <- (\(g,h) -> (g,tracePP "wind recursive result" h)) <$> windLocations' (γ,tracePP "wind recursive" σ1) l wls
-       θ' <- unifyHeapsM l "Wind(heap)" σ2 σ1'
+       θ' <- unifyHeapsM l "Wind(heap)" (tracePP "sig2 unify wind" σe') (tracePP "sig1 unify wind" σ1')
        let θf = θ `mappend` θ'
        castHeapM γ l σ1' σ2
        recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst {- `mappend` θf -})
@@ -635,15 +635,16 @@ tcCall (γ,σ) l fn es ft
         -- This function call may require some locations
         -- to be folded up. Who are we to argue?
         ls                <- maybe (error "BUG: no statement") getAnnotation <$> getStmt
-        (γ,σ')            <- windSpecLocations (γ, (tracePP "tcCall actual heap wind sub" $ apply θ $ tracePP "tcCall actual heap wind" σ')) ls (tracePP "tcCall formal heap wind sub" $ apply θ $ tracePP "tcCall formal heap wind" σi)
+        (γ,σ')            <- windSpecLocations (γ, apply θ σ') ls (apply θ σi)
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         θ <- unifyHeapsM l "tcCall" σ' (apply θ σi)
         castsM es ts' its' 
         castHeapM γ l (apply θ σ') (apply θ σi)
         checkDisjoint σo
-        let σ_out = tracePP "sig out" $ heapCombine "tcCall" [subtr (tracePP "theta call" θ) (tracePP "actual sig in" σ') (tracePP "spec sig in" σi), tracePP "sig out" $ apply θ σo]
-        return (apply θ ot, apply θ σ_out)
+        let σ_out   = tracePP "sig out" $ heapCombine "tcCall" [subtr (tracePP "theta call" θ) (tracePP "actual sig in" σ') (tracePP "spec sig in" σi), tracePP "sig out" $ apply θ σo]
+            deletes = filter (`notElem` apply θ (heapLocs σ_out)) (apply θ $ heapLocs σ')
+        return (deleteLocsTy (L.nub deletes) $ apply θ ot, deleteLocsTy (L.nub deletes) <$> apply θ σ_out)
     where
       subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
@@ -767,7 +768,8 @@ renameAndDeleteLocsM l (γ, σ) σ1 σ2 θ
   = do θ'                <- (tracePP "old sub" θ)`seq` tracePP "rename cur sub" <$> getSubst
        let (gone,keep)   = tracePP "gone,keep" $ L.partition dead $ L.nub $ (heapLocs σ ++ heapLocs σ1 ++ map fst sub)
            rename        = tracePP "renames"   $ L.filter (renamed θ') gone
-           del           = tracePP "deletes"   $ L.filter (deleted θ' rename) gone
+           -- del           = tracePP "deletes"   $ L.filter (deleted θ' rename) gone
+           del           = tracePP "deletes" $ filter (`notElem` (heapLocs σ ++ heapLocs σ2)) . concat . map (locs . snd) $ envToList γ
            sub           = snd $ toLists θ'
            rsub          = zip rename $ apply θ' rename 
            (θr,θri)      = tracePP "rename is" $ mapPair (fromLists []) (rsub, map swap rsub)

@@ -10,15 +10,17 @@
  */
 
 /*@ delete_at_middle :: forall A.
-      (p:<p>+null, q:<q>, r:<r>+null)/p |-> { data:A, next:{v:<q> | v = q}, prev:null }
-                                    * q |-> { data:A, next:{v:<r> | v = r} + {v:null | v = r}, prev:{v:<p> | v = p} + {v:null | v = p} }
-                                    * r |-> dlist[A,<r>,{v:<q> | v = q}]
-      => void/p |-> { data:A, next:<r>+null, prev:null} * r |-> dlist[A,<r>,{v:<p> | v = p }+{v:null | v = p}] 
+      (p:<p>+null, q:<q>, r:<r>+null)/p |-> pp:{ data:A, next:{v:<q> | v = q} + null, prev:null }
+                                    * q |-> qq:{ data:A, next:{v:<r> | v = r} + {v:null | v = r}, prev:{v:<p> | v = p} + {v:null | v = p} }
+                                    * r |-> rr:dlist[A,<r>,{v:<q> | v = q}+null]
+      => void/p |-> p:{ data:A, next:<r>+null, prev:null} * r |-> r:dlist[A,<r>,{v:<p> | v = p }+{v:null | v = p}] 
  */
 function delete_at_middle (p, q, r){
   q.next = null;
   q.prev = null;
-    
+
+  delete(q);  
+
   if (typeof(p) != "null") {
       p.next = r;
   }

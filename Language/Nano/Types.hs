@@ -197,6 +197,7 @@ instance IsNano PrefixOp where
   isNano PrefixLNot   = True
   isNano PrefixMinus  = True 
   isNano PrefixTypeof = True 
+  isNano PrefixDelete = True 
   isNano e            = errortext (text "Not Nano PrefixOp!" <+> pp e)
   -- isNano _            = False
 
@@ -225,6 +226,7 @@ instance IsNano [(Statement a)] where
 isNanoExprStatement :: Expression a -> Bool
 isNanoExprStatement (AssignExpr _ o lv e) = isNano o && isNano lv && isNano e 
 isNanoExprStatement (CallExpr _ e es)     = all isNano (e:es)
+isNanoExprStatement (PrefixExpr _ p e)    = isNano p && isNano e
 isNanoExprStatement e                     = errortext (text "Not Nano ExprStmt!" <+> pp e) 
 -- isNanoExprStatement _                     = False
 

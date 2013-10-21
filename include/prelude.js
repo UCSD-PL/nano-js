@@ -142,6 +142,7 @@ function unwind(x) {
 
 //Changing temprorarily until strings are supported
 /* builtin_PrefixTypeof:: forall A. (A) => string                                                         */
+/*@ builtin_PrefixDelete:: forall A. (<l>)/l |-> A => void/emp                                             */
 
 
 /*@ measure prop        :: (boolean) => bool                              */

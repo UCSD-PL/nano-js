@@ -731,6 +731,7 @@ prefixOpTy o g = fromMaybe err $ envFindTy (prefixOpId o) g
 prefixOpId PrefixMinus  = builtinId "PrefixMinus"
 prefixOpId PrefixLNot   = builtinId "PrefixLNot"
 prefixOpId PrefixTypeof = builtinId "PrefixTypeof"
+prefixOpId PrefixDelete = builtinId "PrefixDelete"
 prefixOpId o            = errorstar $ "Cannot handle: prefixOpId " ++ ppshow o
 
 builtinId       = mkId . ("builtin_" ++)
