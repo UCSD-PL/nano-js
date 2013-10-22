@@ -134,12 +134,12 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where
   apply θ (B z t) = B z $ appTy θ t
 
 instance Free (RType r) where
-  free (TApp _ ts _)        = S.unions   $ free <$> ts
-  free (TVar α _)           = S.singleton α 
-  free (TFun xts t h h' _)  = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
-  free (TAll α t)           = S.delete α $ free t 
-  free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
-  free (TBd (TD _ α h t _ ))= foldr S.delete (free t) α
+  free (TApp _ ts _)          = S.unions   $ free <$> ts
+  free (TVar α _)             = S.singleton α 
+  free (TFun xts t h h' _)    = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
+  free (TAll α t)             = S.delete α $ free t 
+  free (TObj bs _)            = S.unions   $ free <$> b_type <$> bs
+  free (TBd (TD _ _ α h t _ ))= foldr S.delete (free t) α
 
 instance Substitutable () Fact where
   apply _ x@(PhiVar _)    = x
@@ -198,7 +198,7 @@ appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
 appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) ls) t 
-appTy θ@(Su ts ls) (TBd (TD c α h t s)) = TBd $ TD c α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
+appTy θ@(Su ts ls) (TBd (TD c v α h t s)) = TBd $ TD c v α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
 
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (go h) (go h') r
@@ -216,8 +216,8 @@ unfoldFirst env t = go t
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _) = 
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
-        _                            -> error $ errorUnboundId id
+        Just (TBd (TD _ _ vs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
+        _                              -> error $ errorUnboundId id
     go (TApp c a r)            = TApp c (go <$> a) r
     go t@(TVar _ _ )           = t
     appTBi f (B s t)           = B s $ f t
@@ -237,8 +237,8 @@ unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
 -------------------------------------------------------------------------------
 unfoldMaybe env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                in (b_type <$> h, bd, θ)
+        Just (TBd (TD _ s vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
+                                                  in (b_type <$> h, bd, θ)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.

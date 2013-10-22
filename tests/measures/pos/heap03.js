@@ -9,4 +9,3 @@ function consList(a, l) {
     var lst = { data:a, next:l };
     return lst;
 }
-

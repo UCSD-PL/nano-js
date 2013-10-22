@@ -77,8 +77,8 @@ function unwind(x) {
 /***************** Types for list Operators ******************************/
 /*************************************************************************/
 
-/*@ type list[A]  exists! l |-> list[A]. {  data : A, next : <l> + null } */
-/*@ type inflist[A]  exists! l |-> inflist[A]. {  data : A, next : <l> } */
+/*@ type list[A]  exists! l |-> xs:list[A]. r:{  data : A, next : <l> + null } */
+/*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
@@ -207,7 +207,7 @@ function unwind(x) {
 /*@ top_level :: () => void */
 
 /*
-  type l:mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null }
+  type mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null }
 
     with keys(v) = Set_cup ((Set_sng A)
                             (if (ttag next) = "null" then

@@ -10,6 +10,7 @@ module Language.Nano.Typecheck.Parse (
 
 import           Data.List (sort)
 import           Data.Maybe (fromMaybe)
+import qualified Data.HashMap.Strict            as M
 import           Data.Generics.Aliases
 import           Data.Generics.Schemes
 import           Control.Monad
@@ -54,13 +55,33 @@ idBindP = xyP identifierP dcolon bareTypeP
 identifierP :: Parser (Id SourceSpan)
 identifierP = withSpan Id lowerIdP -- <$> getPosition <*> lowerIdP -- Lexer.identifier
 
-tBodyP :: Parser (Id SourceSpan, RType Reft)
+tBodyP :: Parser (Id SourceSpan, RType Reft, [TypeMeasure])
 tBodyP = do  id <- identifierP 
              tv <- option [] tParP
              th <- option heapEmpty extHeapP
+             ts <- option (stringSymbol "vt") (try (symbolP >>= \b -> colon >> return b ))
              tb <- bareTypeP
-             return $ (id, TBd $ TD (TDef id) tv th tb (idLoc id))
+             ms <- option [] (reserved "with" >> spaces >> typeMeasuresP)
+             return $ (id, TBd $ TD (TDef id) ts tv th tb (idLoc id), ms)
 
+typeMeasuresP = do
+  m  <- typeMeasureP
+  spaces
+  ms <- option [] $ do
+                  reserved "and"
+                  spaces
+                  typeMeasuresP
+  return $ m:ms
+
+-- keys(x) := e         
+typeMeasureP = do
+  id <- symbolP
+  spaces
+  v  <- parens $ symbolP
+  spaces >> reserved ":=" >> spaces
+  e  <- exprP
+  return (id, v, e)
+  
 -- [A,B,C...]
 tParP = brackets $ sepBy tvarP comma
 
@@ -306,7 +327,7 @@ data PSpec l t
   = Meas (Id l, t)
   | Bind (Id l, t) 
   | Qual Qualifier
-  | Type (Id l, t)
+  | Type (Id SourceSpan, t, [TypeMeasure])
   | Invt l t 
   deriving (Show)
 
@@ -328,9 +349,10 @@ mkSpec xs = Nano { code   = Src []
                  , specs  = envFromList [b | Bind b <- xs] 
                  , defs   = envEmpty
                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
-                 , tDefs  = envFromList [b         | Type b <- xs]
-                 , quals  =             [q         | Qual q <- xs]
-                 , invts  =             [Loc l' t  | Invt l t <- xs, let l' = srcPos l]
+                 , tDefs  = envFromList [(i,t)        | Type (i,t,_) <- xs]
+                 , tMeas  = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
+                 , quals  =             [q            | Qual q <- xs]
+                 , invts  =             [Loc l' t     | Invt l t <- xs, let l' = srcPos l]
                  }
 
 -- YUCK. Worst hack of all time.
@@ -350,6 +372,7 @@ mkCode ss = Nano { code   = Src (checkTopStmt <$> ss)
                  , defs   = envEmpty
                  , consts = envEmpty 
                  , tDefs  = envEmpty
+                 , tMeas  = M.empty
                  , quals  = [] 
                  , invts  = [] 
                  } 

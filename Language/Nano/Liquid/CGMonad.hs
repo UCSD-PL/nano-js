@@ -145,7 +145,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -174,6 +174,13 @@ patchSymLits fi = fi { F.lits = F.symConstLits fi ++ F.lits fi }
 getTDefs :: CGM (E.Env RefType)
 ---------------------------------------------------------------------------------------
 getTDefs  = cg_tdefs <$> get
+
+---------------------------------------------------------------------------------------
+getMeasures :: (F.Symbolic s) => s -> CGM [TypeMeasure]             
+---------------------------------------------------------------------------------------
+getMeasures t = do m <- cg_tmeas <$> get
+                   let x = tracePP "Measures:" (M.toList m)
+                   return $ M.lookupDefault [] (F.symbol t) m
 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
@@ -247,6 +254,7 @@ data CGState
         , cg_fun   :: !(Maybe F.Symbol)    -- ^ current function
         , cg_defs  :: !(E.Env RefType)     -- ^ type sigs for all defined functions
         , cg_tdefs :: !(E.Env RefType)     -- ^ type definitions
+        , cg_tmeas :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ type measure definitions
         , cs       :: ![SubC]              -- ^ subtyping constraints
         , ws       :: ![WfC]               -- ^ well-formedness constraints
         , count    :: !Integer             -- ^ freshness counter
@@ -358,13 +366,13 @@ envAddGuard x b g = g { guards = guard b x : guards g }
     --     vEqX x    = F.PAtom F.Eq (F.eVar v) x
                            
 ---------------------------------------------------------------------------------------
-envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv F.Reft, RefType, [TVar])
+envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv F.Reft, F.Symbol, RefType, [TVar])
 ---------------------------------------------------------------------------------------
 envFindTyDef ty
   = do γ <- getTDefs
        case E.envFindTy ty γ of
          Just (TBd t) -> 
-           return (td_heap t, td_body t, td_args t)
+           return (td_heap t, td_self t, td_body t, td_args t)
          Nothing -> error "BARF!!!"
 ---------------------------------------------------------------------------------------
 envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
@@ -495,18 +503,20 @@ freshTyInst l g αs τs tbody
 -- | Instantiate Fresh Type (at Wind-site)
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
-               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan -> CGM ((RefHeap, RefType, RefType), CGEnv)
+               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan 
+               -> CGM ((RefHeap, (F.Symbol, RefType), RefType, [TypeMeasure]), CGEnv)
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
-  = do (σ,t,vs)    <- envFindTyDef ty
+  = do (σ,s,t,vs)    <- envFindTyDef ty
        let (αs,ls)  = toLists θ
        αs'         <- mapM freshSubst αs
        let θ'       = fromLists αs' ls
-       -- σ'          <- return σ -- heapFromBinds "freshTyWind" <$> mapM (instHeapBind θ') binds
-       (su,σ')     <- freshHeapEnv l (apply θ' σ)
+       (su,σ')     <- freshHeapEnv l (apply (tracePP "freshTyWind inst" θ') $ tracePP "freshTyWind sig" σ)
+       ms          <- (instMeas su <$>) <$> getMeasures (tracePP "freshTyWind" ty)
        g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return ((toId <$> σ', F.subst su $ apply θ' t, mkApp (apply θ' . tVar <$> vs)), g')
+       return ((tracePP "freshTyWind sig out" (toId <$> σ'), (s,F.subst su $ apply θ' t), mkApp (apply θ' . tVar <$> vs), ms), g')
     where 
+      instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l
       toId                 = Id s . F.symbolString . b_sym                      
       toIdTyPair b         = (toId b, b_type b)

@@ -28,6 +28,8 @@ module Language.Nano.Typecheck.Types (
   , RHeapEnv -- l |-> x:T
   , RType (..)
   , Bind (..)
+  , TypeMeasure
+  , TDefId
   , toType
   , ofType
   , strengthen 
@@ -141,11 +143,14 @@ instance F.Symbolic a => F.Symbolic (Located a) where
 -- | Constructed Type Bodies
 data TBody r 
    = TD { td_con  :: !TCon          -- TDef name ...
+        , td_self :: F.Symbol       -- "Self" binder for body
         , td_args :: ![TVar]        -- Type variables
         , td_heap :: !(RHeapEnv r)     -- An existentially quantified heap
         , td_body :: !(RType r)     -- int or bool or fun or object ...
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
+
+type TypeMeasure = (F.Symbol, F.Symbol, F.Expr) -- (name, v in keys(v) := ..., e)
 
 -- | Type Constructors
 data TCon 
@@ -155,11 +160,13 @@ data TCon
   | TVoid             
   | TTop
   | TRef Location
-  | TDef  (Id SourceSpan)
+  | TDef TDefId
   | TUn
   | TNull
   | TUndef
     deriving (Ord, Show, Data, Typeable)
+
+type TDefId = Id SourceSpan
 
 type RHeap r = Heap (RType r)    
 type RHeapEnv r = Heap (Bind r)
@@ -420,7 +427,7 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
   TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
   TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
   TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
-  TBd (TD c1 a1 h1 b1 _) == TBd (TD c2 a2 h2 b2 _)= (c1, a1, h1, b1)   == (c2, a2, h2, b2)
+  TBd (TD c1 v1 a1 h1 b1 _) == TBd (TD c2 v2 a2 h2 b2 _) = (c1, v1, a1, h1, b1)   == (c2, v2, a2, h2, b2)
   TAll _ _               == TAll _ _              = undefined -- TODO
   _                      == _                     = False
 
@@ -430,14 +437,16 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
 -- | Nano Program = Code + Types for all function binders
 ---------------------------------------------------------------------------------
 
-data Nano a t = Nano { code   :: !(Source a)        -- ^ Code to check
-                     , specs  :: !(Env t)           -- ^ Imported Specifications
-                     , defs   :: !(Env t)           -- ^ Signatures for Code
-                     , consts :: !(Env t)           -- ^ Measure Signatures 
-                     , tDefs  :: !(Env t)           -- ^ Type definitions
-                     , quals  :: ![F.Qualifier]     -- ^ Qualifiers
-                     , invts  :: ![Located t]       -- ^ Type Invariants
-                     } deriving (Functor, Data, Typeable)
+data Nano a t =
+    Nano { code   :: !(Source a)               -- ^ Code to check
+         , specs  :: !(Env t)                  -- ^ Imported Specifications
+         , defs   :: !(Env t)                  -- ^ Signatures for Code
+         , consts :: !(Env t)                  -- ^ Measure Signatures 
+         , tDefs  :: !(Env t)                  -- ^ Type definitions
+         , tMeas  :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ Type measure definitions
+         , quals  :: ![F.Qualifier]            -- ^ Qualifiers
+         , invts  :: ![Located t]              -- ^ Type Invariants
+         } deriving (Functor, Data, Typeable)
 
 type NanoBareR r   = Nano (AnnBare_ r) (RType r)
 type NanoSSAR r    = Nano (AnnSSA_  r) (RType r)
@@ -475,6 +484,8 @@ instance PP t => PP (Nano a t) where
     $+$ pp (consts pgm) 
     $+$ text "********************** TYPE DEFS *****************"
     $+$ pp (tDefs  pgm)
+    $+$ text "********************** TYPE MEASURES *************"
+    $+$ (vcat . (pp <$>) . M.toList $ tMeas  pgm)
     $+$ text "********************** QUALS *********************"
     $+$ F.toFix (quals  pgm) 
     $+$ text "********************** INVARIANTS ****************"
@@ -482,8 +493,8 @@ instance PP t => PP (Nano a t) where
     $+$ text "**************************************************"
     
 instance Monoid (Nano a t) where 
-  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty [] [] 
-  mappend p1 p2 = Nano ss e e' cs tds qs is 
+  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty M.empty [] [] 
+  mappend p1 p2 = Nano ss e e' cs tds tms qs is 
     where 
       ss        = Src $ s1 ++ s2
       Src s1    = code p1
@@ -492,12 +503,15 @@ instance Monoid (Nano a t) where
       e'        = envFromList ((envToList $ defs p1)  ++ (envToList $ defs p2))
       cs        = envFromList $ (envToList $ consts p1) ++ (envToList $ consts p2)
       tds       = envFromList $ (envToList $ tDefs p1) ++ (envToList $ tDefs p2)
+      tms       = M.fromList $ (M.toList $ tMeas p1) ++ (M.toList $ tMeas p2)
       qs        = quals p1 ++ quals p2
       is        = invts p1 ++ invts p2
 
 mapCode :: (a -> b) -> Nano a t -> Nano b t
 mapCode f n = n { code = fmap f (code n) }
 
+instance PP (F.Symbol, F.Symbol, F.Expr) where
+    pp (m, x, e) = pp m <+> ppArgs parens comma [x] <+> text ":=" <+> text (show e)
 
 ---------------------------------------------------------------------------
 -- | Pretty Printer Instances ---------------------------------------------
@@ -530,13 +544,11 @@ instance F.Reftable r => PP (RType r) where
   pp (TApp c [] r)              = F.ppTy r $ ppTC c 
   pp (TApp c ts r)              = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs
-  pp (TBd (TD (TDef id) v h r _)) = pp (F.symbol id) <+> ppArgs brackets comma v
-                                                     <+> text "∃!"
-                                                     <+> pp h
-                                                     <+> text ". "
-                                                     <+> pp r
+  pp (TBd (TD (TDef id) s v h r _)) =  pp (F.symbol id)
+                                   <+> ppArgs brackets comma v
+                                   <+> text "∃!" <+> pp h <+> text "."
+                                   <+> pp s <+> text ":" <+> pp r
   pp (TBd _)                    = error "This is not an acceptable form for TBody" 
-
 instance PP TCon where
   pp TInt             = text "Int"
   pp TBool            = text "Boolean"

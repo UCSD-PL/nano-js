@@ -556,22 +556,28 @@ consWind l g (m, wls, ty, θ)
   -- What needs to be done here:
   -- Given the instantiation θ:
   -- Instantiate C[α] and add a new binder. oh wait, that is fairly easy...
-  = do
-       let θm = fromLists [] []
-       ((σw, tw, t), g') <- freshTyWind g l (θ`mappend`θm) ty
-       subTypeWind l g' σw (tracePP "consWind tw" $ snd $ safeRefReadHeap "consWind" g' (rheap g') (apply θm m)) (tracePP "consWind tw'" tw)
-       let g'' = g { rheap =  heapDiff (rheap g) $ tracePP "consWind wls" (apply θm m:wls) }
-       (_,g''') <- envAddFreshHeap l (apply θm m, t) g''
-       return g'''
+  = do ((σw, (x,tw), t, ms), g') <- freshTyWind g l θ ty
+       let g''                   = g' { rheap =  heapDiff (rheap g') (m:wls) }
+           x'                    = tracePP "consWind x'" $ heapRead "consWind" m (rheap g)
+           v                     = rTypeValueVar t
+           wls'                  = filter (`elem` (heapLocs (tracePP "rheap g wind" $ rheap g))) (wls)
+           su                    = F.mkSubst $ zip (map (F.symbol . flip (heapRead "consWind") σw) wls') (map (F.eVar . flip (heapRead "consWind") (rheap g)) wls')
+           p                     = F.subst su . F.predReft . F.PAnd . map (instProp v x' (tracePP "consWind x" x)) $ ms
+       subTypeWind l g' σw (tracePP "consWind tw" $ snd $ safeRefReadHeap "consWind" g' (rheap g') m) (tracePP "consWind tw'" tw)
+       (z, g''')                 <- envFreshHeapBind l m g''
+       envAdds [tracePP "NewType" (z, t `strengthen` tracePP "newP" p)] g'''
        where
-         heapDiff σ ls = foldl (flip heapDel) σ ls
+         instProp z x' x          = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar x')])
+         mkProp (i,v,e)           = F.PAtom F.Eq (F.EApp i [F.eVar v]) e 
+         instMeas v' su (i, v, e) = (i, v', F.subst su $ F.subst (F.mkSubst [(v',F.eVar v)]) e)
+         heapDiff σ ls            = foldl (flip heapDel) σ ls
 
 ---------------------------------------------------------------------------------
 consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
 ---------------------------------------------------------------------------------
 consUnwind l g (m, ty, θl) =
   do 
-    (σ,t,αs) <- envFindTyDef ty
+    (σ,s,t,αs) <- envFindTyDef ty
     let θ       = θl `mappend` fromLists (zip αs vs) []
         -- s (l,t) = (apply θ l, apply θ t)
         t'      = apply θ t

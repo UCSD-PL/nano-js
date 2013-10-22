@@ -286,7 +286,7 @@ freshApp :: (F.Reftable r, Ord r, PP r) => AnnSSA_ r -> Id SourceSpan -> TCM r (
 freshApp l i@(Id _ d)
   = do γ <- getTDefs
        case envFindTy d γ of
-         Just (TBd (TD _ vs _ _ _)) -> freshen i vs
+         Just (TBd (TD _ _ vs _ _ _)) -> freshen i vs
          _                          -> err γ
     where
       err     γ    = logError (ann l) (errorUnboundIdEnv d γ) (mempty, tErr)
