@@ -77,10 +77,18 @@ function unwind(x) {
 /***************** Types for list Operators ******************************/
 /*************************************************************************/
 
-/*@ type list[A]  exists! l |-> xs:list[A]. r:{  data : A, next : <l> + null } */
-/*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
+/*@ measure keys :: forall A. (list[A]) => number      */
+/*@ measure len  :: forall A. (list[A])   => number */
+/*@
+type list[A] exists! l |-> xs:list[A]. r:{ data : A, next : <l> + null }
 
-/*@ measure len :: forall A. (list [A]) => number                                                 */
+     with len(x) := (if ((ttag (field r "next")) != "null") then 1 + (len xs) else 1)
+
+*/
+     //and keys(x) := (if ((ttag (field r "next")) = "null") then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys xs)))
+
+
+/*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
 
 /*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
 /*@ nil   :: () => null                                                                           */

@@ -20,6 +20,7 @@ module Language.Nano.Liquid.CGMonad (
 
   -- * Get Defined Types
   , getTDefs
+  , getMeasures
     
   -- * Get Current Function
   , getFun, withFun
@@ -645,7 +646,7 @@ subTypeHeaps l g σ1 σ2 =
     
 subTypeField l g = withAlignedM doSubType
   where doSubType t1 t2 = do subTypeContainers' "subTypeField" l g t1 t2 
-                             subType' "subTypeField" l g t1 t2
+                             -- subType' "subTypeField" l g t1 t2
   -- do γ <- getTDefs
      -- case tracePP "subTypeField" $ fth4 $ compareTs γ t1 t2 of
      --   Nth -> subTypeContainers' "dead" l g tTop (tTop `strengthen` F.predReft F.PFalse)
@@ -687,7 +688,8 @@ equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 -------------------------------------------------------------------------------
 subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeContainers l g (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _) | d == d' = 
+subTypeContainers l g t1@(TApp d@(TDef _) ts _) t2@(TApp d'@(TDef _) ts' _) | d == d' = do
+  subType l g t1 t2 
   mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
 
 subTypeContainers l g t1 t2@(TApp (TDef _) _ _ ) = 
@@ -1008,7 +1010,7 @@ subTypeWind = subTypeWind' []
 subTypeWind' seen l g σ t1 t2 = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s" 
-          (ppshow $ toType t1) (ppshow (rheap g)) (ppshow $ toType t2) (ppshow σ)
+          (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
 
 
 -------------------------------------------------------------------------------
@@ -1020,7 +1022,7 @@ subTypeWindTys seen l g σ t1@(TObj _ _) t2@(TObj _ _)
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) $ bkPaddedObject t1 t2
 
 subTypeWindTys seen l g σ t1 t2
-  = subTypeContainers' "Wind Non-Obj" l g t1 t2
+  = do subTypeContainers' "Wind Non-Obj" l g t1 t2
     
 -- renameLocations :: CGEnv -> RefHeap -> RefType -> RefType -> CGM (RSubst F.Reft)
 -- renameLocations g σ t1 t2 
@@ -1141,8 +1143,11 @@ instance ClearSorts F.Sort where
   clear F.FNum        = F.FInt
   clear (F.FObj _)    = F.FInt
   clear (F.FVar _)    = F.FInt
-  clear (F.FFunc i s) = F.FFunc i $ clear <$> s
+  clear (F.FFunc i s) = F.FFunc i $ clearFunTy <$> s
   clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
+
+clearFunTy s@(F.FVar _) = s
+clearFunTy s            = clear s
 
 instance ClearSorts F.Symbol where
   clear = id

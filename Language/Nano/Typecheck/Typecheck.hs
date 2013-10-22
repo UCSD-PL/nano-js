@@ -365,13 +365,14 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (σ_in, σ_out) <- getFunHeaps γ
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
         (θ,θr)        <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
-        θ             <- unifyTypeM l "Return" eo t rt
-        (γ,σ')        <- windLocations (γ, apply θ σ') l
+        let (rt', t')  = mapPair (apply θ) (rt,t)
+        -- θ             <- unifyTypeM l "Return" eo t rt
+        σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ apply θ σ'
+        (γ,σ')        <- windLocations (γ,σ') l
         -- θ_old         <- getSubst
         -- Now unify heap
         θ             <- unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
         -- Apply the substitutions
-        let (rt', t')  = mapPair (apply θ) (rt,t)
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
         -- this location does not appear in the 

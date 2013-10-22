@@ -756,7 +756,7 @@ unifyTypeRenameM l ls ls' m e t t'
   = do θ0 <- getSubst
        setSubst $ θ0 `mappend` fromLists [] (zip ls ls)
        θ <- unifyTypeM l m e t t'
-       let rs = filter ((`elem` ls) . fst) $ snd $ toLists θ
+       let rs = filter ((`elem` ls') . snd) $ snd $ toLists θ
        let θri  = Su HM.empty (HM.fromList $ map swap rs)
        setSubst θ0
        recordRenameM (srcPos l) (θ0, fromLists [] rs, θri)

@@ -63,7 +63,8 @@ tBodyP = do  id <- identifierP
              tb <- bareTypeP
              ms <- option [] (reserved "with" >> spaces >> typeMeasuresP)
              return $ (id, TBd $ TD (TDef id) ts tv th tb (idLoc id), ms)
-
+--     foo (x) := e
+-- and bar (x) := e
 typeMeasuresP = do
   m  <- typeMeasureP
   spaces

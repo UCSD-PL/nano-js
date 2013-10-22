@@ -229,7 +229,7 @@ tconFTycon TNull     = F.stringFTycon "null"
 tconFTycon TUndef    = F.stringFTycon "undefined"
 
 
-rTypeSortForAll t    = genSort n θ $ rTypeSort tbody
+rTypeSortForAll t    = genSort n θ $ rTypeSort $ tracePP "rTypeSortForAll" tbody
   where 
     (αs, tbody)      = bkAll t
     n                = length αs
