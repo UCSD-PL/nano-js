@@ -1,6 +1,8 @@
 //import "doubly-linked-list.js";
 
 // fix this modulo nulls
+/*@ qualif EqNull(v:a, x:b): (((ttag v) = "null") => ((ttag x) = "null")) */
+/*@ qualif EqNull(v:a, x:b): (((ttag v) != "null") => ((ttag x) != "null")) */
 
 /*@ type dlist[A,S,P] exists! l |-> dlist[A, <l>, S] . { data: A, next:<l>+null, prev:P } */
 
@@ -21,20 +23,22 @@
 function insert_at_middle (u, k, s) {
     var ret = {};
     ret.data = k;
-    ret.next = s;
-    ret.prev = u;
+    ret.next = null;
+    ret.prev = null;
 
     if (typeof(u) != "null") {
         u.next = ret;
+        ret.prev = u;
     } 
 
     if (typeof(s) != "null") {
         s.prev = ret;
+        ret.next = s;
     }
 
-    if (typeof(u) == "null") {
-        return ret;
-    } else {
+    if (typeof(u) != "null") {
         return u;
+    } else {
+        return ret;
     }
 }

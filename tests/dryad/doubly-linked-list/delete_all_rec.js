@@ -3,7 +3,7 @@
 /* remove :: (x:dlist[A, null], k:A)/h => {v:dlist[A, null]}/v |-> keys(v) = set_minus(keys(x,h), set_singleton(k)) */
 
 /*@ remove :: forall A P.
-  (x:<l>+{null | true},k:A)/l |-> dlist[A,<l>,P] => <v>+null/v |-> dlist[A,<v>,null] */
+  (x:<l>+{null | true},k:A)/l |-> ls:dlist[A,<l>,P] => <v>+null/v |-> vs:dlist[A,<v>,null] */
 function remove(x, k){
   if (typeof(x) == "null"){
       return null;

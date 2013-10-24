@@ -364,14 +364,14 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- End of basic block --> Wind up locations
         (σ_in, σ_out) <- getFunHeaps γ
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
-        (θ,θr)        <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
-        let (rt', t')  = mapPair (apply θ) (rt,t)
+        (θ0,θr,θri)      <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
+        let (rt', t')  = mapPair (apply θr) (rt,t)
         -- θ             <- unifyTypeM l "Return" eo t rt
-        σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ apply θ σ'
-        (γ,σ')        <- windLocations (γ,σ') l
+        σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ σ'
+        (γ,σ')        <- windLocations (γ,apply θr σ') l
         -- θ_old         <- getSubst
         -- Now unify heap
-        θ             <- unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
+        θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
         -- Apply the substitutions
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
@@ -384,7 +384,12 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
         -- (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
-        (γ,σ')        <- windSpecLocations (γ, apply (tracePP "windSpecLocations theta" θ) σ') l σ_out
+        θ0            <- getSubst
+        (γ,σ')        <- windSpecLocations (γ, apply (tracePP "windSpecLocations theta" θr) σ') l σ_out
+        θ1            <- getSubst
+        θu            <- getSubst >>= return . deleteRenamedSubs θr . tracePP "pre undo windSpecLocations sub"
+        setSubst $ tracePP "undone" (θ1 `mappend` (tracePP "undo" θu) `mappend` θ0)
+        revertWindsM l θ0 θri
         σ'            <- safeHeapSubstM σ' 
         -- One last chance to unify any TVars that appeared
         -- in the winding step
@@ -480,6 +485,21 @@ windSpecLocations (γ,σ) l σ_spec
 
 isWoundTy (TApp (TDef _) _ _) = True
 isWoundTy _                   = False
+
+deleteRenamedSubs θr θ
+  = let lrs     = map snd . snd . toLists $ θr
+        (vs,ls) = toLists θ
+        -- ls'     = undoLocSub lrs <$> ls
+        ls'     = filter ((`notElem` lrs) . snd) ls
+    in fromLists [] ls'
+
+undoLocSub ls (l,l')
+  | l' `elem` ls = (l,l)
+  | otherwise    = (l,l')
+
+undoVarSub ls (v,v')
+  | L.intersect (locs v') ls /= [] = (v, tVar v)
+  | otherwise                      = (v, v')
 
 -------------------------------------------------------------------------------
 woundLocations :: (PP r, Ord r, F.Reftable r) => 

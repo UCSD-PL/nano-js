@@ -3,7 +3,7 @@
 /* reverseLoop :: (i:<i>, j:<j>)/i |-> list[A] * j |-> list[A]
       => j |-> {v:list[A]}/v |-> keys(v) = set_cup(keys(i,h), keys(j,h)) */
 
-/*@ reverseLoop :: forall A. (i:<i>+null, j:<j>+null)/i |-> list[A]
+/*@ reverseLoop :: forall A. (i:<i>+null, j:<j>+null)/i |-> list[{A|true}]
                                                     * j |-> list[A] => <k>+null/k |-> list[A] */
 function reverseLoop(i, j){
   if (typeof(i) != "null") {

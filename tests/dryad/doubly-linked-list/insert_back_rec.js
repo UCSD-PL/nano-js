@@ -4,13 +4,13 @@
 
 /* insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 
-/*@ insert :: forall A P. (x:<l>+{null | true}, k:A)/l |-> dlist[A,<l>,P] => <k>/k |-> dlist[A,<k>,null] */
+/*@ insert :: forall A P. (x:<l>+null, k:{A | true})/l |-> ls:dlist[A,<l>,P] => <k>/k |-> ks:dlist[A,<k>,null] */
 function insert(x, k){
   if (typeof(x) != "null"){
     var y  = x.next;
-    x.next = insert(y, k);
-    var t = x.next;
+    var t  = insert(y, k);
     t.prev = x;
+    x.next = t
     x.prev = null;
     return x;
   } else {

@@ -77,6 +77,7 @@ module Language.Nano.Typecheck.TCMonad (
   , unifyTypeM, unifyTypesM
   , unifyHeapsM
   , unifyTypeRenameM
+  , revertWindsM
 
   -- * Casts
   , getCasts, getHCasts
@@ -618,7 +619,9 @@ recordRenameM :: (Ord r, PP r, F.Reftable r,
 recordRenameM l (θ,θr,θrInv)  
   = do setSubst θ
        setRename θr
-       modify $ \st -> st { tc_anns = map fixup <$> tc_anns st }
+       modify $ \st -> st { tc_anns = map fixup <$> tc_anns st
+                          , tc_unwound = map (\(l,i,s) -> (apply θr l, i, θr`mappend`s)) $ tc_unwound st
+                          }
        return (θ `mappend` θr)
   where
     -- fixup f@(FunInst ts ls) = apply (tracePP "recordRenameM" θf) $ tracePP "recordRenameM" f
@@ -748,19 +751,37 @@ unifyTypeM l m e t t' = unifyTypesM l msg [t] [t']
   where 
     msg              = errorWrongType m e t t'
 
+revertWindsM :: (IsLocated l, PP r, Ord r, F.Reftable r, Free (Fact_ r), Substitutable r (Fact_ r)) =>
+  l -> RSubst r -> RSubst r -> TCM r ()
+revertWindsM l θ0 θi
+  = do m <- tc_winds <$> get
+       a <- tc_anns <$> get
+       --θ <- getSubst >>= \θ' -> return (θ' `mappend` θ)
+       let θ = θ0 `mappend` θi
+       let ws  = M.findWithDefault [] (srcPos l) m
+           ws' = map (\(loc, locs, i) -> (apply θ loc, apply θ locs, i)) ws
+           as  = HM.lookupDefault [] (srcPos l) a
+           as' = map (revertWind θ) as
+       modify $ \st -> st { tc_winds = M.insert (srcPos l) ws' m 
+                          , tc_anns  = HM.insert (srcPos l) as' a
+                          }
+  where
+    revertWind θ w@(WindInst _ _ _ _ _) = tracePP "WindInst'" $ apply θ $ tracePP "WindInst" w
+    revertWind _ a                      = a
 ----------------------------------------------------------------------------------
 unifyTypeRenameM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
-  l -> [Location] -> [Location] -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r, RSubst r)
+  l -> [Location] -> [Location] -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r, RSubst r, RSubst r)
 ----------------------------------------------------------------------------------
 unifyTypeRenameM l ls ls' m e t t'
-  = do θ0 <- getSubst
+  = do θ0 <- tracePP "unifyTypeRenameM pre" <$> getSubst
        setSubst $ θ0 `mappend` fromLists [] (zip ls ls)
        θ <- unifyTypeM l m e t t'
        let rs = filter ((`elem` ls') . snd) $ snd $ toLists θ
+       let θr  = Su HM.empty (HM.fromList rs)
        let θri  = Su HM.empty (HM.fromList $ map swap rs)
        setSubst θ0
-       recordRenameM (srcPos l) (θ0, fromLists [] rs, θri)
-       return (θ, θri)
+       recordRenameM (srcPos l) (θ0, θr, θri)
+       return (θ0, θr, θri)
   where 
     msg              = errorWrongType m e t t'
 
@@ -921,9 +942,9 @@ patchPgmM pgm =
       unwinds  <- tc_unwinds  <$> get
       renames  <- tc_renames  <$> get
       hexs     <- tc_heapexps <$> get
-      pgm'     <- heapPatchPgm winds unwinds hexs pgm
-      pgm''    <- locPatchPgm renames pgm'
-      return $ fst $ runState (everywhereM' (mkM transform) pgm'') (PS c hc)
+      pgm      <- locPatchPgm renames pgm
+      pgm      <- heapPatchPgm winds unwinds hexs pgm
+      return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c hc)
 
 data RState r = RS { rs_renames :: M.Map SourceSpan (RSubst r) }
 type RM     r = State (RState r)
@@ -982,7 +1003,10 @@ buildUnwindCalls uws s
     display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
     unwindStmts               = [UnwindAll l $ map display uws] -- map (buildWind l) ws
     l                         = getAnnotation s
-    
+
+patchStmt ws (BlockStmt l ss@((RenameLocs _ _):_)) =
+  BlockStmt l $ ws ++ ss
+
 patchStmt ws (ReturnStmt l e)     = 
   BlockStmt l $ ws ++ [ReturnStmt l e]
 

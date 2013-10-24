@@ -508,14 +508,14 @@ freshTyWind :: (PP l, IsLocated l) =>
                -> CGM ((RefHeap, (F.Symbol, RefType), RefType, [TypeMeasure]), CGEnv)
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
-  = do (σ,s,t,vs)    <- envFindTyDef ty
+  = do (σ,s,t,vs)   <- envFindTyDef ty
        let (αs,ls)  = toLists θ
        αs'         <- mapM freshSubst αs
        let θ'       = fromLists αs' ls
        (su,σ')     <- freshHeapEnv l (apply (tracePP "freshTyWind inst" θ') $ tracePP "freshTyWind sig" σ)
        ms          <- (instMeas su <$>) <$> getMeasures (tracePP "freshTyWind" ty)
        g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return ((tracePP "freshTyWind sig out" (toId <$> σ'), (s,F.subst su $ apply θ' t), mkApp (apply θ' . tVar <$> vs), ms), g')
+       return ((tracePP "freshTyWind sig out" (toId <$> σ'), (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms), g')
     where 
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l
@@ -714,7 +714,8 @@ subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
 -- TODO: the environment for subtyping each part of the object should have the
 -- tyopes for the rest of the bindings
 subTypeContainers l g o1@(TObj _ _) o2@(TObj _ _) = 
-  getTDefs >>= \γ -> sbs $ bkPaddedObject o1 o2
+  do subType l g o1 o2
+     getTDefs >>= \γ -> sbs $ bkPaddedObject o1 o2
   where
     sbs          = mapM_ sb
     (r1, r2)     = mapPair rTypeR (o1, o2)
@@ -1009,8 +1010,9 @@ subTypeWind = subTypeWind' []
 
 subTypeWind' seen l g σ t1 t2 = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
-    msg = printf "subTypeWind %s/%s <: %s/%s" 
+    msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
+          (ppshow $ toType t1) (ppshow $ toType t2)
 
 
 -------------------------------------------------------------------------------
@@ -1143,7 +1145,7 @@ instance ClearSorts F.Sort where
   clear F.FNum        = F.FInt
   clear (F.FObj _)    = F.FInt
   clear (F.FVar _)    = F.FInt
-  clear (F.FFunc i s) = F.FFunc i $ clearFunTy <$> s
+  clear (F.FFunc i s) = F.FFunc i $ clear <$> s
   clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
 
 clearFunTy s@(F.FVar _) = s

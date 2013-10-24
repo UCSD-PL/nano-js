@@ -4,7 +4,7 @@
 
 /* lemma_nonMem :: (k:A, x:?bst[{v:A| v != k}]) => {v:void | not (Set_mem(k, keys(x, h)))}/same */
 
-/*@ lemma_nonMem :: forall A. (k:A, x:<x>+null)/x |-> tree[{v:A | true  }] => void/same */
+/*@ lemma_nonMem :: forall A. (k:A, x:<x>+null)/x |-> tree[{v:A | true k}] => void/same */
 function lemma_nonMem(k, x){
   if (typeof(x) == "null"){
     return;

@@ -4,7 +4,7 @@
 //     return lst;
 // }
 
-/*@ consList :: (a:number, l:<r>+null)/r |-> xs:list[{number | v < a}] => <k>/k |-> ys:list[{number | v = a}] */
+/*@ consList :: (a:number, l:<r>+null)/r |-> xs:list[{number | v < a}] => <k>/k |-> ys:list[{number | v < a}] */
 function consList(a, l) {
     var lst = { data:a, next:l };
     return lst;

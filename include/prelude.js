@@ -208,8 +208,8 @@ type list[A] exists! l |-> xs:list[A]. r:{ data : A, next : <l> + null }
 
 // Somewhat more controversial qualifiers (i.e. "expensive"...)
 
-/*@ qualif Add(v:number,x:number,y:number): v = x + y           */
-/*@ qualif Sub(v:number,x:number,y:number): v = x - y           */
+/* qualif Add(v:number,x:number,y:number): v = x + y           */
+/* qualif Sub(v:number,x:number,y:number): v = x - y           */
 
 
 /*@ top_level :: () => void */
