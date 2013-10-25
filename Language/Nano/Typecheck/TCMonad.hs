@@ -620,7 +620,7 @@ recordRenameM l (θ,θr,θrInv)
   = do setSubst θ
        setRename θr
        modify $ \st -> st { tc_anns = map fixup <$> tc_anns st
-                          , tc_unwound = map (\(l,i,s) -> (apply θr l, i, θr`mappend`s)) $ tc_unwound st
+                          -- , tc_unwound = map (\(l,i,s) -> (apply θr l, i, θr`mappend`s)) $ tc_unwound st
                           }
        return (θ `mappend` θr)
   where
@@ -774,16 +774,16 @@ unifyTypeRenameM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l,
 ----------------------------------------------------------------------------------
 unifyTypeRenameM l ls ls' m e t t'
   = do θ0 <- tracePP "unifyTypeRenameM pre" <$> getSubst
-       setSubst $ θ0 `mappend` fromLists [] (zip ls ls)
+       let θ' =  θ0 `mappend` fromLists [] (zip ls ls)
+       setSubst θ'
        θ <- unifyTypeM l m e t t'
-       let rs = filter ((`elem` ls') . snd) $ snd $ toLists θ
-       let θr  = Su HM.empty (HM.fromList rs)
-       let θri  = Su HM.empty (HM.fromList $ map swap rs)
+       let rs   = filter ((`elem` ls') . snd) $ snd $ toLists θ
+           irs  = map swap . filter ((`elem` locs t) . fst) $ rs
+           θr   = Su HM.empty (HM.fromList rs)
+           θri  = Su HM.empty (HM.fromList  irs)
        setSubst θ0
        recordRenameM (srcPos l) (θ0, θr, θri)
        return (θ0, θr, θri)
-  where 
-    msg              = errorWrongType m e t t'
 
 ----------------------------------------------------------------------------------
 subTypeM :: (Ord r, PP r, F.Reftable r) => RType r -> RType r -> TCM r SubDirection

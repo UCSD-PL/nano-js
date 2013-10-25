@@ -364,14 +364,14 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- End of basic block --> Wind up locations
         (σ_in, σ_out) <- getFunHeaps γ
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
-        (θ0,θr,θri)      <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
-        let (rt', t')  = mapPair (apply θr) (rt,t)
+        (θ0,θr,θri)   <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
+        let (rt', t')  = tracePP "rt' t'" $ mapPair (apply θr) (rt,t)
         -- θ             <- unifyTypeM l "Return" eo t rt
         σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ σ'
-        (γ,σ')        <- windLocations (γ,apply θr σ') l
+        (γ,σ')        <- windLocations (γ, σ') l
         -- θ_old         <- getSubst
         -- Now unify heap
-        θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" σ_out)
+        θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" $ apply θri σ_out)
         -- Apply the substitutions
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
@@ -384,23 +384,33 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- Now we may need to wind up any new locations so that
         -- heap subtyping and unification will go through
         -- (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
-        θ0            <- getSubst
-        (γ,σ')        <- windSpecLocations (γ, apply (tracePP "windSpecLocations theta" θr) σ') l σ_out
         θ1            <- getSubst
-        θu            <- getSubst >>= return . deleteRenamedSubs θr . tracePP "pre undo windSpecLocations sub"
-        setSubst $ tracePP "undone" (θ1 `mappend` (tracePP "undo" θu) `mappend` θ0)
-        revertWindsM l θ0 θri
-        σ'            <- safeHeapSubstM σ' 
+        (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θri σ_out
+        θ2            <- getSubst
+        θu            <- getSubst >>= return . deleteRenamedSubs (apply θri σ_out) . tracePP "pre undo windSpecLocations sub"
+        setSubst $ tracePP "undone" (θ2 `mappend` (tracePP "undo" θu) `mappend` θ1)
+        revertWindsM l θ2 θri
+        σ'            <- safeHeapSubstM σ'
         -- One last chance to unify any TVars that appeared
         -- in the winding step
-        unifyHeapsM l "Return" σ' σ_out
+        unifyHeapsM l "Return" σ' $ apply θri σ_out
         -- Now safe to check the output heap
         -- checkLocSubs σ_out
         -- Subtype the arguments against the formals and cast if 
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
-        castHeapM γ l (tracePP "sig out" σ') (tracePP "sig out spec" σ_out)
+        castHeapM γ l (tracePP "ret sig out" σ') (tracePP "sig out spec" σ_out)
+        rollBackDeadSubs θ0 σ_out σ'
         return Nothing
+  where           
+    rollBackDeadSubs θ0 σ1 σ2
+      = do θ          <- getSubst
+           let l1s     = heapLocs σ1
+               l2s     = heapLocs σ2
+               (vs,ls) = toLists θ
+               ls'     = map (\(l,l') -> if l' `notElem` l1s && l' `elem` l2s then (l,l) else (l,l')) ls
+           setSubst $ (fromLists vs ls' `mappend` θ0)
+
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)
   = tcFun (γ,σ) s
@@ -412,7 +422,7 @@ tcStmt (γ,σ) s
   = do setStmt $ Just s 
        r <- tcStmt' (γ,σ) s
        setStmt $ Nothing
-       return r
+       r`seq`return ((tracePP (printf "Heap pre,post %s:\n%s\n==>\n%s\n" (ppshow s) (ppshow σ) (ppshow $ snd <$> r)) ())`seq`r)
 
 getFunHeaps γ
   = do f <- getFun
@@ -486,8 +496,8 @@ windSpecLocations (γ,σ) l σ_spec
 isWoundTy (TApp (TDef _) _ _) = True
 isWoundTy _                   = False
 
-deleteRenamedSubs θr θ
-  = let lrs     = map snd . snd . toLists $ θr
+deleteRenamedSubs σ θ
+  = let lrs     = heapLocs σ
         (vs,ls) = toLists θ
         -- ls'     = undoLocSub lrs <$> ls
         ls'     = filter ((`notElem` lrs) . snd) ls

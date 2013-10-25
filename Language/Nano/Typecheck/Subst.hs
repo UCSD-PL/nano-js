@@ -197,9 +197,10 @@ appTy θ (TApp c ts z)                 = TApp c (apply θ ts) z
 appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
-appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) ls) t 
+appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) M.empty) t  -- Assuming all locations are always quantified
 appTy θ@(Su ts ls) (TBd (TD c v α h t s)) = TBd $ TD c v α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
 
+-- Avoid capturing all locs in subs on funs for now
 appTyFun θ ts t h h' r =
   TFun (apply θ ts) (apply θ t) (go h) (go h') r
       where go            = heapFromBinds "appTyFun" . map appBind . heapBinds 

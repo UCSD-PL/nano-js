@@ -7,8 +7,8 @@
 function append(x1, x2){
   if (typeof(x1) != "null"){
     var n = x1.next;
-    append(n, x2);
-    x1.next = n;
+    var y = append(n, x2);
+    x1.next = y;
     return x1;
   } else {
     return x2;

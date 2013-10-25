@@ -1,5 +1,5 @@
-/*@ to_as :: (a:{number|true},<l>)/l |-> list[number] => void
-                                  /l |-> list[{v:number | v = a }] */
+/*@ to_as :: (a:{number|true},<l>)/l |-> xs:list[number] => void
+                                  /l |-> ys:list[{v:number | v = a }] */
 
 function to_as(a,x) {
     var xn = x.next;
@@ -12,11 +12,12 @@ function to_as(a,x) {
     return;
 }
 
-/*@ main :: (number,<l>)/l |-> list[{number | v = 0}] => void/l |-> list[{number | v = 3}] */
+/*@ qualif Eq3(v:int): v = 3 */
+/*@ main :: (number,<l>)/l |-> ls:list[{number | v = 0}] => void/l |-> lso:list[{number | v = a}] */
 function main(a,lst) {
-    to_as(3,lst);
+    to_as(a,lst);
     var x = lst.data;
-    assert (x == 3);
+    assert (a == x);
     return;
 }
     

@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy               as B
 import qualified Data.HashMap.Strict                as M
 import           Data.Maybe                         (fromJust)
 import           Data.Monoid
+import           Data.List
 
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
@@ -124,7 +125,7 @@ consFun g (FunctionStmt l f xs body)
        g'             <- envAdds [(f, ft)] g 
        g''            <- envAddFun l g' f xs ft
        withFun (F.symbol f) $
-         do gm <- consStmts g'' body
+         do gm <- consStmts (tracePP "starting in this env" g'') body
             maybe (return ()) (\g -> subType l g tVoid (envFindReturn g'')) gm
             return g'
     {-where -}
@@ -196,7 +197,7 @@ consStmt g (ExprStmt _ (AssignExpr _ OpAssign (LVar lx x) e))
 consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
   = do (x2,g2) <- consExpr g e2
        (x3,g3) <- consExpr g2 e3
-       (_,g4)  <- consAccess l x3 g3 x
+       (_,g4)  <- consAccess l (tracePP "consAccess x3" x3) g3 x
        -- The plan here: --
        --   1. Figure out the stored type (T_e2) (done)
        --   2. Find the referenced type, i.e. the object, Tobj
@@ -410,7 +411,7 @@ consExpr _ e
 consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated x, PP s) =>
                AnnTypeR -> x -> CGEnv -> s -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
-consAccess l x g i = do [(_,t)]          <- dotAccessM l g i (envFindTy x g) 
+consAccess l x g i = do [(_,t)]          <- dotAccessM l g i $ tracePP (printf "consAccess ty %s" (ppshow l)) (envFindTy x g) 
                         envAddFresh l t g
               
 dotAccessM l g f u@(TApp TUn _ _)
@@ -491,16 +492,16 @@ consCall g l _ es ft
        (hisu, hi')       <- freshHeapEnv l hi
        (hosu, ho')       <- freshHeapEnv l ho
        let (argSu, ts')   = renameBinds its xes
-           (heapSu, hi'') = renameHeapBinds (rheap g) hi'
+           (heapSu, hi'') = renameHeapBinds (rheap g') hi'
            su             = hisu `F.catSubst` hosu `F.catSubst` heapSu `F.catSubst` argSu
-           gin            = (flip envFindTy g) <$> rheap g
+           gin            = (flip envFindTy g') <$> rheap g'
        -- Substitute binders in spec with binders in actual heap
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] (F.subst su ts')
        -- subTypeHeaps l g' (tracePP "consCall rheap g'" $ rheap g') (tracePP "consCall hi" $ F.subst argSu <$> hi')
        subTypeHeaps l g' (tracePP "consCall rheap g'" $ gin) (tracePP "consCall hi" $ F.subst su <$> hi'')
        let hu  = tracePP "consCall hu" $ foldl (flip heapDel) (rheap g') $ heapLocs hi''
        (_,g'')           <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
-       let lost  = deletedLocs gin (rheap g'')
+       let lost  = deletedLocs gin (tracePP "consCall rheap g''" $ rheap g'')
        let g_out = g'' { renv  = envMap (deleteLocsTy lost) $ renv g''
                        , rheap = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
                        }
@@ -591,15 +592,15 @@ consUnwind l g (m, ty, θl) =
     (b,g')      <- envFreshHeapBind l m g
     g''         <- envAdds [(b, strengthenObjBinds b $ F.subst su <$> t')] g'
     (_, g''')   <- envAddHeap l g'' (fmap (F.subst su) <$> σ')
-    return $ tracePP "consUnwind result" g''
+    return $ tracePP "consUnwind result" g'''
     -- return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ tracePP "consUnwind updated heap" $ heapUpd  m t' $ tracePP ("consUnwind "++ m ++" pre") (rheap g)
     --                                                                          , tracePP "consUnwind prime" σ'
     --                                                                          ]
     --            }
   where 
-    vs = case safeRefReadHeap "consUnwind" g (rheap g) m of
+    vs = case safeRefReadHeap "consUnwind %s" g (rheap $ tracePP ("unwind of " ++ m ++ " in ")  g) (tracePP "reading here" m) of
            (_,TApp _ vs _)  -> vs
-           _                -> error "BUG: unwound something bad!"
+           p                -> error (printf "%s BUG: unwound something bad! %s" (ppshow (srcPos l)) (ppshow p))
     
 
 instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar x')])
@@ -610,14 +611,14 @@ instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar
 consRename :: AnnTypeR -> CGEnv -> RSubst F.Reft -> CGM (CGEnv)    
 ---------------------------------------------------------------------------------
 consRename _ g θ
-  = do return g { renv  = envMap (apply θ') (renv g)
-                , rheap = (\h -> tracePP "renamed heap" h) $ renameHeap θ' (tracePP "heap to rename" (rheap g)`seq`rheap g)
+  = do return $ tracePP "renamed env" g { renv  = envMap (apply θ) (renv g)
+                , rheap = renameHeap θ (tracePP "heap to rename" (rheap g))
                 }
     where
       θ'             = tracePP "final rename subst" . fromLists [] . filter okSub . snd . toLists $ tracePP "rename subst" θ :: RSubst F.Reft
       okSub (_,m)    = m `notElem` envLocs
       renameHeap θ σ = heapFromBinds "consRename" . map (\(l,x) -> (apply θ l, x)) . heapBinds $ σ
-      envLocs        = concat [ locs t | (Id _ s, t) <- envToList g
+      envLocs        = concat [ locs t | (Id _ s, t) <- envToList $ tracePP "consRename env" g
                                        , F.symbol s /= returnSymbol ]
                     ++ heapLocs (rheap g)
 

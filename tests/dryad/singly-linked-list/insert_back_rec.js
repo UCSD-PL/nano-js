@@ -1,12 +1,15 @@
-import "singly-linked-list.js"
+//import "singly-linked-list.js"
 
 /* insert :: (x:?list[A], k:A) => {v:list[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
 /* insert :: (x:?list[A], k:A)/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 
-/*@ insert :: forall A. (x:<l>+null, k:A)/l |-> list[A] => <l>/l |-> {v:list[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
+/* insert :: forall A. (x:<l>+null, k:A)/l |-> list[A] => <l>/l |-> {v:list[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
+/*@ insert :: forall A. (x:<l>+null, k:A)/l |-> ls:list[A] => <r>/r |-> out:list[A] */
 function insert(x, k){
   if (typeof(x) != "null"){
-      x.next = insert(x.next, k);
+      var n = x.next;
+      var t = insert(n, k);
+      x.next = t;
       return x;
   } else {
       var y  = {}; // {data : k, next : null };

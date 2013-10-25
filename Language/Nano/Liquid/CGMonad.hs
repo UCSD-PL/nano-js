@@ -447,7 +447,7 @@ envJoin' l g g1 g2
         return g'
 
 joinHeaps l γ g g1 g2
-  = do let (σ1,σ2)        = mapPair rheap (g1,g2)
+  = do let (σ1,σ2)        = tracePP "pre join heaps" $ mapPair rheap (g1,g2)
            (one,both,two) = heapSplit σ1 σ2
            t1s            = map (snd . safeRefReadHeap "joinHeaps" g1 σ1) both
            t2s            = map (snd . safeRefReadHeap "joinHeaps" g2 σ2) both
@@ -457,21 +457,25 @@ joinHeaps l γ g g1 g2
        g'                <- envAdds (zipWith str xs ts) g
        _                 <- mapM (wellFormed l g') ts
        let σ'             = heapCombine "joinHeaps combine " [σj, σ2', σ1']
-           σ1'            = heapFromBinds "joinHeaps one" $ zip one $ map (fst . safeRefReadHeap "joinHeaps one" g1 σ1) one
-           σ2'            = heapFromBinds "joinHeaps two" $ zip two $ map (fst . safeRefReadHeap "joinHeaps two" g2 σ2) two
+           σ1'            = tracePP "joinHeaps 1'" $ heapFromBinds "joinHeaps one" $ zip one $ map (fst . safeRefReadHeap "joinHeaps one" g1 σ1) one
+           σ2'            = tracePP "joinHEaps 2'" $ heapFromBinds "joinHeaps two" $ zip two $ map (fst . safeRefReadHeap "joinHeaps two" g2 σ2) two
            σj             = tracePP "joinHeaps joined" $ heapFromBinds "joinHeaps σj" $ zip both xs
            su1            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ1) both)
            su2            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ2) both)
        -- Subtype the common heap locations
-       zipWithM_ (subTypeContainers l g1) (tracePP "snd4 t4" $ map snd4 t4) (map (F.subst su1 <$>) ts)
+       zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        (ts',g')        <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
        xs'             <- mapM (const (freshId (srcPos l))) xs
        g''             <- envAdds (zip xs' (reverse ts')) g'
-       return $ g'' { rheap = σ' }
+       let x1s           = map (`rdHeap` σ1) one
+       let x2s           = map (`rdHeap` σ2) two
+       g'''            <- envAdds (zip (x1s ++ x2s) (t1s ++ t2s)) g''
+       return $ g''' { rheap = σ' }
     where
       foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
       str x t  = (x, strengthenObjBinds x t)
+      rdHeap = heapRead "joinHeaps"
            
 ---------------------------------------------------------------------------------------
 -- | Fresh Templates ------------------------------------------------------------------
