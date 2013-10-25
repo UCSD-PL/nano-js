@@ -571,7 +571,8 @@ consWind l g (m, wls, ty, θ)
            v                     = rTypeValueVar t
            wls'                  = filter (`elem` (heapLocs (rheap g))) (wls)
            su                    = F.mkSubst $ zip (map (F.symbol . flip (heapRead "consWind") σw) wls') (map (F.eVar . flip (heapRead "consWind") (rheap g)) wls')
-           p                     = F.subst su . F.predReft . F.PAnd . map (instProp v x' x) $ ms
+           ms'                   = map (\(x,y,p) -> (x,y,F.subst su p)) ms
+           p                     = F.predReft . F.PAnd . map (instProp v x' x) $ ms'
        subTypeWind l g' σw (snd $ safeRefReadHeap "consWind" g' (rheap g') m) tw
        (z, g''')                 <- envFreshHeapBind l m g''
        envAdds [(z, tracePP "consWind out type" $ strengthen t p)] g'''
@@ -583,25 +584,28 @@ consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> C
 ---------------------------------------------------------------------------------
 consUnwind l g (m, ty, θl) =
   do 
-    (σ,s,t,αs) <- envFindTyDef ty
-    (su,σ)     <- freshHeapEnv l σ
-    -- ms         <- getMeasures ty
-    let θ       = θl `mappend` fromLists (zip αs vs) []
-        t'      = tracePP "consUnwind t" $ apply θ t
-        σ'      = tracePP "consUnwind sigma" $ apply θ σ
+    (σ,s,t,αs)  <- envFindTyDef ty
+    (su,σ')     <- freshHeapEnv l σ
+    ms          <- tracePP (printf "measures...(s[%s],t[%s],su[%s])" (ppshow s) (ppshow t) (show su)) <$> getMeasures ty
     (b,g')      <- envFreshHeapBind l m g
+    let θ       = θl `mappend` fromLists (zip αs vs) []
+        t'      = tracePP "consUnwind t" $ apply θ $ t
+        σ''     = tracePP "consUnwind sigma" $ apply θ σ'
+        v       = F.symbol $ heapRead "consUnwind v" m (rheap g)
+        ms'     = map (\(x,y,p) -> (x,y,F.subst su p)) ms
+        p       = tracePP "consUnwind prop" $ F.predReft . F.PAnd . map (instProp v b s) $ ms'
+        σ'''    = tracePP "consUnwind new heap" $ instPropBind p . (F.subst (F.mkSubst [(F.symbol (tracePP "consUnwind s" s), F.eVar (tracePP "consUnwind b" b))]) <$>) <$> σ''
+        
     g''         <- envAdds [(b, strengthenObjBinds b $ F.subst su <$> t')] g'
-    (_, g''')   <- envAddHeap l g'' (fmap (F.subst su) <$> σ')
-    return $ tracePP "consUnwind result" g'''
-    -- return $ g { rheap = tracePP "consUnwind got" $ heapCombine "consUnwind" [ tracePP "consUnwind updated heap" $ heapUpd  m t' $ tracePP ("consUnwind "++ m ++" pre") (rheap g)
-    --                                                                          , tracePP "consUnwind prime" σ'
-    --                                                                          ]
-    --            }
+    (_, g''')   <- envAddHeap l g'' (fmap (F.subst su) <$> σ''')
+    return $ g'''
   where 
     vs = case safeRefReadHeap "consUnwind %s" g (rheap $ tracePP ("unwind of " ++ m ++ " in ")  g) (tracePP "reading here" m) of
            (_,TApp _ vs _)  -> vs
            p                -> error (printf "%s BUG: unwound something bad! %s" (ppshow (srcPos l)) (ppshow p))
     
+instPropBind prop (B x t) = B x $ strengthen t prop
+  where prop' = F.subst (F.mkSubst [(x, F.expr $ rTypeValueVar t)]) prop
 
 instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar x')])
     where      

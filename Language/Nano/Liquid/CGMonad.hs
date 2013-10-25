@@ -508,8 +508,8 @@ freshTyInst l g αs τs tbody
 -- | Instantiate Fresh Type (at Wind-site)
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
-               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan 
-               -> CGM ((RefHeap, (F.Symbol, RefType), RefType, [TypeMeasure]), CGEnv)
+               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan
+               -> CGM ((RHeapEnv, (F.Symbol, RefType), RefType, [TypeMeasure]), CGEnv)
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
   = do (σ,s,t,vs)   <- envFindTyDef ty
