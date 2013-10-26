@@ -18,14 +18,15 @@
 // In below, separation between x and v in output IS obvious.
 /* copy ::(x:list[A])/h1 => {v:list[A]}/ v|-> keys(v) = keys(x,h1) * x |-> keys(x) == keys(x,h1)} */
 
-/*@ copy :: forall A. (x:<l>+null)/l |-> list[A] => <m>+null/l |-> list[A] * m |-> list[A] */
+/*@ copy :: forall A. (x:<l>+null)/l |-> ls:list[A]
+                                  => {v:<m>+null | ((ttag(x) != "null") <=> (ttag(v) != "null"))}
+                          /l |-> nls:{list[A] | len(v) = len(ls)} * m |-> {list[A] | len(v) = len(ls)} */
 function copy(x){
   if (typeof(x) == "null"){
     return null;
   } else {
     var u  = copy(x.next);
     var t  = {data: x.data, next : u};
-    // var t = {}; t.data = x.data; t.next = u;
     return t;
   } 
 }

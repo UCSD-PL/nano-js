@@ -227,6 +227,7 @@ tconFTycon TString   = F.strFTyCon -- F.stringFTycon "string"
 tconFTycon TTop      = F.stringFTycon "top"
 tconFTycon TNull     = F.stringFTycon "null"
 tconFTycon TUndef    = F.stringFTycon "undefined"
+tconFTycon (TRef l)  = F.stringFTycon ("ref("++l++")")
 
 
 rTypeSortForAll t    = genSort n θ $ rTypeSort $ tracePP "rTypeSortForAll" tbody

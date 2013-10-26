@@ -6,7 +6,7 @@
 /* insert :: (x:?list[A], k:A)/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 
 /*@ insert :: forall A. (x:<l>+null, k:A)/l |-> ls:list[A] =>
-                                     <r>/r |-> out:{v:list[A] | (if ((ttag x) = "null") then
+                                      <r>/r |-> out:{v:list[A] | (if ((ttag x) = "null") then
                                                                   ((len v) = 1)
                                                                 else 
                                                                   ((len v) = (len ls) + 1)) }

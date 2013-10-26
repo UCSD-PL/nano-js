@@ -602,9 +602,8 @@ consUnwind l g (m, ty, θl) =
         ms'     = map (\(x,y,p) -> (x,y,F.subst su p)) ms
         p       = tracePP "consUnwind prop" $ F.predReft . F.PAnd . map (instProp v b s) $ ms'
         σ'''    = tracePP "consUnwind new heap" $ instPropBind p . (F.subst (F.mkSubst [(F.symbol (tracePP "consUnwind s" s), F.eVar (tracePP "consUnwind b" b))]) <$>) <$> σ''
-        
     g''         <- envAdds [(b, strengthenObjBinds b $ F.subst su <$> t')] g'
-    (_, g''')   <- envAddHeap l g'' (fmap (F.subst su) <$> σ''')
+    (_, g''')   <- envAddHeap l g'' σ'''
     return $ g'''
   where 
     vs = case safeRefReadHeap "consUnwind %s" g (rheap $ tracePP ("unwind of " ++ m ++ " in ")  g) (tracePP "reading here" m) of
@@ -612,7 +611,6 @@ consUnwind l g (m, ty, θl) =
            p                -> error (printf "%s BUG: unwound something bad! %s" (ppshow (srcPos l)) (ppshow p))
     
 instPropBind prop (B x t) = B x $ strengthen t prop
-  where prop' = F.subst (F.mkSubst [(x, F.expr $ rTypeValueVar t)]) prop
 
 instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar x')])
     where      

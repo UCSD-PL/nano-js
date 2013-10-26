@@ -6,7 +6,8 @@
 
 /* remove :: (x:list[A], k:A)/h => {v:list[A]}/v |-> keys(v) = set_minus(keys(x,h), set_singleton(k)) */
 
-/*@ remove :: forall A. (x:<l>+{null | true}, k:A)/l |-> list[A] => <m>+null/m |-> list[A] */
+/*@ remove :: forall A. (x:<l>+{null | true}, k:A)/l |-> ls:list[A]
+                          => <m>+null/m |-> ms:list[A]*/
 function remove(x, k){
   if (typeof(x) != "null") {
     var xn = x.next;
