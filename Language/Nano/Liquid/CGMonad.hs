@@ -509,17 +509,16 @@ freshTyInst l g αs τs tbody
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
                CGEnv -> l -> RSubst F.Reft -> Id SourceSpan
-               -> CGM ((RHeapEnv, (F.Symbol, RefType), RefType, [TypeMeasure]), CGEnv)
+               -> CGM (RHeapEnv F.Reft, (F.Symbol, RefType), RefType, [TypeMeasure])
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
-  = do (σ,s,t,vs)   <- envFindTyDef ty
+  = do (σ,s,t,vs)  <- envFindTyDef ty
        let (αs,ls)  = toLists θ
-       αs'         <- mapM freshSubst αs
-       let θ'       = fromLists αs' ls
+       θ'          <- flip fromLists ls <$> mapM freshSubst αs
        (su,σ')     <- freshHeapEnv l (apply (tracePP "freshTyWind inst" θ') $ tracePP "freshTyWind sig" σ)
        ms          <- (instMeas su <$>) <$> getMeasures (tracePP "freshTyWind" ty)
-       g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return ((tracePP "freshTyWind sig out" (toId <$> σ'), (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms), g')
+       -- g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
+       return (tracePP "freshTyWind sig out" σ', (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms)
     where 
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l

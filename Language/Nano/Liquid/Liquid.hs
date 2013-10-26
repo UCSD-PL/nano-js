@@ -565,18 +565,25 @@ consWind l g (m, wls, ty, θ)
   -- What needs to be done here:
   -- Given the instantiation θ:
   -- Instantiate C[α] and add a new binder. oh wait, that is fairly easy...
-  = do ((σw, (x,tw), t, ms), g') <- freshTyWind g l θ ty
-       let g''                   = g' { rheap =  heapDiff (tracePP "consWind rheap g'" $ rheap g') (m:wls) }
-           x'                    = heapRead "consWind" m (rheap g)
-           v                     = rTypeValueVar t
-           wls'                  = filter (`elem` (heapLocs (rheap g))) (wls)
-           su                    = F.mkSubst $ zip (map (F.symbol . flip (heapRead "consWind") σw) wls') (map (F.eVar . flip (heapRead "consWind") (rheap g)) wls')
-           ms'                   = map (\(x,y,p) -> (x,y,F.subst su p)) ms
-           p                     = F.predReft . F.PAnd . map (instProp v x' x) $ ms'
+  = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
+       let xts               = (fmap (F.subst xsu) . toIdTyPair) <$> heapTypes σenv
+           xsu               = F.mkSubst [(F.symbol x, F.eVar x')]
+           σw                = toId <$> σenv
+           g'                = g { rheap =  heapDiff (tracePP "consWind rheap g'" $ rheap g') (m:wls) }
+           x'                = heapRead "consWind" m (rheap g)
+           v                 = rTypeValueVar t
+           wls'              = filter (`elem` (heapLocs (rheap g))) (wls)
+           su                = F.mkSubst $ zip (map (F.symbol . flip (heapRead "consWind") σw) wls') (map (F.eVar . flip (heapRead "consWind") (rheap g)) wls')
+           ms'               = map (\(x,y,p) -> (x,y,F.subst su p)) ms
+           p                 = F.predReft . F.PAnd . map (instProp v (tracePP "consWind x'" x') (tracePP "consWind x" x)) $ ms'
+       g'                    <- envAdds xts g
        subTypeWind l g' σw (snd $ safeRefReadHeap "consWind" g' (rheap g') m) tw
-       (z, g''')                 <- envFreshHeapBind l m g''
-       envAdds [(z, tracePP "consWind out type" $ strengthen t p)] g'''
+       (z, g'')                 <- envAdds xts g' >>= envFreshHeapBind l m
+       envAdds [(z, tracePP "consWind out type" $ strengthen t p)] g''
        where
+         s                    = srcPos l
+         toId                 = Id s . F.symbolString . b_sym                      
+         toIdTyPair b         = (toId b, b_type b)
          heapDiff σ ls            = foldl (flip heapDel) σ ls
 
 ---------------------------------------------------------------------------------
