@@ -444,7 +444,7 @@ envJoin' l g g1 g2
         
         g'  <- joinHeaps l γ g' g1' g2'
 
-        return g'
+        return $ tracePP "envJoin output" g'
 
 joinHeaps l γ g g1 g2
   = do let (σ1,σ2)        = tracePP "pre join heaps" $ mapPair rheap (g1,g2)
@@ -452,26 +452,29 @@ joinHeaps l γ g g1 g2
            t1s            = map (snd . safeRefReadHeap "joinHeaps" g1 σ1) both
            t2s            = map (snd . safeRefReadHeap "joinHeaps" g2 σ2) both
            t4             = zipWith (compareTs γ) t1s t2s
-       ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
+       ts                <- tracePP "freshTy joinHeaps" <$> mapM (freshTy "joinHeaps" . toType . fst4) t4
        xs                <- mapM (const (freshId (srcPos l))) ts
        g'                <- envAdds (zipWith str xs ts) g
        _                 <- mapM (wellFormed l g') ts
+       (ts',g')          <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
        let σ'             = heapCombine "joinHeaps combine " [σj, σ2', σ1']
-           σ1'            = tracePP "joinHeaps 1'" $ heapFromBinds "joinHeaps one" $ zip one $ map (fst . safeRefReadHeap "joinHeaps one" g1 σ1) one
-           σ2'            = tracePP "joinHEaps 2'" $ heapFromBinds "joinHeaps two" $ zip two $ map (fst . safeRefReadHeap "joinHeaps two" g2 σ2) two
+           σ1'            = heapFromBinds "joinHeaps one" $ zip one $ map (fst . safeRefReadHeap "joinHeaps one" g1 σ1) one
+           σ2'            = heapFromBinds "joinHeaps two" $ zip two $ map (fst . safeRefReadHeap "joinHeaps two" g2 σ2) two
            σj             = tracePP "joinHeaps joined" $ heapFromBinds "joinHeaps σj" $ zip both xs
            su1            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ1) both)
            su2            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ2) both)
        -- Subtype the common heap locations
-       zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
-       zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
-       (ts',g')        <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
+       zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
+       zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
+
+       zipWithM_ (subTypeContainers' "joinHeaps 1" l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
+       zipWithM_ (subTypeContainers' "joinHeaps 2" l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        xs'             <- mapM (const (freshId (srcPos l))) xs
        g''             <- envAdds (zip xs' (reverse ts')) g'
        let x1s           = map (`rdHeap` σ1) one
        let x2s           = map (`rdHeap` σ2) two
        g'''            <- envAdds (zip (x1s ++ x2s) (t1s ++ t2s)) g''
-       return $ g''' { rheap = σ' }
+       return $ tracePP "joined env" $ g''' { rheap = σ' }
     where
       foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
       str x t  = (x, strengthenObjBinds x t)
@@ -580,12 +583,17 @@ strengthenObjBinds x (TObj bs r)
 strengthenObjBinds _ t = t
 
 -- loc |-> x, x.f := y
-updateFieldM :: (IsLocated l, F.Symbolic f) => l -> CGEnv -> Id SourceSpan -> Id SourceSpan -> f -> Id l -> CGM (RefType, CGEnv)
+---------------------------------------------------------------------------------------
+updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
+  l -> CGEnv -> Id SourceSpan -> Id SourceSpan -> f -> Id l -> CGM CGEnv
+---------------------------------------------------------------------------------------
 updateFieldM l g x x' f y
   = do let t_obj       = tracePP "t_obj" $ envFindTy x g
-           t_fld       = tracePP "deref" $ deref x' (envFindTy y g) s
-       (y', g') <- envAddFresh l t_fld g
-       return $ (tracePP "updateField" $ updateField (envFindTy y' g') s t_obj, g')
+           t_fld       = tracePP "deref" $ envFindTy y g
+       (y', g')       <- envAddFresh l t_fld g
+       (t_obj', g'')  <- freshObjBinds l g' $ strengthenObjBinds x' $ updateField (envFindTy y' g') s t_obj
+       envAdds [(x', t_obj')] g''
+       -- return $ (tracePP "updateField" $ updateField (envFindTy y' g') s t_obj, g')
     where   
       s           = F.symbol f
       deref x t b = t `eSingleton` (field x b)
@@ -707,11 +715,12 @@ subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
     (r1, r2)     = mapPair rTypeR        (u1, u2)
     -- Fix the ValueVar of the top-level refinement to be the same as the
     -- Valuevar of the part
-    fix t b v    | v == b    = rTypeValueVar t
-                 | otherwise = v
-    rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
-    sb  (t1 ,t2) = subTypeContainers' "subc un" l g (t1 `strengthen` rr t1 r1) 
-                                         (t2 `strengthen` rr t2 r2)
+    fix t b v    | v == b    = tracePP (printf "(fix %s %s %s) (a)" (ppshow t) (ppshow b) (ppshow v)) $ rTypeValueVar t
+                 | otherwise = tracePP (printf "(fix %s %s %s) (b)" (ppshow t) (ppshow b) (ppshow v)) $ v
+    -- rr t r       = tracePP "r after" $ F.substa (fix (tracePP "fix t" t) (tracePP "fix b" b)) $ tracePP "r orig" r where F.Reft (b,_) = r
+    rr t r       = tracePP "r after" $ F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+    sb  (t1 ,t2) = subTypeContainers' "subc un" l g (t1 `strengthen` rr t1 r1)
+                                                    (t2 `strengthen` rr t2 r2)
     sbs ts       = mapM_ sb ts
 
 -- TODO: the environment for subtyping each part of the object should have the
@@ -726,9 +735,11 @@ subTypeContainers l g o1@(TObj _ _) o2@(TObj _ _) =
     -- to be the same as the Valuevar of the part
     fix t b v    | v == b    = rTypeValueVar t
                  | otherwise = v
-    rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
-    sb (t1 ,t2)  = subTypeContainers' "subc obj" l g (t1 `strengthen` rr t1 r1) 
-                                         (t2 `strengthen` rr t2 r2)
+    --rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
+    rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+    sb (t1 ,t2)  = subTypeContainers' "subc obj" l g t1 t2
+    -- sb (t1 ,t2)  = subTypeContainers' "subc obj" l g (t1 `strengthen` rr t1 r1) t2
+    --                                      (t2 `strengthen` rr t2 r2)
 
 subTypeContainers l g t1 t2 = subType l g t1 t2
 
@@ -759,7 +770,8 @@ strengthenUnion (TApp TUn ts r) = TApp TUn (map fixup ts) r
   where fix t b v
           | v == b    = rTypeValueVar t
           | otherwise = v
-        rr t r  = F.substa (fix t b) r where F.Reft (b,_) = r
+        rr t r  = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+        -- rr t r  = F.substa (fix t b) r where F.Reft (b,_) = r
         fixup t = t `strengthen` rr t r
 
 strengthenUnion t = t
@@ -1097,9 +1109,9 @@ splitW (W g i t@(TApp _ ts _))
         return $ ws ++ ws'
 
 splitW (W g i t@(TObj ts _ ))
-  = do  g'    <- envTyAdds i ts g
+  = do  g'    <- envTyAdds i ts g -- ABAKST Changed!!?!!?
         let bs = bsplitW g t i
-        ws    <- concatMapM splitW [W g' i ti | B _ ti <- ts]
+        ws    <- concatMapM splitW [W g i ti | B _ ti <- ts]
         return $ bs ++ ws
 
 splitW (W _ _ _ ) = error "Not supported in splitW"

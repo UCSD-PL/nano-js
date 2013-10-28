@@ -126,9 +126,9 @@ type list[A] exists! l |-> xs:list[A] . r:{ data : A, next : <l> + null }
 /*@ builtin_OpGEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x >= y)) }   */
 
 //PV: @==@ and @===@ could be handled more precisely
-/*@ builtin_OpEq        :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
+/*@ builtin_OpEq        :: forall A. ({x:A|true}, {y:A|true}) => {e:boolean | ((Prop e) <=> (x = y)) }    */
 /*@ builtin_OpSEq       :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
-/*@ builtin_OpNEq       :: forall A B. ({x:A|true}, {y:B|true}) => {v:boolean | ((Prop v) <=> (x != y)) } */
+/*@ builtin_OpNEq       :: forall A B. ({x:A|true}, {y:B|true}) => {e:boolean | ((Prop e) <=> (x != y)) } */
 
 /*@ builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) => {v:boolean | true}                             */
 /*  builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) =>
@@ -163,10 +163,10 @@ type list[A] exists! l |-> xs:list[A] . r:{ data : A, next : <l> + null }
 
 /*@ measure ttag :: forall A. (A) => string                               */
 
-/*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
+/*@ builtin_PrefixTypeof:: forall A. (x:A) => {s:string | (ttag x) = s }  */
 
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {v:null      | ttag(v) = "null"     } */  //TODO: this is not very precise
+/*@ invariant {e:null      | ttag(e) = "null"     } */  //TODO: this is not very precise
 /*@ invariant {v:boolean   | ttag(v) = "boolean"  } */ 
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
