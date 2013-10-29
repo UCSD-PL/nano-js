@@ -604,7 +604,7 @@ consUnwind l g (m, ty, θl) =
     (_, g''')   <- envAddHeap l g'' σ'''
     return $ g'''
   where 
-    vs = case safeRefReadHeap "consUnwind %s" g (rheap $ tracePP ("unwind of " ++ m ++ " in ")  g) (tracePP "reading here" m) of
+    vs = case safeRefReadHeap "consUnwind" g (rheap $ tracePP ("unwind of " ++ m ++ " in ")  g) (tracePP "reading here" m) of
            (_,TApp _ vs _)  -> vs
            p                -> error (printf "%s BUG: unwound something bad! %s" (ppshow (srcPos l)) (ppshow p))
     

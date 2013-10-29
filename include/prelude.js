@@ -81,9 +81,9 @@ function unwind(x) {
 /*@ measure len  :: forall A. (list[A]) => number      */
 
 /*@
-type list[A] exists! l |-> xs:list[A] . r:{ data : A, next : <l> + null }
+type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
-     with len(x) := (if (ttag(field(r,"next")) != "null") then 1 + len(xs) else 1)
+     with len(x) := (if (ttag(field(r,"next")) != "null") then 1 + len(tl) else 1)
 
 */
      //and keys(x) := (if ((ttag (field r "next")) = "null") then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys xs)))
