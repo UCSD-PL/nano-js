@@ -1190,7 +1190,12 @@ instance ClearSorts F.Sort where
   clear (F.FObj _)    = F.FInt
   clear (F.FVar _)    = F.FInt
   clear (F.FFunc i s) = F.FFunc i $ clear <$> s
-  clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
+  -- clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
+  clear (F.FApp c ss) 
+      | F.fTyconString c == "set" = F.FApp (F.stringFTycon "Set_Set") (clear <$> ss)
+      | otherwise           = F.FInt -- F.FApp  c $ clear s
+
+                             
 
 clearFunTy s@(F.FVar _) = s
 clearFunTy s            = clear s
