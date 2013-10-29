@@ -574,10 +574,10 @@ consWind l g (m, wls, ty, θ)
            su                = F.mkSubst $ zip (map (F.symbol . flip (heapRead "consWind") σw) wls') (map (F.eVar . flip (heapRead "consWind") (rheap g)) wls')
            ms'               = map (\(x,y,p) -> (x,y,F.subst su p)) ms
            p                 = F.predReft . F.PAnd . map (instProp v (tracePP "consWind x'" x') (tracePP "consWind x" x)) $ ms'
-       g_st                    <- envAdds xts g
+       g_st                 <- envAdds xts g
        subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) tw
-       (z, g'')                 <- envAdds xts g' >>= envFreshHeapBind l m
-       envAdds [(tracePP "consWind z" z, tracePP "consWind out type" $ strengthen t p)] $ tracePP "consWind out env" g''
+       (z, g'')             <- envAdds xts g' >>= envFreshHeapBind l m
+       tracePP "consWind out env" <$> envAdds [(tracePP "consWind z" z, tracePP "consWind out type" $ strengthen t p)]  g''
        where
          s             = srcPos l
          toId          = Id s . F.symbolString . b_sym                      

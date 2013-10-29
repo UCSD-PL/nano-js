@@ -163,7 +163,7 @@ type list[A] exists! l |-> xs:list[A] . r:{ data : A, next : <l> + null }
 
 /*@ measure ttag :: forall A. (A) => string                               */
 
-/*@ builtin_PrefixTypeof:: forall A. (x:A) => {s:string | (ttag x) = s }  */
+/*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
 
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
 /*@ invariant {e:null      | ttag(e) = "null"     } */  //TODO: this is not very precise

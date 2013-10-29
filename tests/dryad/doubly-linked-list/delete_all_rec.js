@@ -1,9 +1,15 @@
-/*@ type dlist[A,S,P] exists! l |-> dlist[A, <l>, S] . { data: A, next:<l>+null, prev:P } */
+/*@
+
+type dlist[A,S,P] exists! l |-> ls:dlist[A, <l>, S] . me:{ data: A, next:<l>+null, prev:P }
+
+with len(x) := (if (ttag(field(me,"next")) = "null") then 1 else (1 + len(ls)))
+
+*/
 
 /* remove :: (x:dlist[A, null], k:A)/h => {v:dlist[A, null]}/v |-> keys(v) = set_minus(keys(x,h), set_singleton(k)) */
 
 /*@ remove :: forall A P.
-  (x:<l>+{null | true},k:A)/l |-> ls:dlist[A,<l>,P] => <v>+null/v |-> vs:dlist[A,<v>,null] */
+  (x:<l>+null,k:A)/l |-> ls:dlist[A,<l>,P] => <v>+null/v |-> vs:{dlist[A,<v>,null] */
 function remove(x, k){
   if (typeof(x) == "null"){
       return null;

@@ -466,19 +466,51 @@ joinHeaps l γ g g1 g2
        -- Subtype the common heap locations
        zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
-
        zipWithM_ (subTypeContainers' "joinHeaps 1" l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        zipWithM_ (subTypeContainers' "joinHeaps 2" l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        xs'             <- mapM (const (freshId (srcPos l))) xs
        g''             <- envAdds (zip xs' (reverse ts')) g'
-       let x1s           = map (`rdHeap` σ1) one
-       let x2s           = map (`rdHeap` σ2) two
-       g'''            <- envAdds (zip (x1s ++ x2s) (t1s ++ t2s)) g''
-       return $ tracePP "joined env" $ g''' { rheap = σ' }
+
+       -- HEREHEREHEREHEREHERE
+       -- t1s'            <- mapM (freshTy "joinHeaps" . toType) t1s
+       -- t2s'            <- mapM (freshTy "joinHeaps" . toType) t2s
+       -- mapM (wellFormed l g') (t1s'++t2s')
+         
+       -- let x1s           = map (`rdHeap` σ1) one
+       -- let x2s           = map (`rdHeap` σ2) two
+
+       let t1s            = map (snd . safeRefReadHeap "joinHeaps" g1 σ1) one
+           t2s            = map (snd . safeRefReadHeap "joinHeaps" g2 σ2) two
+       (x1s',t1s') <- tracePP "sig1" σ1'`seq`(tracePP "freshSubHeap" <$> freshSubHeap l σ1' g' g1 one)
+       (x2s',t2s') <- freshSubHeap l σ2' g' g2 two
+
+       -- zipWithM_ (subType l g1) t1s t1s'
+       -- zipWithM_ (subType l g2) t2s t2s'
+       zipWithM_ (subTypeContainers l g1) (tracePP "t1s" t1s) (tracePP "t1s'" t1s')
+       zipWithM_ (subTypeContainers l g2) t2s t2s'
+
+
+       let σ'' = heapCombine "final" [heapFromBinds "" (zip one x1s'),
+                                      heapFromBinds "" (zip two x2s'),
+                                      σj]
+       
+
+       g'''            <- envAdds (zip (x1s' ++ x2s') (t1s' ++ t2s')) g''
+       -- HEREHEREHEREHEREHERE
+
+       return $ tracePP "joined env" $ g''' { rheap = σ'' }
     where
       foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
       str x t  = (x, strengthenObjBinds x t)
       rdHeap = heapRead "joinHeaps"
+
+freshSubHeap l σ g_wf g locs
+  = do let (xs,ts) = unzip $ map (safeRefReadHeap "freshSubHeap safe" g σ) locs
+       xs'    <- mapM (const (freshId (srcPos l))) xs
+       let su = F.mkSubst $ zip (F.symbol <$> xs) (F.eVar . F.symbol <$> xs')
+       ts'    <- mapM (fmap (F.subst su) <$> freshTy "freshSubHeap") ts
+       mapM (wellFormed l g_wf) ts'
+       return (xs', ts')
            
 ---------------------------------------------------------------------------------------
 -- | Fresh Templates ------------------------------------------------------------------
