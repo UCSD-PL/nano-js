@@ -256,12 +256,14 @@ consStmt g r@(ReturnStmt l (Just e))
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
           else withAlignedM (subTypeContainers' "Return" l g') te rt
-        consReturnHeap g' r
+        -- (xr,g'')    <- envAddFresh l rt g'
+        -- let su    = F.mkSubst [(lqretSymbol, F.eVar xr)]
+        consReturnHeap g' (Just xe) r
         return Nothing
 
 -- return
 consStmt g r@(ReturnStmt l Nothing)
-  = consReturnHeap g' r >> return Nothing 
+  = consReturnHeap g' Nothing r >> return Nothing 
   where           
     dels = tracePP "return deletes" $ concat [ ls | Delete ls <- ann_fact l ]
     -- g'   = g { rheap = deleteLocsTy dels <$> rheap g
@@ -305,9 +307,13 @@ consStmt g (RenameLocs l _)
 consStmt _ s 
   = errorstar $ "consStmt: not handled " ++ ppshow s
 
-consReturnHeap g (ReturnStmt l _)
+lqretSymbol = F.symbol "lqreturn"
+
+consReturnHeap :: CGEnv -> Maybe (Id AnnTypeR) -> Statement AnnTypeR -> CGM ()
+consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)       <- getFunHeaps g l
-       let (su,σ')  = tracePP "renamedHeapBind" <$> renameHeapBinds (tracePP "renaming dis one" $ rheap g) σ
+       let rsu      = F.mkSubst $ maybe [] (\x -> [(F.symbol "lqreturn", F.eVar $ F.symbol x)]) xro
+       let (su,σ')  = tracePP "renamedHeapBind" <$> fmap b_type <$> renameHeapBinds (tracePP "renaming dis one" $ rheap g) (fmap (F.subst rsu <$>)  $ tracePP "return heap" σ)
        let g'       = g { renv = envMap (F.subst su <$>) $ tracePP "return heap pre" $ renv g }
        subTypeHeaps l g' (tracePP "Return rheap g" (flip envFindTy g' <$> rheap g')) (tracePP "Return σ" σ')
 
@@ -316,7 +322,7 @@ getFunHeaps g _
 
 -- renameHeapBinds :: RefHeap -> RHeapEnv F.Reft -> (F.Subst, RefHeap)
 renameHeapBinds σ1 σ2
-  = (su, F.subst su . b_type <$> σ2)
+  = (su, fmap (F.subst su) <$> σ2)
   where l1s = heapLocs σ1
         l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
@@ -490,20 +496,25 @@ consCall g l _ es ft
        (hisu, hi')       <- freshHeapEnv l hi
        (hosu, ho')       <- freshHeapEnv l ho
        let (argSu, ts')   = renameBinds its xes
-           (heapSu, hi'') = renameHeapBinds (rheap g') hi'
+           (heapSu, hi'') = fmap b_type <$> renameHeapBinds (rheap g') hi'
            su             = hisu `F.catSubst` hosu `F.catSubst` heapSu `F.catSubst` argSu
            gin            = (flip envFindTy g') <$> rheap g'
        -- Substitute binders in spec with binders in actual heap
-       zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [tracePP (printf "envFindTy(%s)" (ppshow x)) $ envFindTy x g' | x <- xes] (F.subst su ts')
-       -- subTypeHeaps l g' (tracePP "consCall rheap g'" $ rheap g') (tracePP "consCall hi" $ F.subst argSu <$> hi')
+       zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] (F.subst su ts')
        subTypeHeaps l g' (tracePP "consCall rheap g'" $ gin) (tracePP "consCall hi" $ F.subst su <$> hi'')
        let hu  = tracePP "consCall hu" $ foldl (flip heapDel) (rheap g') $ heapLocs hi''
-       (_,g'')           <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
+
+       -- Substitute binder for return value in output heap
+       (xr, g'')         <- envAddFresh l (F.subst su ot) g'
+       let rsu           = F.mkSubst [(lqretSymbol, F.eVar xr)]
+       (_,g'')           <- envAddHeap l (g'' { rheap = hu }) (fmap (F.subst (su `F.catSubst` rsu)) <$> ho')
+
        let lost  = deletedLocs gin (tracePP "consCall rheap g''" $ rheap g'')
        let g_out = g'' { renv  = envMap (deleteLocsTy lost) $ renv g''
                        , rheap = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
                        }
-       envAddFresh l (F.subst su ot) (tracePP "consCall done" g_out)
+       return (xr, g_out)
+                                        
      {- where
          msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
@@ -564,9 +575,10 @@ consWind l g (m, wls, ty, θ)
   -- Given the instantiation θ:
   -- Instantiate C[α] and add a new binder. oh wait, that is fairly easy...
   = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
-       let xts               = (fmap (F.subst xsu) . toIdTyPair) <$> (heapTypes $ tracePP "consWind sigma env" σenv)
+       let xts               = (fmap (F.subst xsu) . toIdTyPair) <$> (heapTypes $ tracePP "consWind sigma env" σenv')
            xsu               = F.mkSubst [(F.symbol x, F.eVar x')]
-           σw                = toId <$> σenv
+           σw                = toId <$> σenv'
+           (hsu, σenv')      = renameHeapBinds (rheap g) σenv
            g'                = g { rheap =  heapDiff (tracePP "consWind rheap g'" $ rheap g) (m:wls) }
            x'                = heapRead "consWind" m (rheap g)
            v                 = rTypeValueVar t
@@ -575,9 +587,9 @@ consWind l g (m, wls, ty, θ)
            ms'               = map (\(x,y,p) -> (x,y,F.subst su p)) ms
            p                 = F.predReft . F.PAnd . map (instProp v (tracePP "consWind x'" x') (tracePP "consWind x" x)) $ ms'
        g_st                 <- envAdds xts g
-       subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) tw
+       subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) (F.subst hsu tw)
        (z, g'')             <- envAdds xts g' >>= envFreshHeapBind l m
-       tracePP "consWind out env" <$> envAdds [(tracePP "consWind z" z, tracePP "consWind out type" $ strengthen t p)]  g''
+       tracePP "consWind out env" <$> envAdds [(tracePP "consWind z" z, tracePP "consWind out type" $ F.subst hsu $ strengthen t p)]  g''
        where
          s             = srcPos l
          toId          = Id s . F.symbolString . b_sym                      

@@ -368,6 +368,8 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         let (rt', t')  = tracePP "rt' t'" $ mapPair (apply θr) (rt,t)
         -- θ             <- unifyTypeM l "Return" eo t rt
         σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ σ'
+        -- Wind locations back up, but ONLY those that appear in the output spec! might be deleting a loc
+        (setUnwound . filter ((`elem` heapLocs σ_out) . fst3)) =<< getUnwound
         (γ,σ')        <- windLocations (γ, σ') l
         -- θ_old         <- getSubst
         -- Now unify heap
@@ -475,7 +477,7 @@ uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
   -- For each unwound location l |-> t, record (l, locations referred to by t
   -- build a graph of these dependencies and sort it, then fold locations
   -- in that order
-  where deps      = map (\(l,i,θ) ->((l,i,θ),l,locs $ heapRead "uwOrder" l σ)) ls
+  where deps      = map (\(l,i,θ) ->((l,i,θ),l,locs $ heapRead "uwOrder" l σ)) $ filter ((`elem` heapLocs σ) . fst3) ls
         (g,v2e,_) = graphFromEdges deps
 
 -- Compare locations in σ with σ_spec using the current θ.

@@ -1,10 +1,15 @@
-//import "sorted-list.js";
+/*@ insert :: forall A. (x:<l>+null, k:A)/l |-> in:sList[A]
+                                   => <k>/k |-> out:{sList[A]
+                                               | (if (ttag(x) != "null")
+                                                      then ((if (min(in) < k)
+                                                           then (min(v) = min(in))
+                                                           else (min(v) = k))
+                                                             && (keys(v)= Set_cup(Set_sng(k), keys(in))
+                                                             && (len(v) = len(in) + 1)))
+                                                      else ((min(v)  = k)
+                                                         && (keys(v) = Set_sng(k))
+                                                         && (len(v)  = 1))) } */
 
-/* insert :: (x:?incList[A], k:A) => incList[A] */
-
-/* insert :: (x:?incList[A], k:A) => <l>/l|-> {v:incList[A] | SetPlus(keys(v), keys(x,h), k) } */
-
-/*@ insert :: (x:{v:<l> | true} + {null | true}, k:number)/l |-> list[number] => <k>/k |-> list[{number | true}] */
 function insert(x, k){
   if (typeof(x) == "null"){
     // x == null
@@ -14,7 +19,7 @@ function insert(x, k){
     return y;
   } else {
     var xk = x.data;
-    if (k <= xk){
+    if (cmp(k,xk)){
       var y  = {};
       y.data = k;
       y.next = x;
@@ -28,7 +33,12 @@ function insert(x, k){
   }
 }
 
-/*@ insertion_sort :: (<l>+null)/l |-> list[number] => <k>+null/k |-> list[{ number | true }] */
+/*@ insertion_sort :: forall A. (x:<l>+null)/l |-> ls:list[A]
+                          => {v:<k>+null | ((ttag(v) != "null") <=> (ttag(x) != "null"))}
+                                          /k |-> ks:{sList[A] | (if (ttag(lqreturn) != "null")
+                                                                    then ((len(v) = len(ls)) && (keys(v) = keys(ls)))
+                                                                    else true)}
+*/
 function insertion_sort(x){
   if (typeof(x) == "null"){
       return null;

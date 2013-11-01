@@ -1,13 +1,10 @@
 //import "singly-linked-list.js"
 
-/* remove :: (x:list[A], k:A)/h => {v:list[A]| keys(v) = set_minus(keys(x,h), set_singleton(k))} */
-
-// OR 
-
-/* remove :: (x:list[A], k:A)/h => {v:list[A]}/v |-> keys(v) = set_minus(keys(x,h), set_singleton(k)) */
-
-/*@ remove :: forall A. (x:<l>+{null | true}, k:A)/l |-> ls:list[A]
-                          => <m>+null/m |-> ms:list[A]*/
+/*@ remove :: forall A. (x:<l>+null, k:A)/l |-> as:list[A]
+                              => {v:<m>+null | ((ttag(v) = "null") <=> ((keys(as) = Set_sng(k)) || (ttag(x) = "null"))) }
+                                  /m |-> bs:{list[A] | (if (ttag(lqreturn) != "null")
+                                                           then (keys(v) = Set_dif(keys(as), Set_sng(k)))
+                                                           else (Set_emp(keys(v))))} */
 function remove(x, k){
   if (typeof(x) != "null") {
     var xn = x.next;
@@ -15,8 +12,7 @@ function remove(x, k){
     x.next = t;
     var d = x.data;
     if (d == k) {
-      var n = x.next;
-      return n;
+      return t;
     } else {
       return x;
     }

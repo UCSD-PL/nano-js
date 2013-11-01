@@ -6,10 +6,12 @@
 /* insert :: (x:?list[A], k:A)/h => {v:list[A]}/ v |-> keys(v) = set_cup(keys(x,h), set_singleton(k)) */
 
 /*@ insert :: forall A. (x:<l>+null, k:A)/l |-> ls:list[A] =>
-                                      <r>/r |-> out:{v:list[A] | (if ((ttag x) = "null") then
-                                                                  ((len v) = 1)
+                                      <r>/r |-> out:{v:list[A] | (if (ttag(x) = "null") then
+                                                                    ((len(v) = 1)
+                                                                 && (keys(v) = Set_sng(k)))
                                                                 else 
-                                                                  ((len v) = (len ls) + 1)) }
+                                                                  ((len(v)  = len(ls) + 1)
+                                                                 &&(keys(v) = Set_cup(Set_sng(k), keys(ls))))) }
 */
 function insert(x, k){
   if (typeof(x) != "null"){

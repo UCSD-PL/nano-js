@@ -1,10 +1,14 @@
-/*@
-  type tree[A] exists! l |-> tree[A] * r |-> tree[A] . { data: A, left:<l>+null, right:<r>+null } 
- */
+/*@ qualif LtField(v:a, x:b): v < field(x, "data")     */
+/*@ qualif LtField(v:a, x:b): v > field(x, "data")     */
+/*@ qualif EqField(v:a, x:b): v = field(x, "data")     */
+/*@ qualif EqField(v:a, x:b): v = hd(x)                */
+/*@ qualif EqField(v:a, x:b): field(v, "data") = hd(x) */
 
 /* lemma_nonMem :: (k:A, x:?bst[{v:A| v != k}]) => {v:void | not (Set_mem(k, keys(x, h)))}/same */
 
-/*@ lemma_nonMem :: forall A. (k:A, x:<x>+null)/x |-> tree[{v:A | true k}] => void/same */
+/*@ lemma_nonMem :: forall A. (k:A, x:<x>+null)/x |-> its:tree[{A | v != k}]
+                                        => {v:void | ((~(Set_mem(k, keys(its)))))}
+                                               /x |-> ots:{tree[{A | v != k}] | ((ttag(x) != "null") => ((keys(v) = keys(its)) && (hd(v) = hd(its)))) } */
 function lemma_nonMem(k, x){
   if (typeof(x) == "null"){
     return;
@@ -13,15 +17,17 @@ function lemma_nonMem(k, x){
     var xl = x.left;
     var xr = x.right;
     assert(k != xk);
-    lemma_nonMem(k, x.left);
-    lemma_nonMem(k, x.right);
     return;
   }
 }
 
+/*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 /* search :: (x:?bst[A], k:A) => {v:boolean | (Prop v) <=> Set_mem(k, keys(x, h))} */
 
-/*@ search :: (x:<t>+null, k:number)/t |-> tree[{number | true}] => boolean/same */
+/*@ search :: forall A. (x:<t>+null, k:A)/t |-> ts:tree[A]
+                                     => {boolean | (if (ttag(x) = "null")
+                                                       then (~(Prop(v)))
+                                                       else (Prop(v) <=> Set_mem(k, keys(ts))))}/ */
 function search(x, k){
   if (typeof(x) == "null"){
     return false;
@@ -31,14 +37,14 @@ function search(x, k){
   var xl = x.left;
   var xr = x.right;
 
-  if (k < xk){
+  if (cmpLT(k,xk)){
+    var r  = search(xl, k);
     var t  = lemma_nonMem(k, xr);
-    var x  = search(xl, k);
-    return x;
-  } else if (xk < k){
-    var t  = lemma_nonMem(k, xl);
-    var x = search(xr, k);
-    return x;
+    return r;
+  } else if (cmpLT(xk,k)){
+    var r = search(xr, k);
+    var t = lemma_nonMem(k, xl);
+    return r;
   } else {
     // k == xk
     return true;

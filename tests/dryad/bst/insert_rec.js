@@ -1,9 +1,9 @@
 //import "bst.js";
-/*@
-  type tree[A] exists! l |-> tree[A] * r |-> tree[A] . { data: A, left:<l>+null, right:<r>+null } 
- */
 
-/*@ insert :: (x:<t>+null, k:{number | true})/t |-> tree[number] => <r>/r |-> tree[number] */ //{v:bst[A]| keys(v) = set_cup(keys(x), set_singleton(k))}
+/*@ insert :: forall A. (x:<t>+null, k:A)/t |-> ts:tree[A]
+                         => <r>/r |-> rs:{tree[A] | (if (ttag(x) != "null")
+                                                         then ((hd(v) = hd(ts)) && (keys(v) = Set_cup(Set_sng(k), keys(ts))))
+                                                         else (((hd(v) = k))    && (keys(v) = Set_sng(k))))}                  */
 function insert(x, k) {
   if (typeof(x) == "null"){
     var y   = {};
@@ -15,16 +15,13 @@ function insert(x, k) {
 
   var xk = x.data;
 
-  if (k < xk){
+  if (cmp(k, xk)) {
     var xl = x.left;
     x.left = insert(xl, k);
     return x;
-  } 
-
-  if (k > xk){
-    var xr = x.right;
-    x.right = insert(xr, k);
+  }else {
+    var xr   = x.right;
+    x.right  = insert(xr, k);
     return x;
   }
-  return x;
 }

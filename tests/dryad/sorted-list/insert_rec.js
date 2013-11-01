@@ -1,11 +1,19 @@
-//import "sorted-list.js";
+/*@ measure min :: (sList[number]) => number */
+/*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 
+/*@ type sList[A] exists! l |-> tl:sList[{v:A | (v >= field(me, "data"))}] . me: { data:A, next:<l>+null }
+  with min(x) := field(me, "data")
+  and keys(x) := (if ((ttag (field me "next")) = "null") then (Set_sng (field me "data")) else (Set_cup (Set_sng (field me "data")) (keys tl)))
+*/
 
-/* insert :: (x:?incList[A], k:A) => incList[A] */
+/*@ insert :: forall A. (x:<l>+null, k:A)/l |-> in:sList[A]
+                                   => <k>/k |-> out:{sList[A]
+                                               | (if (ttag(x) != "null")
+                                                      then ((if (min(in) < k)
+                                                           then (min(v) = min(in))
+                                                           else (min(v) = k)) && (keys(v) = Set_cup(Set_sng(k), keys(in))))
+                                                      else ((min(v) = k) && (keys(v) = Set_sng(k)))) } */
 
-/* insert :: (x:?incList[A], k:A) => <l>/l|-> {v:incList[A] | SetPlus(keys(v), keys(x,h), k) } */
-
-/*@ insert :: (x:{v:<l> | true} + {null | true}, k:number)/l |-> list[number] => <k>/k |-> list[{number | true}] */
 function insert(x, k){
   if (typeof(x) == "null"){
     // x == null
@@ -15,7 +23,7 @@ function insert(x, k){
     return y;
   } else {
     var xk = x.data;
-    if (k <= xk){
+    if (cmp(k,xk)){
       var y  = {};
       y.data = k;
       y.next = x;

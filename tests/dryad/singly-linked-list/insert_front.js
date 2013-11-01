@@ -7,8 +7,8 @@
 /*@ insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]
              => <m>/m |-> ys:{list[A] | (if (ttag(x) != "null")
-                                            then (len(v) = len(xs) + 1)
-                                            else (len(v) = 1)) }*/
+                                            then ((len(v) = len(xs) + 1) && (keys(v) = Set_cup(keys(xs), Set_sng(k))))
+                                            else ((len(v) = 1) && (keys(v) = Set_sng(k))) }*/
 function insert(x, k){
   var y = {};
   y.data = k;

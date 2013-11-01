@@ -7,10 +7,10 @@
                                   => {v:<k>+null | (((ttag(x1) != "null") || (ttag(x2) != "null")) <=> (ttag(v) != "null"))}
                                      /k |-> zs:{list[A] | (if (ttag(x1) != "null") 
                                                            then (if (ttag(x2) != "null")
-                                                                 then (len(v) = len(xs) + len(ys))
-                                                                 else (len(v) = len(xs)))
+                                                                 then ((len(v) = len(xs) + len(ys)) && (keys(v) = Set_cup(keys(xs), keys(ys))))
+                                                                 else ((len(v) = len(xs)) && (keys(v) = keys(xs))))
                                                            else (if (ttag(x2) != "null")
-                                                                 then (len(v) = len(ys))
+                                                                 then ((len(v) = len(ys)) && (keys(v) = keys(ys)))
                                                                  else true))}
 */
 function append(x1, x2){
