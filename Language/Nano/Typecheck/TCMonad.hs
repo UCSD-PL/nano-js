@@ -77,6 +77,7 @@ module Language.Nano.Typecheck.TCMonad (
   , unifyTypeM, unifyTypesM
   , unifyHeapsM
   , unifyTypeRenameM
+  , unifyHeapRenameM
   , revertWindsM
 
   -- * Casts
@@ -629,10 +630,11 @@ recordRenameM l (θ,θr,θrInv)
     -- fixup f                 = tracePP "!!!Not doing any fixups!!!" f
     θf                      = θ `mappend` θrInv
     setRename θr = do m <- tc_renames <$> get
-                      when (M.member l m) $ tcError l "Multiple Renames"
+                      let θ = M.findWithDefault mempty l m
+                      -- when (M.member l m) $ tcError l "Multiple Renames"
                       when (toLists θr /= ([],[])) $ do 
-                        addRename θr
-                        addAnn l . Rename . snd $ toLists θr
+                        addRename $ mappend θ θr
+                        addAnn l . Rename . snd $ toLists $ mappend θ θr
                         
     addRename θr = modify $ \s -> s {
       tc_renames = M.insert l θr (tc_renames s)
@@ -784,6 +786,24 @@ unifyTypeRenameM l ls ls' m e t t'
        setSubst θ0
        recordRenameM (srcPos l) (θ0, θr, θri)
        return (θ0, θr, θri)
+
+----------------------------------------------------------------------------------
+unifyHeapRenameM :: (Ord r, PP r, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
+  l -> [Location] -> [Location] -> String ->  RHeap r -> RHeap r -> TCM r (RSubst r, RSubst r, RSubst r)
+----------------------------------------------------------------------------------
+unifyHeapRenameM l ls ls' m σ σ'
+  = do θ0 <- tracePP "unifyHeapRenameM pre" <$> getSubst
+       let θ' = θ0 `mappend` fromLists [] (zip ls ls)
+       setSubst θ'
+       θ <- unifyHeapsM l m σ σ'
+       let rs   = filter ((`elem` ls') . snd) $ snd $ toLists θ
+           irs  = map swap . filter ((`elem` heapLocs σ) . fst) $ rs
+           θr   = Su HM.empty (HM.fromList rs)
+           θri  = Su HM.empty (HM.fromList  irs)
+       setSubst θ0
+       recordRenameM (srcPos l) (θ0, θr, θri)
+       return (θ0, θr, θri)
+
 
 ----------------------------------------------------------------------------------
 subTypeM :: (Ord r, PP r, F.Reftable r) => RType r -> RType r -> TCM r SubDirection

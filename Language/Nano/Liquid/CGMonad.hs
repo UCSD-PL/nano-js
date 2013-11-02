@@ -72,6 +72,9 @@ module Language.Nano.Liquid.CGMonad (
   -- * Unfolding
   , unfoldSafeCG, unfoldFirstCG
 
+  -- * Util
+  , renameHeapBinds 
+
   ) where
 
 import           Data.Maybe                     (fromMaybe)
@@ -675,25 +678,14 @@ subType' msg l g t1 t2 =
 -------------------------------------------------------------------------------
 subTypeHeaps :: AnnTypeR -> CGEnv -> Heap RefType -> Heap RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeHeaps l g σ1 σ2 = 
-  do let (_,ls,_) = heapSplit σ1 σ2
-     mapM_ subTypeLoc ls
-         -- t1s      = map (safeRefReadHeap "subTypeHeaps" g σ1) ls
-         -- t2s      = map (safeRefReadHeap "subTypeHeaps" g σ2) ls
-     -- mapM_ (subTypeField l g) (zip t1s t2s)
-  where 
-    subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
+subTypeHeaps l g σ1 σ2
+  = do let (_,ls,_) = heapSplit σ1 σ2
+       mapM_ subTypeLoc ls
+    where 
+      subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
     
 subTypeField l g = withAlignedM doSubType
   where doSubType t1 t2 = do subTypeContainers' "subTypeField" l g t1 t2 
-                             -- subType' "subTypeField" l g t1 t2
-  -- do γ <- getTDefs
-     -- case tracePP "subTypeField" $ fth4 $ compareTs γ t1 t2 of
-     --   Nth -> subTypeContainers' "dead" l g tTop (tTop `strengthen` F.predReft F.PFalse)
-     --   _   -> withAlignedM (subTypeContainers l g) t1 t2
-
-         
-  
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -726,11 +718,31 @@ equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 -- TODO: Will loop infinitely for cycles in type definitions
 --
 -------------------------------------------------------------------------------
+subTypeRecursive :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
+-------------------------------------------------------------------------------
+subTypeRecursive l g t1@(TApp d1@(TDef _) _ _) t2@(TApp d2@(TDef _) _ _)
+    | d1 /= d2 = do γ <- getTDefs
+                    let ((σ1,b1,θ1),(σ2,b2,θ2)) = mapPair (unfoldSafeEnv γ) (t1,t2)
+                        (B x1 t1', B x2 t2')    = (apply θ1 b1, apply θ2 b2)
+                        bsub                    = F.mkSubst [(x2, F.eVar x1)] -- x2 := x1
+                        (heapSub, σ2')          = renameHeapBinds ((fst . btop) <$> σ1) σ2
+                        su                      = F.catSubst heapSub bsub
+                        xts                     = (Id (srcPos l) (F.symbolString x1),t1') : (map (btop . snd) $ heapBinds σ1)
+                    g_st                       <- envAdds xts g
+                    subTypeContainers' "rec" l g_st t1' (F.subst su t2')
+                    subTypeHeaps l g_st (b_type <$> σ1) (tracePP "recursive heap" $ replaceC . b_type <$> σ2')
+    where
+      replaceC t@(TApp d ts r) | d == d2   = TApp d1 ts r                                     
+      replaceC t               | otherwise = t
+      btop (B x t)                         = (Id (srcPos l) (F.symbolString x), t)
+
+-------------------------------------------------------------------------------
 subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeContainers l g t1@(TApp d@(TDef _) ts _) t2@(TApp d'@(TDef _) ts' _) | d == d' = do
-  subType l g t1 t2 
-  mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
+subTypeContainers l g t1@(TApp d@(TDef _) ts _) t2@(TApp d'@(TDef _) ts' _)
+  | d == d'   = do subType l g t1 t2 
+                   mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
+  | otherwise = subTypeRecursive l g t1 t2
 
 subTypeContainers l g t1 t2@(TApp (TDef _) _ _ ) = 
   unfoldSafeCG t2 >>= \t2' -> subTypeContainers' "subc def1" l g t1 t2'
@@ -791,6 +803,16 @@ alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
   --   fixup (t1, t2) = (t1 `strengthen` rr t1 r1, t2 `strengthen` rr t2 r2)
  
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
+
+renameHeapBinds :: RefHeap -> RHeapEnv F.Reft -> (F.Subst, RHeapEnv F.Reft)
+renameHeapBinds σ1 σ2
+  = (su, fmap (F.subst su) <$> σ2)
+  where l1s = heapLocs σ1
+        l2s = heapLocs σ2
+        ls  = filter (`elem` l2s) l1s
+        xs  = map (F.eVar . flip (heapRead "renameHeapBinds") σ1) ls
+        ys  = map (b_sym <$> flip (heapRead "renameHeapBinds") σ2) ls
+        su  = F.mkSubst $ zip ys xs
 
 ------------------------------------------------------------------------------------------
 strengthenUnion :: RefType -> RefType

@@ -364,7 +364,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- End of basic block --> Wind up locations
         (σ_in, σ_out) <- getFunHeaps γ
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
-        (θ0,θr,θri)   <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
+        (θp,θr,θri)   <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
         let (rt', t')  = tracePP "rt' t'" $ mapPair (apply θr) (rt,t)
         -- θ             <- unifyTypeM l "Return" eo t rt
         σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ σ'
@@ -373,7 +373,8 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (γ,σ')        <- windLocations (γ, σ') l
         -- θ_old         <- getSubst
         -- Now unify heap
-        θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" $ apply θri σ_out)
+        -- θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" $ apply θri σ_out)
+        (θp2,θr2,θri2)<- tracePP "unifyHeapR" <$> unifyHeapRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" (tracePP "unifyHEaps 1" $ apply θr σ') (tracePP "unifyHeaps 2" σ_out)
         -- Apply the substitutions
         -- Record the fact that we may have renamed 
         -- an input location. This is OK if the 
@@ -387,11 +388,11 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- heap subtyping and unification will go through
         -- (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
         θ1            <- getSubst
-        (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θri σ_out
+        (γ,σ')        <- windSpecLocations (γ, σ') l $ apply (θri`mappend`θri2) σ_out
         θ2            <- getSubst
-        θu            <- getSubst >>= return . deleteRenamedSubs (apply θri σ_out) . tracePP "pre undo windSpecLocations sub"
+        θu            <- getSubst >>= return . deleteRenamedSubs (apply (θri`mappend`θri2) σ_out) . tracePP "pre undo windSpecLocations sub"
         setSubst $ tracePP "undone" (θ2 `mappend` (tracePP "undo" θu) `mappend` θ1)
-        revertWindsM l θ2 θri
+        revertWindsM l θ2 (θri`mappend`θri2)
         σ'            <- safeHeapSubstM σ'
         -- One last chance to unify any TVars that appeared
         -- in the winding step
@@ -402,7 +403,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
         castHeapM γ l (tracePP "ret sig out" σ') (tracePP "sig out spec" σ_out)
-        rollBackDeadSubs θ0 σ_out σ'
+        rollBackDeadSubs (θp`mappend`θp2) σ_out σ'
         return Nothing
   where           
     rollBackDeadSubs θ0 σ1 σ2

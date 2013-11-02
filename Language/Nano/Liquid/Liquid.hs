@@ -208,16 +208,6 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
            [m]    = locs tref  -- Assuming no unions of references
        (b, g5)     <- envFreshHeapBind l m g4
        Just <$> updateFieldM l g5 (heapRead "e1.x = e2" m σ) (tracePP "fresh bind" b) x (tracePP "x2" x2)
-       -- Just <$> envAdds [(b, t_obj)] g6
-
-  -- @e3.x@ should have the exact same type with @e2@
-  -- = do  (x2,g2) <- consExpr g e2
-  --       (x3,g3) <- consExpr g2 e3
-  --       let t2   = envFindTy x2 g2
-  --           t3   = envFindTy x3 g3
-  --       tx      <- dotAccessM (rheap g) x t3
-  --       withAlignedM (subTypeContainers' "DotRef-assign" l2 g3) t2 tx
-  --       return   $ Just g3
 
 -- e
 consStmt g (ExprStmt _ e)   
@@ -311,24 +301,18 @@ lqretSymbol = F.symbol "lqreturn"
 
 consReturnHeap :: CGEnv -> Maybe (Id AnnTypeR) -> Statement AnnTypeR -> CGM ()
 consReturnHeap g xro (ReturnStmt l _)
-  = do (_,σ)       <- getFunHeaps g l
-       let rsu      = F.mkSubst $ maybe [] (\x -> [(F.symbol "lqreturn", F.eVar $ F.symbol x)]) xro
-       let (su,σ')  = tracePP "renamedHeapBind" <$> fmap b_type <$> renameHeapBinds (tracePP "renaming dis one" $ rheap g) (fmap (F.subst rsu <$>)  $ tracePP "return heap" σ)
-       let g'       = g { renv = envMap (F.subst su <$>) $ tracePP "return heap pre" $ renv g }
+  = do (σi,σ)       <- getFunHeaps g l
+       let rsu       = F.mkSubst $ maybe [] (\x -> [(F.symbol "lqreturn", F.eVar $ F.symbol x)]) xro
+       let (su,σ')   = tracePP "renamedHeapBind" <$> fmap b_type <$> renameHeapBinds (tracePP "renaming dis one" $ rheap g) (fmap (F.subst rsu <$>)  $ tracePP "return heap" σ)
+       let g'        = g { renv = envMap (F.subst su <$>) $ tracePP "return heap pre" $ renv g }
+       -- "Relax" subtyping checks on *new* locations in the output heap
+       -- for all x with l \in locs(x), add x:<l> <: z:T, then do
+       -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
        subTypeHeaps l g' (tracePP "Return rheap g" (flip envFindTy g' <$> rheap g')) (tracePP "Return σ" σ')
+
 
 getFunHeaps g _
   = (fromJust . funHeaps . flip envFindTy g) <$> getFun
-
--- renameHeapBinds :: RefHeap -> RHeapEnv F.Reft -> (F.Subst, RefHeap)
-renameHeapBinds σ1 σ2
-  = (su, fmap (F.subst su) <$> σ2)
-  where l1s = heapLocs σ1
-        l2s = heapLocs σ2
-        ls  = filter (`elem` l2s) l1s
-        xs  = map (F.eVar . flip (heapRead "renameHeapBinds") σ1) ls
-        ys  = map (b_sym <$> flip (heapRead "renameHeapBinds") σ2) ls
-        su  = F.mkSubst $ zip ys xs
 
 
 ------------------------------------------------------------------------------------

@@ -164,7 +164,7 @@ data TCon
   | TUn
   | TNull
   | TUndef
-    deriving (Ord, Show, Data, Typeable)
+    deriving (Show, Ord, Data, Typeable)
 
 type TDefId = Id SourceSpan
 

@@ -21,7 +21,11 @@ module Language.Nano.Typecheck.Subst (
   , Substitutable (..)
 
   -- * Unfolding
-  , unfoldFirst, unfoldMaybe, unfoldSafe
+  , unfoldFirst
+  , unfoldMaybe
+  , unfoldSafe
+  , unfoldMaybeEnv -- Retain heap binders
+  , unfoldSafeEnv
   
   -- * Accessing fields
   , ObjectAccess(..)
@@ -233,17 +237,31 @@ unfoldFirst env t = go t
 
 -- TODO: Make sure toplevel refinements are the same.
 -------------------------------------------------------------------------------
-unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
-  Env (RType r) -> RType r -> Either String (RHeap r, RType r, RSubst r)
+unfoldMaybeEnv :: (PP r, Ord r, F.Reftable r) =>
+  Env (RType r) -> RType r -> Either String (RHeapEnv r, Bind r, RSubst r)
 -------------------------------------------------------------------------------
-unfoldMaybe env t@(TApp (TDef id) acts _) =
+unfoldMaybeEnv env t@(TApp (TDef id) acts _) =
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ s vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                  in (b_type <$> h, bd, θ)
+                                                  in (h, B s bd, θ)
         _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
-unfoldMaybe _ t                           = Right (heapEmpty, t, mempty)
+unfoldMaybeEnv _ t                           = Left $ (printf "Attempt to unfold: %s" $ ppshow t)
+
+-------------------------------------------------------------------------------
+unfoldMaybe :: (PP r, Ord r, F.Reftable r) =>
+  Env (RType r) -> RType r -> Either String (RHeap r, RType r, RSubst r)
+-------------------------------------------------------------------------------
+unfoldMaybe env t = toType <$> unfoldMaybeEnv env t
+    where toType (h,b,θ) = (b_type <$> h, b_type $ b, θ) 
+
+-- | Force a successful unfolding
+-------------------------------------------------------------------------------
+unfoldSafeEnv :: (PP r, Ord r, F.Reftable r) =>
+  Env (RType r) -> RType r -> (RHeapEnv r, Bind r, RSubst r)
+-------------------------------------------------------------------------------
+unfoldSafeEnv env = either error id . unfoldMaybeEnv env
 
 
 -- | Force a successful unfolding

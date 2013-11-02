@@ -18,7 +18,7 @@ function lemma_nonMem(k, x){
   removeRoot :: forall A. (x:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null}
                                 * l |-> ls:tree[{A | v < field(ts, "data")}]
                                 * r |-> rs:tree[{A | v > field(ts, "data")}]
- =>                      {v:<k>+null | ((ttag(v) = "null") <=>
+                      => {v:<k>+null | ((ttag(v) = "null") <=>
                                         ((ttag(field(ts, "left")) = "null")
                                       && (ttag(field(ts, "right")) = "null")))}
                                  /k |-> ks:{tree[A] | (if (ttag(field(ts, "left")) = "null")
@@ -48,8 +48,6 @@ function removeRoot(x){
    return xr;
   }
 }
-
-//{v:?bst[A] | keys(v) = set_minus(keys(x,h), set_singleton(k)} */
 
 /*@ remove :: forall A. (x:<x>+null, k:A)/x |-> it:tree[A] =>
                                  {v:<v>+null | ((ttag(v) = "null") => ((ttag(x) = "null") || (hd(it) = k)))}

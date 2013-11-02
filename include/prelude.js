@@ -92,7 +92,10 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
-/*@ type sList[A] exists! l |-> tl:sList[{v:A | (v >= field(me, "data"))}] . me: { data:A, next:<l>+null }
+/*@ type sList[A]
+      exists! l |-> tl:sList[{v:A | v >= field(me, "data")}]
+      . me: { data:A, next:<l>+null }
+
   with min(x) := field(me, "data")
 
   and keys(x) := (if ((ttag (field me "next")) = "null") then (Set_sng (field me "data")) else (Set_cup (Set_sng (field me "data")) (keys tl)))
@@ -106,7 +109,15 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
                        . me:{ data: A, left:<l>+null, right:<r>+null } 
 
        with hd(x)    := field(me, "data")
-       and  keys(x) := (if (ttag(field(me, "left")) = "null") then (if (ttag(field(me, "right")) = "null") then Set_sng(field(me, "data")) else Set_cup(Set_sng(field(me, "data")), keys(srs))) else (if (ttag(field(me, "right")) = "null") then Set_cup(Set_sng(field(me, "data")), keys(sls)) else Set_cup(Set_sng(field(me, "data")), Set_cup(keys(sls), keys(srs)))))
+
+       and  keys(x) := (if (ttag(field(me, "left")) = "null") then
+                           (if (ttag(field(me, "right")) = "null") then
+                               Set_sng(field(me, "data"))
+                            else Set_cup(Set_sng(field(me, "data")), keys(srs)))
+                        else (if (ttag(field(me, "right")) = "null") then
+                                 Set_cup(Set_sng(field(me, "data")), keys(sls))
+                              else
+                                 Set_cup(Set_sng(field(me, "data")), Set_cup(keys(sls), keys(srs)))))
  */
 
 
