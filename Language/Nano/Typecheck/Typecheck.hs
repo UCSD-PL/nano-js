@@ -370,7 +370,8 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         σ'            <- safeHeapSubstM $ tracePP "sigma prime return" $ σ'
         -- Wind locations back up, but ONLY those that appear in the output spec! might be deleting a loc
         (setUnwound . filter ((`elem` heapLocs σ_out) . fst3)) =<< getUnwound
-        (γ,σ')        <- windLocations (γ, σ') l
+        -- (γ,σ')        <- windLocations (γ, σ') l
+        (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θri σ_out
         -- θ_old         <- getSubst
         -- Now unify heap
         -- θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" $ apply θri σ_out)
