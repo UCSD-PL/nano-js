@@ -533,10 +533,15 @@ freshTyFun' g l _ t b
 -- freshTyInst :: AnnTypeR -> CGEnv -> [TVar] -> [Type] -> RefType -> CGM RefType 
 ---------------------------------------------------------------------------------------
 freshTyInst l g αs τs tbody
-  = do ts    <- mapM (freshTy "freshTyInst") τs
-       _     <- mapM (wellFormed l g) ts
-       let θ  = fromLists (zip αs ts) []
-       return $ tracePP msg $  apply θ tbody
+  = do let (vs,bs,hi,ho,ro) = maybe (error "freshTyInst: not a function") id $ bkFun tbody
+       (hisu, hi')         <- freshHeapEnv l hi
+       (hosu, ho')         <- freshHeapEnv l (fmap (F.subst hisu) <$> ho)
+       let su               = F.catSubst hisu hosu
+       ts                  <- mapM (freshTy "freshTyInst") (F.subst su <$> τs)
+       _                   <- mapM (wellFormed l g) ts
+       let θ                = fromLists (zip αs ts) []
+       let tbody' = TFun (fmap (F.subst su) <$> bs) (F.subst su ro) hi' ho' F.top
+       return $ tracePP msg $  apply θ tbody'
     where
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
 
@@ -600,7 +605,7 @@ freshHeapEnv l σ
   = do let xs  = b_sym <$> heapTypes σ
        xs'     <- mapM (const (freshId (srcPos l))) xs
        let su  = F.mkSubst $ zip (F.symbol <$> xs) (F.eVar . F.symbol <$> xs')
-       return $ (su, heapBind . zipUp (replace su) xs' $ heapBinds σ)
+       return $ (su, tracePP "freshening to this" . heapBind . zipUp (replace su) xs' $ heapBinds $ tracePP "freshening this" σ)
     where
       heapBind                 = heapFromBinds "freshHeapEnv"
       zipUp                    = safeZipWith "freshHeapEnv"

@@ -475,13 +475,13 @@ consCall :: (PP a)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
 consCall g l _ es ft 
-  = do (_,its,hi,ho,ot)  <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+  = do (_,its,hi',ho',ot)  <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')         <- tracePP "consScan"<$> consScan consExpr g es
-       (hisu, hi')       <- freshHeapEnv l hi
-       (hosu, ho')       <- freshHeapEnv l ho
+       -- (hisu, hi')       <- freshHeapEnv l hi
+       -- (hosu, ho')       <- freshHeapEnv l ho
        let (argSu, ts')   = renameBinds its xes
            (heapSu, hi'') = fmap b_type <$> renameHeapBinds (rheap g') hi'
-           su             = hisu `F.catSubst` hosu `F.catSubst` heapSu `F.catSubst` argSu
+           su             = {- hisu `F.catSubst` hosu `F.catSubst` -} heapSu `F.catSubst` argSu
            gin            = (flip envFindTy g') <$> rheap g'
        -- Substitute binders in spec with binders in actual heap
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] (F.subst su ts')
@@ -561,7 +561,7 @@ consWind l g (m, wls, ty, θ)
   = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
        let xts               = (fmap (F.subst xsu) . toIdTyPair) <$> (heapTypes $ tracePP "consWind sigma env" σenv')
            xsu               = F.mkSubst [(F.symbol x, F.eVar x')]
-           σw                = toId <$> σenv'
+           σw                = toId <$> tracePP "consWind sigma env" σenv'
            (hsu, σenv')      = renameHeapBinds (rheap g) σenv
            g'                = g { rheap =  heapDiff (tracePP "consWind rheap g'" $ rheap g) (m:wls) }
            x'                = heapRead "consWind" m (rheap g)
@@ -571,7 +571,7 @@ consWind l g (m, wls, ty, θ)
            ms'               = map (\(x,y,p) -> (x,y,F.subst su p)) ms
            p                 = F.predReft . F.PAnd . map (instProp v (tracePP "consWind x'" x') (tracePP "consWind x" x)) $ ms'
        g_st                 <- envAdds xts g
-       subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) (F.subst hsu tw)
+       subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) (tracePP "consWind tw" $ F.subst hsu tw)
        (z, g'')             <- envAdds xts g' >>= envFreshHeapBind l m
        tracePP "consWind out env" <$> envAdds [(tracePP "consWind z" z, tracePP "consWind out type" $ F.subst hsu $ strengthen t p)]  g''
        where

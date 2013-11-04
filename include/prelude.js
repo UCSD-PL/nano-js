@@ -88,7 +88,7 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
 */
 
-/*@ measure min :: (sList[number]) => number */
+/*@ measure min :: forall A. (sList[A]) => A */
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 

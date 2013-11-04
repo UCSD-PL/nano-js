@@ -397,7 +397,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         σ'            <- safeHeapSubstM σ'
         -- One last chance to unify any TVars that appeared
         -- in the winding step
-        unifyHeapsM l "Return" σ' $ apply θri σ_out
+        unifyHeapsM l "Return" σ' $ apply (θri`mappend`θri2) σ_out
         -- Now safe to check the output heap
         -- checkLocSubs σ_out
         -- Subtype the arguments against the formals and cast if 
