@@ -428,7 +428,7 @@ consUpCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id
 consUpCast g x a e 
   = do  γ     <- getTDefs
         let b' = fst $ alignTs γ b u
-        envAddFresh l b' g
+        envAddFresh l (b' `strengthen` rTypeReft b) g
   where 
     u          = rType $ head [ t | Assume t <- ann_fact a]
     b          = envFindTy x g 

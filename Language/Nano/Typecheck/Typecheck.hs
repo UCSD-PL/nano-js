@@ -463,9 +463,9 @@ windType γ l loc tWind@(Id _ i) σ
            σe'       = tracePP "sige'" $ apply θ $ tracePP ("sige loc: " ++ loc) σe
            wls       = tracePP "dependents" $ filter (needWind (tracePP "dependents reference" σ1)) $ tracePP "dependents wound" $ woundLocations $ tracePP ("dependents heap " ++ loc) σ2
        (_,σ1')      <- (\(g,h) -> (g,tracePP "wind recursive result" h)) <$> windLocations' (γ,tracePP "wind recursive" σ1) l wls
-       θ' <- unifyHeapsM l "Wind(heap)" (tracePP "sig2 unify wind" σ2) (tracePP "sig1 unify wind" σ1')
+       θ' <- tracePP "thinger!!!!" <$> unifyHeapsM l "Wind(heap)" (tracePP "sig2 unify wind" σ2) (tracePP "sig1 unify wind" σ1')
        let θf = θ `mappend` θ'
-       castHeapM γ l σ1' σ2
+       castHeapM γ l (apply θf σ1') (apply θf σ2)
        recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst {- `mappend` θf -})
        return (θf, foldl (flip heapDel) σ1' $ heapLocs σe', apply θf t')
        -- return (θ, tracePP ("windType returning wound up " ++ loc) $ σe',apply θ t')

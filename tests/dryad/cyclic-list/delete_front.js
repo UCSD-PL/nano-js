@@ -1,14 +1,16 @@
-import "cyclic-lists.js";
+//import "cyclic-lists.js";
 
-/*@ remove :: (x:clist[A,<x>]) => {v:?clist[A,v]} */
-
+/*@ remove :: forall A. (x:<x>)/x |-> xs:clist[A,<x>]
+                    => {v:<x>+null | ((len(xs) > 1) => (ttag(v) != "null"))}
+                       /x |-> ys:{clist[A,<x>] | ((len(xs) > 1) => (len(v) = len(xs) - 1))}*/
 function remove(x){
-  if (x.next == x) {
-    return null;
-  } else {
-    var t  = x.next;
+  var xn = x.next;
+  if (isL(xn)) {
+    var t  = projL(xn);
     var u  = t.next;
     x.next = u;
     return x;
+  } else {
+    return null;
   }
 }
