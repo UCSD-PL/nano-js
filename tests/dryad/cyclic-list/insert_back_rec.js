@@ -1,6 +1,3 @@
-// DROP the refinement on the output. the dryad postcondition is lame (and has 
-// no mention of keys.
-
 /*@ qualif Keyz(v:a): keys(v) = Set_cup(Set_sng(k), keys(xs)) */
 /*@ qualif Lenz(v:a): len(v) = len(xs) + 1 */
 
