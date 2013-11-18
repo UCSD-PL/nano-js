@@ -393,7 +393,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         θ2            <- getSubst
         θu            <- getSubst >>= return . deleteRenamedSubs (apply (θri`mappend`θri2) σ_out) . tracePP "pre undo windSpecLocations sub"
         setSubst $ tracePP "undone" (θ2 `mappend` (tracePP "undo" θu) `mappend` θ1)
-        revertWindsM l θ2 (θri`mappend`θri2)
+        revertWindsM l θ2 (θri <> θri2)
         σ'            <- safeHeapSubstM σ'
         -- One last chance to unify any TVars that appeared
         -- in the winding step

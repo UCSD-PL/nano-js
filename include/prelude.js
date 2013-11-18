@@ -83,8 +83,8 @@ function unwind(x) {
 /*@
 type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
-     with len(x) := (if (ttag(field(r,"next")) != "null") then 1 + len(tl) else 1)
-     and keys(x) := (if ((ttag (field r "next")) = "null") then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys tl)))
+     with len(x) := (if (field(r,"next") != null) then 1 + len(tl) else 1)
+     and keys(x) := (if (field(r,"next") = null) then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys tl)))
 
 */
 
@@ -226,8 +226,10 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
 /*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
 
+/*@ measure null :: null */
+
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {e:null      | ttag(e) = "null"     } */  //TODO: this is not very precise
+/*@ invariant {e:null      | e = null             } */  //TODO: this is not very precise
 /*@ invariant {v:boolean   | ttag(v) = "boolean"  } */ 
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */

@@ -47,8 +47,7 @@ function append(xk, ls, gs) {
                                                                          else (keys(xs) = keys(bs)))
                                                                 else (if (ttag(field(p,"y")) = "null")
                                                                          then (keys(xs) = keys(as))
-                                                                         else (keys(xs) = Set_cup(keys(as),keys(bs)))))) }
-                                             */
+                                                                         else (keys(xs) = Set_cup(keys(as),keys(bs)))))) } */
 
 /*@ nullList :: forall A. () => {v:<l>+null | (ttag(v) = "null")}/l |-> list[A] */
 function partition(piv, x){
@@ -82,7 +81,7 @@ function partition(piv, x){
 }
 
 /*@ quickSort :: forall A.
-      (x:<m>+null)/m |-> ms:list[A] => {v:<o>+null | ((ttag(v) = "null") <=> (ttag(x) = "null"))}
+      (x:<m>+null)/m |-> ms:list[A] => {v:<o>+null | ((ttag(v) = "null") <=> (ttag(x) = "null")) }
                                        /o |-> {sList[A] | ((ttag(lqreturn) != "null") => (keys(v) = keys(ms)))} */
 function quickSort(x){
   if (typeof(x) == "null"){
