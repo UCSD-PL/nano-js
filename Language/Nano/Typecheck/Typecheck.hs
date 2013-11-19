@@ -452,6 +452,7 @@ windLocation l (γ,σ) (loc, tWind, _)
 
 windType γ l loc tWind@(Id _ i) σ 
   = do (θα,t')      <- freshApp l tWind
+       error "Make sure that you can't wind up two non-distinct things!!!!"
        (σe, t'',θl) <- tracePP (printf "UnwindTC [%s,%s]" (ppshow loc) (ppshow tWind)) <$> unwindTC t'
        let ls        = L.nub $ loc : heapLocs σe ++ locs t''
        let σe_up     = heapAdd "windType" loc t'' σe

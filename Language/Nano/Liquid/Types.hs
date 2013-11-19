@@ -230,7 +230,7 @@ tconFTycon TUndef    = F.stringFTycon "undefined"
 tconFTycon (TRef l)  = F.stringFTycon ("ref("++l++")")
 
 
-rTypeSortForAll t    = genSort n θ $ rTypeSort $ tracePP "rTypeSortForAll" tbody
+rTypeSortForAll t    = genSort n θ $ rTypeSort tbody
   where 
     (αs, tbody)      = bkAll t
     n                = length αs
