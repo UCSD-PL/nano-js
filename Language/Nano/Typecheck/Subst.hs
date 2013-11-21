@@ -149,6 +149,7 @@ instance Substitutable () Fact where
   apply _ x@(PhiVar _)    = x
   apply θ (FunInst ts ls) = FunInst (map (apply θ <$>) ts) (map (apply θ <$>) ls)
   apply θ (LocInst l)     = LocInst (apply θ l)
+  apply θ (WorldInst l)   = WorldInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
   apply θ (Rename ls)     = Rename $ apply θ ls
@@ -161,6 +162,7 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (Fact_ r) where
   apply _ x@(PhiVar _)    = x
   apply θ (FunInst ts ls) = FunInst (map (apply θ <$>) ts) (map (apply θ <$>) ls)
   apply θ (LocInst l)     = LocInst (apply θ l)
+  apply θ (WorldInst l)   = WorldInst (apply θ l)
   apply θ (Assume  t)     = Assume  $ apply θ t
   apply θ (AssumeH h)     = AssumeH $ apply θ h
   apply θ (Rename ls)     = Rename $ apply θ ls
@@ -174,6 +176,7 @@ instance Free Fact where
   free (PhiVar _)         = S.empty
   free (FunInst ts _)     = free . snd . unzip $ ts
   free (LocInst _)        = S.empty
+  free (WorldInst _)      = S.empty
   free (Assume t)         = free t
   free (AssumeH h)        = free h
   free (WindInst _ _ _ ts _) = free. snd . unzip $ ts
@@ -185,6 +188,7 @@ instance Free (Fact_ r) where
   free (PhiVar _)       = S.empty
   free (FunInst ts _)   = free . snd . unzip $ ts
   free (LocInst _)      = S.empty
+  free (WorldInst _)    = S.empty
   free (Assume t)       = free t
   free (AssumeH h)      = free h
   free (WindInst _ _ _ ts _) = free. snd . unzip $ ts

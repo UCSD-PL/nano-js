@@ -3,8 +3,9 @@ function to_zeroes(x) {
     var n = x.next;
     x.data = 0;
 
-    if (typeof(n) != "null") {
+    if (n != null) {
         to_zeroes(n);
+    } else {
     }
 
     return;

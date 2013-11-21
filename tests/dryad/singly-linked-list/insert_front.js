@@ -6,7 +6,7 @@
 
 /*@ insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]
-             => <m>/m |-> ys:{list[A] | (if (ttag(x) != "null")
+             => <m>/m |-> ys:{list[A] | (if (x != null)
                                             then ((len(v) = len(xs) + 1) && (keys(v) = Set_cup(keys(xs), Set_sng(k))))
                                             else ((len(v) = 1) && (keys(v) = Set_sng(k)))) }*/
 function insert(x, k){

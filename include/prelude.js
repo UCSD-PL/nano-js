@@ -229,12 +229,12 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 /*@ measure null :: null */
 
 /*@ invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {e:null      | e = null             } */  //TODO: this is not very precise
+/*@ invariant {e:null      | ((e = null) && (ttag(e) = "null")) } */  //TODO: this is not very precise
 /*@ invariant {v:boolean   | ttag(v) = "boolean"  } */ 
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
-/*@ invariant {v:<l>       | ttag(v) = "ref"      } */
+/*@ invariant {v:<l>       | (ttag(v) = "ref")    } */
 /*@ invariant {v:<u>       | ttag(v) = "ref(u)"} */
 /*@ invariant {v:<v>       | ttag(v) = "ref(v)"} */
 /*@ invariant {v:<r>       | ttag(v) = "ref(r)"} */

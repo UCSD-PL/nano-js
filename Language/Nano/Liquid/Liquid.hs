@@ -242,12 +242,14 @@ consStmt g (VarDeclStmt _ ds)
 consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
         let te    = envFindTy xe g'
-            rt    = envFindReturn g'
+            rt    = apply θi $ envFindReturn g'
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
           else withAlignedM (subTypeContainers' "Return" l g') te rt
         consReturnHeap g' (Just xe) r
         return Nothing
+    where
+      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst F.Reft
 
 -- return
 consStmt g r@(ReturnStmt l Nothing)
@@ -304,7 +306,9 @@ consReturnHeap g xro (ReturnStmt l _)
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
-       subTypeHeaps l g' (flip envFindTy g' <$> rheap g') σ'
+       subTypeHeaps l g' (flip envFindTy g' <$> rheap g') (apply θi σ')
+    where
+      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst F.Reft
 
 
 getFunHeaps g _
@@ -478,7 +482,7 @@ consCall g l _ es ft
            gin            = (flip envFindTy g') <$> rheap g'
        -- Substitute binders in spec with binders in actual heap
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] (F.subst su ts')
-       subTypeHeaps l g' gin (F.subst su <$> hi'')
+       (tracePP "consCall su" (show su))`seq`subTypeHeaps l g' gin (F.subst su <$> hi'')
        let hu  = foldl (flip heapDel) (rheap g') $ heapLocs hi''
 
        -- Substitute binder for return value in output heap
@@ -487,15 +491,22 @@ consCall g l _ es ft
        (_,g'')           <- envAddHeap l (g'' { rheap = hu }) (fmap (F.subst (su `F.catSubst` rsu)) <$> ho')
 
        let lost  = deletedLocs gin $ rheap g''
-       let g_out = g'' { renv  = envMap (deleteLocsTy lost) $ renv g''
+       let g'''  = g'' { renv  = envMap (deleteLocsTy lost) $ renv g''
                        , rheap = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
                        }
+       g_out             <- topMissingBinds g''' (rheap g') hi'
        return (xr, g_out)
                                         
      {- where
          msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
 
 deletedLocs σi σo = filter (`notElem` heapLocs σo) $ heapLocs σi         
+
+topMissingBinds g σ σenv
+  = do envAdds (zip bs (repeat tTop)) g
+    where ls = filter (`notElem` heapLocs σ) $ heapLocs σenv
+          bs = map (b_sym . rd) ls
+          rd l = heapRead "topMissingBinds" l σenv
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 

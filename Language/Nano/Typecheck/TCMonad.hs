@@ -27,6 +27,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Freshness
   -- , freshTyArgs
   , freshFun
+  , freshWorld
   , freshApp
   , freshLocation
   , freshTVar
@@ -79,6 +80,7 @@ module Language.Nano.Typecheck.TCMonad (
   , unifyTypeRenameM
   , unifyHeapRenameM
   , revertWindsM
+  , addFreeLocsM
 
   -- * Casts
   , getCasts, getHCasts
@@ -279,10 +281,26 @@ freshFun l fn ft
        let (σi',σo')      = mapPair (apply θl) (b_type <$> σi, b_type <$> σo)
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
+       addFreeLocsM ls'
        addAnn (srcPos l) $ tracePP ("funInst " ++ (ppshow $ ann l)) $ FunInst (zip (fst bkft) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
+
+-------------------------------------------------------------------------------
+freshWorld :: (PP r, Ord r, F.Reftable r) =>
+  AnnSSA_ r -> [Location] -> (RType r, RHeap r) -> TCM r (RType r, RHeap r)
+-------------------------------------------------------------------------------
+freshWorld l ls (t,σ)
+  = do ls'   <- mapM (const freshLocation') ls
+       let sub = zip ls ls'
+       addFreeLocsM ls'
+       addAnn (srcPos l) $ WorldInst sub
+       return . subify t σ $ fromLists [] sub
+
+subify  :: (Ord r, PP r, F.Reftable r) =>
+  RType r -> RHeap r -> RSubst r -> (RType r, RHeap r)
+subify t σ θ = (apply θ t, apply θ σ)
     
 freshApp :: (F.Reftable r, Ord r, PP r) => AnnSSA_ r -> Id SourceSpan -> TCM r (RSubst r, RType r) 
 freshApp l i@(Id _ d)
@@ -574,13 +592,7 @@ freshHeap h   = do (θ,θ') <- foldM freshen nilSub (heapLocs h)
              return $ (mappend θ  (Su HM.empty (HM.singleton l l')),
                        mappend θ' (Su HM.empty (HM.singleton l' l)))      
 
--- freshLocation' = tick >>= \n -> return ("_?L" ++ show n)
-freshLocation'
-  = do n <- tick
-       θ <- getSubst
-       let loc = ("?" ++ show n)
-       setSubst (θ `mappend` (Su (tySub θ) (HM.singleton loc loc)))
-       return loc
+freshLocation' = tick >>= \n -> return ("?" ++ show n)
 
 -------------------------------------------------------------------------------
 freshHeapVar :: AnnSSA_ r -> String -> TCM r (Expression (AnnSSA_ r))
@@ -804,6 +816,13 @@ unifyHeapRenameM l ls ls' m σ σ'
        recordRenameM (srcPos l) (θ0, θr, θri)
        return (θ0, θr, θri)
 
+----------------------------------------------------------------------------------
+addFreeLocsM :: (Ord r, PP r, F.Reftable r) => [Location] -> TCM r ()
+----------------------------------------------------------------------------------
+addFreeLocsM ls
+  = do θ <- getSubst
+       let θ' = fromLists [] (zip ls ls)
+       setSubst (θ `mappend` θ')
 
 ----------------------------------------------------------------------------------
 subTypeM :: (Ord r, PP r, F.Reftable r) => RType r -> RType r -> TCM r SubDirection

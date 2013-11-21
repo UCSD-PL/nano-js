@@ -603,6 +603,7 @@ data Fact_  r
   | WindInst   !Location ![Location] !(Id SourceSpan) ![(TVar,RType r)] ![(Location,Location)]
   | UnwindInst !Location !(Id SourceSpan) ![(Location,Location)]
   | LocInst    !Location
+  | WorldInst  ![(Location, Location)]
   | Assume     !(RType r)
   | AssumeH    !(RHeap r)
   | Rename     ![(Location,Location)]
@@ -640,6 +641,7 @@ instance PP Fact where
   pp (PhiVar x)       = text "phi"  <+> pp x
   pp (FunInst ts θ)   = text "inst" <+> pp ts <+> text " " <+> pp θ
   pp (LocInst l)      = text "loc inst" <+> pp l
+  pp (WorldInst l)    = text "world inst" <+> pp l
   pp (Assume t)       = text "assume" <+> pp t
   pp (AssumeH h)      = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
@@ -656,14 +658,15 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (PhiVar x)     = text "phi"  <+> pp x
   pp (FunInst ts θ) = text "inst" <+> pp ts <+> text " " <+> pp θ
   pp (LocInst l)    = text "loc inst" <+> pp l 
+  pp (WorldInst l)  = text "world inst" <+> pp l
   pp (Assume t)     = text "assume" <+> pp t
   pp (AssumeH h)    = text "assume heap" <+> pp h
   pp (Rename ls)    = text "Loc Rename" <+> pp ls
   pp (Delete ls)    = text "Loc Delete" <+> pp ls
   pp (WindInst l wls i αs ls) = pp (l:wls)
-                        <+> pp αs
-                        <+> pp ls
-                        <+> text "↦" <+> pp i
+                            <+> pp αs
+                            <+> pp ls
+                            <+> text "↦" <+> pp i
   pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
 
 instance (F.Reftable r, PP r) => PP (AnnInfo_ r) where
