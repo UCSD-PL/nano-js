@@ -203,10 +203,11 @@ consStmt g (ExprStmt _ (AssignExpr l2 OpAssign (LDot l e3 x) e2))
        --      - Tobj' = Tobj { ... f:{ v = x2 } ... }
        --   4. create a NEW binder for Tobj'
        --   5. update the binder at l to this new binder
+       --   6. instantiate any measures for the pointer
        let σ      = rheap g4
            tref   = envFindTy x3 g4
            [m]    = locs tref  -- Assuming no unions of references
-       (b, g5)     <- envFreshHeapBind l m g4
+       (b, g5)     <- envFreshHeapBind l m g4 
        Just <$> updateFieldM l g5 (heapRead "e1.x = e2" m σ) b x x2
 
 -- e
@@ -241,15 +242,13 @@ consStmt g (VarDeclStmt _ ds)
 -- return e 
 consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
+        (su, θi) <- consReturnHeap g' (Just xe) r
         let te    = envFindTy xe g'
-            rt    = apply θi $ envFindReturn g'
+            rt    = F.subst su . apply θi $ envFindReturn g'
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
           else withAlignedM (subTypeContainers' "Return" l g') te rt
-        consReturnHeap g' (Just xe) r
         return Nothing
-    where
-      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst F.Reft
 
 -- return
 consStmt g r@(ReturnStmt l Nothing)
@@ -297,16 +296,17 @@ consStmt _ s
 
 lqretSymbol = F.symbol "lqreturn"
 
-consReturnHeap :: CGEnv -> Maybe (Id AnnTypeR) -> Statement AnnTypeR -> CGM ()
+consReturnHeap :: CGEnv -> Maybe (Id AnnTypeR) -> Statement AnnTypeR -> CGM (F.Subst, RSubst F.Reft)
 consReturnHeap g xro (ReturnStmt l _)
-  = do (σi,σ)       <- getFunHeaps g l
+  = do (σi,σ)       <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\x -> [(F.symbol "lqreturn", F.eVar $ F.symbol x)]) xro
        let (su,σ')   = fmap b_type <$> renameHeapBinds (rheap g) (fmap (F.subst rsu <$>) σ)
        let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
-       subTypeHeaps l g' (flip envFindTy g' <$> rheap g') (apply θi σ')
+       subTypeHeaps l g' (flip envFindTy g' <$> rheap g') (fmap (F.subst su) <$> σ')
+       return (rsu `F.catSubst` su, θi)
     where
       θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst F.Reft
 
@@ -365,10 +365,12 @@ consExpr g (NullLit l)
 
 consExpr g (VarRef i x)
   = do addAnnot l x t
-       return ({- trace ("consExpr:VarRef" ++ ppshow x ++ " : " ++ ppshow t)-} x, g) 
+       t' <- addHeapMeasures g (rTypeValueVar t, t)
+       g' <- envAdds [(x, t')] g
+       return ({- trace ("consExpr:VarRef" ++ ppshow x ++ " : " ++ ppshow t)-} x, tracePP "VarRef g" g') 
     where 
-       t   = {- tracePP (printf "findTy %s" (ppshow x)) $-} envFindTy x g
-       l   = srcPos i
+       t           = tracePP (printf "findTy %s" (ppshow x)) $ envFindTy x g
+       l           = srcPos i
 
 consExpr g (PrefixExpr l o e)
   = consCall g l o [e] (prefixOpTy o $ renv g)
@@ -615,18 +617,31 @@ instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar
     where      
       mkProp (i,v,e)           = F.PAtom F.Eq (F.EApp i [F.eVar v]) e 
       instMeas v' su (i, v, e) = (i, v', F.subst su $ F.subst (F.mkSubst [(v',F.eVar v)]) e)
----------------------------------------------------------------------------------
-consRename :: AnnTypeR -> CGEnv -> RSubst F.Reft -> CGM (CGEnv)    
----------------------------------------------------------------------------------
-consRename _ g θ
-  = do return $ g { renv  = envMap (apply θ) (renv g)
-                  , rheap = renameHeap θ (rheap g)
-                  }
-    where
-      θ'             = fromLists [] . filter okSub . snd . toLists $ θ :: RSubst F.Reft
-      okSub (_,m)    = m `notElem` envLocs
-      renameHeap θ σ = heapFromBinds "consRename" . map (\(l,x) -> (apply θ l, x)) . heapBinds $ σ
-      envLocs        = concat [ locs t | (Id _ s, t) <- envToList g
-                                       , F.symbol s /= returnSymbol ]
-                    ++ heapLocs (rheap g)
 
+addHeapMeasures g (x, TApp TUn ts r)
+  = do ts' <- mapM (\t -> addHeapMeasures g (tracePP "addHeapMeasure vv" $ rTypeValueVar $ tracePP "addHeapMeasure t" t, t)) ts
+       return $ TApp TUn ts' r                    
+
+addHeapMeasures g (x, t@(TApp (TRef l) [] (F.Reft (vv,_))))
+  -- = instHeapMeasures (tracePP "addHeapMeasure vv" $ rTypeValueVar $ tracePP "addHeapMeasure t" t, t) $ heapRead "addHeapMeasures"  l $ rheap g
+  = instHeapMeasures (tracePP "addHeapMeasure vv" $ vv, t) $ heapRead "addHeapMeasures"  l $ rheap g
+
+addHeapMeasures _ (_, t)
+  = return t                
+
+instHeapMeasures (x,t) b
+  = do hms <- heapMeasures <$> getMeasureImpls
+       let pred = F.PAnd $ map (instHeapMeasure (F.vv Nothing) b) hms
+       let p = tracePP "instHeapMeasures reft" (show $ rTypeReft t) `seq`F.predReft pred
+       return $ tracePP "instHeapMeasures out" (tracePP "instHeapMeasures in t" t `strengthen` tracePP "instHeapMeasures p" p)
+    where
+      heapMeasures hms = [(m,x,b,body) | (m, ([x,b], body)) <- hms]              
+
+instHeapMeasure x' b' (m,x,b,body)
+  = tracePP "instHeapMeasure sub" (show su) `seq` F.PAtom F.Eq lhs rhs
+    where su  = F.mkSubst [(x, F.eVar x'), (b, F.eVar b')]
+          lhs = F.EApp m [F.eVar x', F.eVar b']
+          rhs = F.subst su body
+
+consRename _ _ _
+  = error "consRename"

@@ -981,27 +981,8 @@ patchPgmM pgm =
       unwinds  <- tc_unwinds  <$> get
       renames  <- tc_renames  <$> get
       hexs     <- tc_heapexps <$> get
-      pgm      <- locPatchPgm renames pgm
       pgm      <- heapPatchPgm winds unwinds hexs pgm
       return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c hc)
-
-data RState r = RS { rs_renames :: M.Map SourceSpan (RSubst r) }
-type RM     r = State (RState r)
-
-locPatchPgm renamem pgm = 
-  return $ fst $ runState (everywhereM' (mkM go) pgm) (RS renamem)
-  where go :: Statement (AnnSSA_ r) -> RM r (Statement (AnnSSA_ r))
-        go s = do m <- rs_renames <$> get
-                  let l = ann . getAnnotation $ s
-                  put $ RS { rs_renames = M.delete l m }
-                  return $ case M.lookup l m of
-                             Nothing -> s
-                             Just θr -> rename θr s
-        display l θ = VarRef l $ Id l $ ppshow $ snd $ toLists θ
-        rename θ s  = let l = getAnnotation s
-                      in patchRename (RenameLocs l [display l θ]) s
-        patchRename s' (BlockStmt l ss) = BlockStmt l (s':ss)
-        patchRename s' s                = BlockStmt (getAnnotation s) [s',s]
 
 data PState r = PS { m :: Casts_ r, hm :: HCasts_ r}
 type PM     r = State (PState r)

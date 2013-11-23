@@ -442,8 +442,9 @@ data Nano a t =
          , specs  :: !(Env t)                  -- ^ Imported Specifications
          , defs   :: !(Env t)                  -- ^ Signatures for Code
          , consts :: !(Env t)                  -- ^ Measure Signatures 
+         , impls  :: !(M.HashMap F.Symbol ([F.Symbol], F.Expr)) -- ^ Measure implementations
          , tDefs  :: !(Env t)                  -- ^ Type definitions
-         , tMeas  :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ Type measure definitions
+         , tMeas  :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ Type (recursive) measure definitions
          , quals  :: ![F.Qualifier]            -- ^ Qualifiers
          , invts  :: ![Located t]              -- ^ Type Invariants
          } deriving (Functor, Data, Typeable)
@@ -493,8 +494,8 @@ instance PP t => PP (Nano a t) where
     $+$ text "**************************************************"
     
 instance Monoid (Nano a t) where 
-  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty M.empty [] [] 
-  mappend p1 p2 = Nano ss e e' cs tds tms qs is 
+  mempty        = Nano (Src []) envEmpty envEmpty envEmpty M.empty envEmpty M.empty [] [] 
+  mappend p1 p2 = Nano ss e e' cs ims tds tms qs is 
     where 
       ss        = Src $ s1 ++ s2
       Src s1    = code p1
@@ -506,6 +507,7 @@ instance Monoid (Nano a t) where
       tms       = M.fromList $ (M.toList $ tMeas p1) ++ (M.toList $ tMeas p2)
       qs        = quals p1 ++ quals p2
       is        = invts p1 ++ invts p2
+      ims       = M.fromList $ (M.toList $ impls p1) ++ (M.toList $ impls p2)
 
 mapCode :: (a -> b) -> Nano a t -> Nano b t
 mapCode f n = n { code = fmap f (code n) }

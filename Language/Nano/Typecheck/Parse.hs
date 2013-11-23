@@ -79,7 +79,7 @@ typeMeasureP = do
   id <- symbolP
   spaces
   v  <- parens $ symbolP
-  spaces >> reserved ":=" >> spaces
+  spaces >> reserved "=" >> spaces
   e  <- exprP
   return (id, v, e)
   
@@ -326,6 +326,7 @@ specWraps = betweenMany start stop
 ---------------------------------------------------------------------------------
 data PSpec l t 
   = Meas (Id l, t)
+  | MeasImpl (Symbol, [Symbol], Expr)
   | Bind (Id l, t) 
   | Qual Qualifier
   | Type (Id SourceSpan, t, [TypeMeasure])
@@ -334,11 +335,27 @@ data PSpec l t
 
 specP :: Parser (PSpec SourceSpan RefType)
 specP 
-  = try (reserved "measure"   >> (Meas <$> idBindP    ))
+  = try (reserved "measure"   >> measureP)
     <|> (reserved "qualif"    >> (Qual <$> qualifierP ))
     <|> (reserved "type"      >> (Type <$> tBodyP     )) 
     <|> (reserved "invariant" >> (withSpan Invt bareTypeP))
     <|> ({- DEFAULT -}           (Bind <$> idBindP    ))
+
+measureP :: Parser (PSpec SourceSpan RefType)                     
+measureP 
+  = (try (Meas <$> idBindP))
+    <|> (try (MeasImpl <$> measureImpP))
+
+measureImpP
+  = do m    <- symbolP
+       args <- parens $ sepBy symbolP comma
+       spaces
+       reserved "="
+       spaces
+       e  <- exprP
+       return (m, args, e)
+
+       
 
 --------------------------------------------------------------------------------------
 parseSpecFromFile :: FilePath -> IO (Nano SourceSpan RefType) 
@@ -350,6 +367,7 @@ mkSpec xs = Nano { code   = Src []
                  , specs  = envFromList [b | Bind b <- xs] 
                  , defs   = envEmpty
                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
+                 , impls  = M.fromList  [(i, (as,e))  | MeasImpl (i, as, e) <- xs]
                  , tDefs  = envFromList [(i,t)        | Type (i,t,_) <- xs]
                  , tMeas  = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
                  , quals  =             [q            | Qual q <- xs]
@@ -372,6 +390,7 @@ mkCode ss = Nano { code   = Src (checkTopStmt <$> ss)
                  , specs  = envEmpty  
                  , defs   = envEmpty
                  , consts = envEmpty 
+                 , impls  = M.empty
                  , tDefs  = envEmpty
                  , tMeas  = M.empty
                  , quals  = [] 

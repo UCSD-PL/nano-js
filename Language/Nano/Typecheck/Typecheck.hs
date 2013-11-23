@@ -368,7 +368,6 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
         let freeLocs = funExLocs σ_in σ_out
         (rt, σ_out)    <- freshWorld l freeLocs (rt,σ_out)
-        -- (θp,θr,θri)   <- tracePP "unifyTypeRenameM" <$> unifyTypeRenameM l (heapLocs σ_in) (heapLocs σ_out) "Return" eo t rt
         θ             <- unifyTypeM l "Return" eo t rt
         let (rt', t')  = tracePP "rt' t'" $ mapPair (apply θ) (rt,t)
         -- Wind locations back up, but ONLY those that appear in the output spec! might be deleting a loc
@@ -376,34 +375,10 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θ σ_out
         -- Now unify heap
         θ             <- tracePP "unifyHeapsM" <$> unifyHeapsM l "Return" (tracePP "unifyHeaps 1" σ') (tracePP "unifyHeaps 2" $ σ_out)
-        -- Apply the substitutions
-        -- Record the fact that we may have renamed 
-        -- an input location. This is OK if the 
-        -- this location does not appear in the 
-        -- output spec
-        -- θ             <- recordRenameM (ann l) (tracePP "partitionRenames" $ partitionRenames θ_old θ σ_in σ_out)
-        -- May be "free"ing some locations, so lets
-        -- get rid of those pesky chaps
-        -- (γ,σ')        <- deleteLocationsM l (γ,σ') σ_in σ_out
-        -- Now we may need to wind up any new locations so that
-        -- heap subtyping and unification will go through
-        -- (γ,σ')        <- renameAndDeleteLocsM l (γ,σ') σ_in σ_out θ_old
-        -- θ1            <- getSubst
-        -- (γ,σ')        <- windSpecLocations (γ, σ') l $ apply (θri`mappend`θri2) σ_out
         (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θ σ_out
-        -- setSubst $ tracePP "undone" (θ2 `mappend` (tracePP "undo" θu) `mappend` θ1)
-        -- revertWindsM l θ2 (θri <> θri2)
-        -- σ'            <- safeHeapSubstM σ'
-        -- One last chance to unify any TVars that appeared
-        -- in the winding step
         unifyHeapsM l "Return" σ' σ_out
-        -- Now safe to check the output heap
-        -- checkLocSubs σ_out
-        -- Subtype the arguments against the formals and cast if 
-        -- necessary based on the direction of the subtyping outcome
         maybeM_ (\e -> castM e t' rt') eo
         castHeapM γ l (tracePP "ret sig out" σ') (tracePP "sig out spec" $ apply θ σ_out)
-        -- rollBackDeadSubs (θp`mappend`θp2) σ_out σ'
         (tracePP "Return Env" γ)`seq`return Nothing
   where           
     rollBackDeadSubs θ0 σ1 σ2

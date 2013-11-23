@@ -21,6 +21,7 @@ module Language.Nano.Liquid.CGMonad (
   -- * Get Defined Types
   , getTDefs
   , getMeasures
+  , getMeasureImpls
     
   -- * Get Current Function
   , getFun, withFun
@@ -149,7 +150,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) (impls pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -185,6 +186,10 @@ getMeasures :: (F.Symbolic s) => s -> CGM [TypeMeasure]
 getMeasures t = do m <- cg_tmeas <$> get
                    let x = tracePP "Measures:" (M.toList m)
                    return $ M.lookupDefault [] (F.symbol t) m
+
+                   
+getMeasureImpls :: CGM [(F.Symbol, ([F.Symbol], F.Expr))]
+getMeasureImpls = M.toList <$> cg_impls <$> get
 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
@@ -258,7 +263,8 @@ data CGState
         , cg_fun   :: !(Maybe F.Symbol)    -- ^ current function
         , cg_defs  :: !(E.Env RefType)     -- ^ type sigs for all defined functions
         , cg_tdefs :: !(E.Env RefType)     -- ^ type definitions
-        , cg_tmeas :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ type measure definitions
+        , cg_tmeas :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ (recursive) type measure definitions
+        , cg_impls :: !(M.HashMap F.Symbol ([F.Symbol], F.Expr))
         , cs       :: ![SubC]              -- ^ subtyping constraints
         , ws       :: ![WfC]               -- ^ well-formedness constraints
         , count    :: !Integer             -- ^ freshness counter
@@ -1118,11 +1124,12 @@ splitW :: WfC -> CGM [FixWfC]
 ---------------------------------------------------------------------------------------
 splitW (W g i (TFun ts t h h' _)) 
   = do let bws = bsplitW g t i
-       g'     <- envTyAdds i ts g 
+       g'     <- envTyAdds i ts g >>= envTyHeapAdds i h
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]
-       ws'    <-            splitW (W g' i t)
-       ws''   <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h)
-       ws'''  <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h')
+       ws'    <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h)
+       g''    <- envTyHeapAdds i h' g'
+       ws''   <-            splitW (W g'' i t)
+       ws'''  <- concatMapM splitW $ W g'' i <$> heapTypes (b_type <$> h')
        return  $ bws ++ ws ++ ws' ++ ws'' ++ ws'''
 
 splitW (W g i (TAll _ t)) 
@@ -1157,6 +1164,7 @@ bsplitW g t i
 -- refTypeId l = symbolId l . F.symbol -- rTypeValueVar 
 
 envTyAdds l xts = envAdds [(symbolId l x, t) | B x t <- xts]
+envTyHeapAdds l h = envAdds [(symbolId l x, t) | B x t <- heapTypes h]
 
 -------------------------------------------------------------------------------------------
 

@@ -78,13 +78,15 @@ function unwind(x) {
 /*************************************************************************/
 
 /*@ measure keys :: forall A. (list[A]) => set[A]  */
-/*@ measure len  :: forall A. (list[A]) => number      */
+/*@ measure len  :: forall A. (list[A]) => number  */
+/*@ measure lenp :: forall A. (<l> + null, list[A]) => number */
+/*@ measure lenp(p,x) = (if (p = null) then 0 else len(x)) */
 
 /*@
 type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
-     with len(x) := (if (field(r,"next") != null) then 1 + len(tl) else 1)
-     and keys(x) := (if (field(r,"next") = null) then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys tl)))
+     with len(x) = 1 + lenp(field(r, "next"), tl)
+     and keys(x) = (if (field(r,"next") = null) then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys tl)))
 
 */
 
@@ -96,11 +98,11 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
       exists! l |-> tl:sList[{v:A | v >= field(me, "data")}]
       . me: { data:A, next:<l>+null }
 
-  with min(x) := field(me, "data")
+  with min(x) = field(me, "data")
 
-  and keys(x) := (if ((ttag (field me "next")) = "null") then (Set_sng (field me "data")) else (Set_cup (Set_sng (field me "data")) (keys tl)))
+  and keys(x) = (if ((ttag (field me "next")) = "null") then (Set_sng (field me "data")) else (Set_cup (Set_sng (field me "data")) (keys tl)))
 
-  and len(x) := (if (ttag(field(me,"next")) != "null") then 1 + len(tl) else 1) */
+  and len(x) = (if (ttag(field(me,"next")) != "null") then 1 + len(tl) else 1) */
 
 /*@ measure hd :: forall A. (tree[A]) => A                              */
 
@@ -108,9 +110,9 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
                        * r |-> srs:tree[{A | v > field(me, "data")}]
                        . me:{ data: A, left:<l>+null, right:<r>+null } 
 
-       with hd(x)    := field(me, "data")
+       with hd(x)    = field(me, "data")
 
-       and  keys(x) := (if (ttag(field(me, "left")) = "null") then
+       and  keys(x) = (if (ttag(field(me, "left")) = "null") then
                            (if (ttag(field(me, "right")) = "null") then
                                Set_sng(field(me, "data"))
                             else Set_cup(Set_sng(field(me, "data")), keys(srs)))
@@ -156,12 +158,12 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
   type clist[A,H] exists! l |-> rest:clist[A,H]
                         . me:{data:A, next:either[<l>,H]}
 
-       with keys(x) := (if (ttag(field(me, "next")) = "inl") then
+       with keys(x) = (if (ttag(field(me, "next")) = "inl") then
                            Set_cup(Set_sng(field(me, "data")), keys(rest))
                         else
                            Set_sng(field(me, "data")))
 
-       and len(x) := (if (ttag(field(me, "next")) = "inl")
+       and len(x) = (if (ttag(field(me, "next")) = "inl")
                           then (1 + len(rest))
                           else 1)
 */
@@ -234,7 +236,7 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
-/*@ invariant {v:<l>       | (ttag(v) = "ref")    } */
+/*@ invariant {v:<l>       | ((ttag(v) = "ref") && (v != null))    } */
 /*@ invariant {v:<u>       | ttag(v) = "ref(u)"} */
 /*@ invariant {v:<v>       | ttag(v) = "ref(v)"} */
 /*@ invariant {v:<r>       | ttag(v) = "ref(r)"} */

@@ -4,12 +4,14 @@
 
 /* insert :: forall A. (x:<l>+null, k:A)/l |-> list[A] => <m>/m |-> {v:list[A]| keys(v) = set_cup(keys(x), set_singleton(k))} */
 
-/*@ insert :: forall A.
+/* insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]
              => <m>/m |-> ys:{list[A] | (if (x != null)
                                             then ((len(v) = len(xs) + 1) && (keys(v) = Set_cup(keys(xs), Set_sng(k))))
                                             else ((len(v) = 1) && (keys(v) = Set_sng(k)))) }*/
-function insert(x, k){
+/*@ insert :: forall A.
+  (x:<l>+null, k:A)/l |-> xs:list[A] => {v:<m> | (lenp(v,ys) = lenp(x,xs) + 1)}/m |-> ys:list[A] */
+function insert(x, k) {
   var y = {};
   y.data = k;
   y.next = x;
