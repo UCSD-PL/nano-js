@@ -379,15 +379,7 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         unifyHeapsM l "Return" σ' σ_out
         maybeM_ (\e -> castM e t' rt') eo
         castHeapM γ l (tracePP "ret sig out" σ') (tracePP "sig out spec" $ apply θ σ_out)
-        (tracePP "Return Env" γ)`seq`return Nothing
-  where           
-    rollBackDeadSubs θ0 σ1 σ2
-      = do θ          <- getSubst
-           let l1s     = heapLocs σ1
-               l2s     = heapLocs σ2
-               (vs,ls) = toLists θ
-               ls'     = map (\(l,l') -> if l' `notElem` l1s && l' `elem` l2s then (l,l) else (l,l')) ls
-           setSubst $ (fromLists vs ls' `mappend` θ0)
+        return Nothing
 
 
 tcStmt' (γ,σ) s@(FunctionStmt _ _ _ _)

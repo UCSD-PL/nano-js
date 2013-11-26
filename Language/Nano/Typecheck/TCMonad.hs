@@ -853,39 +853,18 @@ subHeapM γ σ1 σ2
        ds <- uncurry subTypesM $ mapPair (readTs $ nub l1s) (σ1, σ2)
        return $ foldl (&*&) EqT ds
   where readTs ls σ = map (flip (heapRead "subHeapM") σ) ls
-          
-normalizeHeaps γ l σ1 σ2       
-  = do castEnvLocs l γ l2s
-       return $ mapPair (buildHeap both) (σ1, σ2)
-  where
-    buildHeap ls σ   = heapFromBinds "normalizeHeaps" . normFilter ls . heapBinds $ σ
-    normFilter ls    = filter (flip elem ls . fst)
-    (l1s, both, l2s) = heapSplit σ1 σ2
+
+normalizeHeaps γ l σ1 σ2
+  = if (intersect l2s envLocs /= []) then
+        errorstar $ errorHeapSubLocs σ1 σ2
+    else
+        return $ mapPair (buildHeap both) (σ1, σ2)
+    where envLocs = concat [ locs t | (Id _ s, t) <- envToList γ
+                                    , F.symbol s /= returnSymbol ]
+          (l1s, both, l2s) = heapSplit σ1 σ2
+          buildHeap ls σ   = heapFromBinds "normalizeHeaps" . normFilter ls . heapBinds $ σ
+          normFilter ls    = filter (flip elem ls . fst)
     
-castEnvLocs a γ ls 
-  = mapM_ (castLocs ls) xs
-    where 
-      xs = [ (VarRef a (Id a s),t) | (Id _ s, t) <- envToList γ
-                                   , F.symbol s /= returnSymbol
-                                   , locs t `intersect` ls /= [] ]
-      castLocs ls (e,t) = 
-        case filterTypeLs ls t of
-          Nothing -> addDeadCast e t
-          Just t' -> addDownCast e t t'
-
-filterTypeLs ls t@(TApp (TRef l) _ _)                
-  | l `elem` ls = Nothing
-  | otherwise   = Just t
-
-filterTypeLs ls t@(TApp TUn ts _)
-  = if ts' == [] then Nothing else Just $ mkUnion ts'
-  where ts' = [ t | Just t <- filterTypeLs ls <$> ts ]
-        
-filterTypeLs ls t@(TObj bs r)
-  = Just $ TObj [ B b t | (b, Just t) <- zip (b_sym <$> bs) bs' ] r
-  where bs' = filterTypeLs ls . b_type <$> bs
-        
-filterTypeLs _ t = Just t
 
 --------------------------------------------------------------------------------
 --  cast Helpers ---------------------------------------------------------------

@@ -43,6 +43,7 @@ errorObjectTAccess t    = printf "Dot notation not permitted on expressions of t
 errorObjectBinding      = printf "Field does not exist in object" 
 errorNullUndefined      = printf "Null type is not a subtype of undefined"
 errorUniqueTypeParams   = printf "Only unique type paramteres are allowed"
+errorHeapSubLocs h h'   = printf "Heap too small in subtype check\n\n%s\n<:\n%s" (ppshow h) (ppshow h')
  
 ppshow                  = render . pp
 

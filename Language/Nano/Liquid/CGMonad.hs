@@ -662,7 +662,7 @@ subType' msg l g t1 t2 =
 subTypeHeaps :: AnnTypeR -> CGEnv -> Heap RefType -> Heap RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2
-  = do let (_,ls,_) = heapSplit σ1 σ2
+  = do let (_,ls,l2s) = heapSplit σ1 σ2
        mapM_ subTypeLoc ls
     where 
       subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
@@ -1081,7 +1081,7 @@ subTypeWindTys seen l g σ t1 t2
 --        let envLocs     = concat [ locs t | (Id _ s,t) <- envToList g
 --                                          , F.symbol s /= returnSymbol ]
 --                          ++ heapLocs (rheap g)
---            ls          = filter (okRename (tracePP "envLocs" envLocs) σ) $ tracePP "rename" $ rename γ t1 t2
+--            ls          = filter (okRename (tracePP "kenvLocs" envLocs) σ) $ tracePP "rename" $ rename γ t1 t2
 --        return $ fromLists [] ls
 --     where
 --       okRename locs σ (l2,l1) = l2 `notElem` locs && l1 `notElem` heapLocs σ

@@ -1,9 +1,7 @@
-/*@ type nlist  list[number] */
-
-/*@ type blist  list[boolean] */
-
-/*@ append :: (x:<l>, number)/l |-> nlist => <m>/l |-> nlist * m |-> blist */
+/*@ append :: (x:<l>, number)/l |-> list[number] =>
+                          <m>/l |-> list[number] * m |-> list[number] */
 function append(x, a) {
-  return { data: a , next: x };
+  var r = { data:a, next:x };
+  return r;
 }
 
