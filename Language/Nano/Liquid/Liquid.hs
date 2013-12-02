@@ -136,12 +136,14 @@ envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft
     = do (su', g') <- envAddHeap l g h
-         g''       <- envAdds (varBinds xs (F.subst su' <$> ts')) =<< (return $ envAddReturn f (F.subst su' t') g')
+         ts''      <- tracePP "envAddFun" <$> mapM (\t -> addHeapMeasures g' (rTypeValueVar t, t)) ts'
+         g''       <- envAdds (envBinds su' xs ts'') =<< (return $ envAddReturn f (F.subst su' t') g')
          envAdds tyBinds g''
   where  
     (αs, yts, h, _, t)  = mfromJust "envAddFun" $ bkFun ft
     tyBinds             = [(Loc (srcPos l) α, tVar α) | α <- αs]
     varBinds            = safeZip "envAddFun"
+    envBinds su xs ts   = varBinds xs (F.subst su <$> ts)
     (su, ts')           = renameBinds yts xs
     t'                  = F.subst su t
     -- g'                  = g { rheap = F.subst su h }
@@ -242,12 +244,14 @@ consStmt g (VarDeclStmt _ ds)
 -- return e 
 consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
-        (su, θi) <- consReturnHeap g' (Just xe) r
-        let te    = envFindTy xe g'
+        (su, θi) <- tracePP "ReturnStmt" (rheap g')`seq`consReturnHeap g' (Just xe) r
+        let te    = F.subst su $ envFindTy xe g'
             rt    = F.subst su . apply θi $ envFindReturn g'
+            tok   = tracePP (printf "ReturnStmt (su = %s)" (show su)) (te, rt)
+        g' <- envAdds [(xe, te)] g'
         if isTop rt
           then withAlignedM (subTypeContainers l g') te (setRTypeR te (rTypeR rt))
-          else withAlignedM (subTypeContainers' "Return" l g') te rt
+          else tok`seq`withAlignedM (subTypeContainers' "Return" l g') te rt
         return Nothing
 
 -- return
@@ -442,8 +446,9 @@ consDownCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (
 ---------------------------------------------------------------------------------------------
 consDownCast g x a e 
   = do  g'  <- envAdds [(x, tc)] g
-        withAlignedM (subTypeContainers' "Downcast" l g) te tc
-        envAddFresh l tc g'
+        withAlignedM (subTypeContainers' "Downcast" l g) te (rType tc)
+        return (x, g')
+        -- envAddFresh l tc g'
     where 
         tc   = head [ t | Assume t <- ann_fact a]
         te   = envFindTy x g
@@ -484,11 +489,11 @@ consCall g l _ es ft
            gin            = (flip envFindTy g') <$> rheap g'
        -- Substitute binders in spec with binders in actual heap
        zipWithM_ (withAlignedM $ subTypeContainers' "call" l g') [envFindTy x g' | x <- xes] (F.subst su ts')
-       (tracePP "consCall su" (show su))`seq`subTypeHeaps l g' gin (F.subst su <$> hi'')
+       subTypeHeaps l g' gin (F.subst su <$> hi'')
        let hu  = foldl (flip heapDel) (rheap g') $ heapLocs hi''
 
        -- Substitute binder for return value in output heap
-       (xr, g'')         <- envAddFresh l (F.subst su ot) g'
+       (xr, g'')         <- envAddFresh l (tracePP "consCall ot" $ F.subst su ot) g'
        let rsu           = F.mkSubst [(lqretSymbol, F.eVar xr)]
        (_,g'')           <- envAddHeap l (g'' { rheap = hu }) (fmap (F.subst (su `F.catSubst` rsu)) <$> ho')
 
@@ -623,7 +628,6 @@ addHeapMeasures g (x, TApp TUn ts r)
        return $ TApp TUn ts' r                    
 
 addHeapMeasures g (x, t@(TApp (TRef l) [] (F.Reft (vv,_))))
-  -- = instHeapMeasures (tracePP "addHeapMeasure vv" $ rTypeValueVar $ tracePP "addHeapMeasure t" t, t) $ heapRead "addHeapMeasures"  l $ rheap g
   = instHeapMeasures (tracePP "addHeapMeasure vv" $ vv, t) $ heapRead "addHeapMeasures"  l $ rheap g
 
 addHeapMeasures _ (_, t)

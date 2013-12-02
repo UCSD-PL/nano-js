@@ -423,7 +423,7 @@ windType γ l loc tWind@(Id _ i) σ
   = do (θα,t')      <- freshApp l tWind
        (σe, t'',θl) <- tracePP (printf "UnwindTC [%s,%s]" (ppshow loc) (ppshow tWind)) <$> unwindTC t'
        let ls        = L.nub $ loc : heapLocs σe ++ locs t''
-       addFreeLocsM ls
+       addFreeLocsM (L.nub $ heapLocs σe ++ locs t'')
        let σe_up     = heapAdd "windType" loc t'' σe
        θ            <- tracePP ("Theta of winding " ++ loc) <$> unifyHeapsM l "Wind(heap)" (tracePP "wind prime" σe_up) (tracePP "wind" σ) 
        let θ_inst    = θα `mappend` θl

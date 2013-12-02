@@ -483,12 +483,12 @@ joinHeaps l γ g g1 g2
       str x t  = (x, strengthenObjBinds x t)
       rdHeap = heapRead "joinHeaps"
 
-freshSubHeap l σ g_wf g locs
-  = do let (xs,ts) = unzip $ map (safeRefReadHeap "freshSubHeap safe" g σ) locs
-       xs'    <- mapM (const (freshId (srcPos l))) xs
-       ts'    <- mapM (freshTy "freshSubHeap") ts
-       mapM (wellFormed l g_wf) ts'
-       return (xs', ts')
+-- freshSubHeap l σ g_wf g locs
+--   = do let (xs,ts) = unzip $ map (safeRefReadHeap "freshSubHeap safe" g σ) locs
+--        xs'    <- mapM (const (freshId (srcPos l))) xs
+--        ts'    <- mapM (freshTy "freshSubHeap") ts
+--        mapM (wellFormed l g_wf) ts'
+--        return (xs', ts')
            
 ---------------------------------------------------------------------------------------
 -- | Fresh Templates ------------------------------------------------------------------
@@ -568,7 +568,7 @@ freshObjBinds :: (PP l, IsLocated l) => l -> CGEnv -> RefType -> CGM (RefType, C
 ---------------------------------------------------------------------------------------
 freshObjBinds l g (TObj bs r)
   = do let xs  = b_sym <$> bs
-       xs'     <- mapM (const (freshId l)) bs
+       xs'     <- mapM (refreshId l) xs
        g'      <- envAdds (safeZip "freshObjBinds" xs' (b_type <$> bs)) g
        let bs' = safeZip "freshOBjBinds'" xs $ map (flip envFindTy g') xs'
        return (TObj [ B (F.symbol x) t | (x,t) <- bs' ] r, g')
@@ -581,7 +581,7 @@ freshHeapEnv :: (PP l, IsLocated l) => l -> RHeapEnv F.Reft -> CGM (F.Subst, RHe
 ---------------------------------------------------------------------------------------
 freshHeapEnv l σ
   = do let xs  = b_sym <$> heapTypes σ
-       xs'     <- mapM (const (freshId (srcPos l))) xs
+       xs'     <- mapM (refreshId (srcPos l)) xs
        let su  = F.mkSubst $ zip (F.symbol <$> xs) (F.eVar . F.symbol <$> xs')
        return $ (su, tracePP "freshening to this" . heapBind . zipUp (replace su) xs' $ heapBinds $ tracePP "freshening this" σ)
     where
@@ -863,13 +863,17 @@ instance Freshable Integer where
              count <$> get 
 
 instance Freshable F.Symbol where
-  fresh = F.tempSymbol "nano" <$> fresh
+  fresh     = F.tempSymbol "nano" <$> fresh
+  refresh _ = fresh
 
 instance Freshable String where
-  fresh = F.symbolString <$> fresh
+  fresh     = F.symbolString <$> fresh
 
 freshId   :: (IsLocated l) => l -> CGM (Id l)
 freshId l = Id l <$> fresh
+
+refreshId :: (F.Symbolic s, IsLocated l) => l -> s -> CGM (Id l)
+refreshId l s = (Id l . F.symbolString) <$> (refresh $ F.symbol s)        
 
 freshTy :: RefTypable a => s -> a -> CGM RefType
 freshTy _ τ = refresh $ rType τ
