@@ -349,14 +349,12 @@ tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
         e2 <- preWind uw s2 $ tcStmt (γ, σe) s2
         envJoin l (γ,σe) e1 e2
     where
-      msg s = printf "Unwound in IfStatement %s on statement %s" (ppshow ifstmt) (ppshow s)
+      msg s = printf "Unwound in IfStatement %s on statement %s"
+                (ppshow ifstmt) (ppshow s)
       lastStmtAnn (BlockStmt l _) = l
       lastStmtAnn s               = getAnnotation s
-      preWind uw s m = do r <- setUnwound uw >> m
-                          let l = lastStmtAnn s
-                          case r of
-                            Just e -> Just <$> windLocations e l 
-                            _      -> return r
+      maybeWind l r               = maybe (return r) (fmap Just . flip windLocations l) r
+      preWind uw s m              = setUnwound uw >> m >>= maybeWind (lastStmtAnn s)
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
 tcStmt' (γ,σ) (VarDeclStmt _ ds)

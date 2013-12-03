@@ -37,6 +37,7 @@ import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 -- import           Language.Nano.Typecheck.WindFuns
 import           Language.Nano.Typecheck.Parse
+import           Language.Nano.Typecheck.Lower
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Typecheck  (typeCheck) 
 import           Language.Nano.Typecheck.Compare
@@ -58,7 +59,7 @@ verifyFile f =
   do  p   <- parseNanoFromFile f
       cfg <- getOpts 
       verb    <- V.getVerbosity
-      fmap (, "") <$> reftypeCheck cfg f (typeCheck verb (ssaTransform p))
+      fmap (, "") <$> reftypeCheck cfg f (tracePP "verifyFile program" (typeCheck verb (padTransform $ ssaTransform p)))
 
 -- DEBUG VERSION 
 -- ssaTransform' x = tracePP "SSATX" $ ssaTransform x 
@@ -244,7 +245,7 @@ consStmt g (VarDeclStmt _ ds)
 -- return e 
 consStmt g r@(ReturnStmt l (Just e))
   = do  (xe, g') <- consExpr g e
-        (su, θi) <- tracePP "ReturnStmt" (rheap g')`seq`consReturnHeap g' (Just xe) r
+        (su, θi) <- tracePP "ReturnStmt" (rheap g', map (flip envFindTy g' . flip (heapRead "") (rheap g')) $ heapLocs (rheap g'))`seq`consReturnHeap g' (Just xe) r
         let te    = F.subst su $ envFindTy xe g'
             rt    = F.subst su . apply θi $ envFindReturn g'
             tok   = tracePP (printf "ReturnStmt (su = %s)" (show su)) (te, rt)
@@ -268,7 +269,7 @@ consStmt g s@(FunctionStmt _ _ _ _)
   = Just <$> consFun g s
     
 consStmt g (WindAll l _)    
-  = Just <$> foldM (consWind l) (g'{ rheap = app θm $ rheap g'} ) ws
+  = Just <$> foldM (consWind l) (g'{ rheap = app θm $ rheap g'} ) (tracePP "consStmt WindAll" ws)
   where
    --- Shouldn't have to do this here, move me!!! --
     θm = case [fromLists [] ls | Rename ls <- ann_fact l ] of

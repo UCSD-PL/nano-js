@@ -9,7 +9,7 @@
 /* heap measure lenp(x:<l>)  := len(*x) */
 /* heap measure lenp(x:null) := 0       */
 
-/*@ append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> xs:list[A] * m |-> ys:list[A]
+/* append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> xs:list[A] * m |-> ys:list[A]
                                   => {v:<k>+null | (((x1 != null) || (x2 != null)) <=> (v != null))}
                                      /k |-> zs:{list[A] | (if (x1 != null) 
                                                            then (if (x2 != null)
@@ -19,9 +19,10 @@
                                                                  then ((len(v) = len(ys)) && (keys(v) = keys(ys)))
                                                                  else true))}
 */
-/* append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> xs:list[A] * m |-> ys:list[A]
-                                  => {v:<k>+null | (((x1 != null) || (x2 != null)) <=> (v != null))}
-                                     /k |-> zs:{list[A] | lenp(lqreturn, v) = lenp(x1,xs) + lenp(x2,ys) }
+/*@ append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> xs:list[A] * m |-> ys:list[A]
+                                  => {v:<k>+null | ((((x1 != null) || (x2 != null)) <=> (v != null))
+                                                    && (lenp(v,zs) = lenp(x1,xs) + lenp(x2,ys)))}
+                                     /k |-> zs:list[A]
 */
 function append(x1, x2){
   if (x1 != null){

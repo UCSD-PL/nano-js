@@ -44,15 +44,16 @@ padStmt (FunctionStmt lf i is ss)
   = FunctionStmt lf i is (map padStmt ss)
     
 padStmt (IfStmt l b s1 s2) 
-  = IfStmt l b (padStmt' s1) (padStmt' s2)
+  = IfStmt l b (padIfStmts s1) (padIfStmts s2)
 
 padStmt (BlockStmt l ss)
   = BlockStmt l (map padStmt ss)
 
 padStmt x = x
 
-padStmt' (BlockStmt l ss) = BlockStmt l $ ss ++ [EmptyStmt l]
-padStmt' s                = BlockStmt (getAnnotation s) [s,EmptyStmt (getAnnotation s)]
+padIfStmts s@(EmptyStmt l)  = BlockStmt l [s]
+padIfStmts (BlockStmt l ss) = BlockStmt l $ (map padStmt ss) ++ [EmptyStmt l]
+padIfStmts s                = BlockStmt (getAnnotation s) [padStmt s,EmptyStmt (getAnnotation s)]
 {- 
 type GenSet f = M.HashMap (SourceSpan) (Id (Annot f SourceSpan))
 type OutSet f = M.HashMap (SourceSpan) (Id (Annot f SourceSpan))

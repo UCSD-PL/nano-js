@@ -29,6 +29,7 @@ module Language.Nano.Typecheck.Types (
   , RType (..)
   , Bind (..)
   , TypeMeasure
+  , MeasureImpl
   , TDefId
   , toType
   , ofType
@@ -456,6 +457,8 @@ type NanoTypeR r   = Nano (AnnType_ r) (RType r)
 type NanoBare   = NanoBareR ()
 type NanoSSA    = NanoSSAR ()
 type NanoType   = NanoTypeR ()
+
+type MeasureImpl = (F.Symbol, ([F.Symbol], F.Expr))
 
 {-@ measure isFunctionStatement :: (Statement SourceSpan) -> Prop 
     isFunctionStatement (FunctionStmt {}) = true

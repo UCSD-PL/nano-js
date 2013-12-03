@@ -53,7 +53,7 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Annotations
   , accumAnn
   , getAllAnns
-  , undoRenamesM
+  -- , undoRenamesM
 
   -- * Unfolding
   , unfoldFirstTC
@@ -969,6 +969,8 @@ type PM     r = State (PState r)
 heapPatchPgm winds unwinds hm pgm = 
   return $ fst $ runState (everywhereM' (mkM go) pgm) (HS winds unwinds hm)
   where go :: Statement (AnnSSA_ r) -> HSM r (Statement (AnnSSA_ r))
+        go s@(IfStmt _ _ _ _) = return s
+        go s@(BlockStmt _ _)  = return s
         go s = do
           wm   <- hs_winds   <$> get
           uwm  <- hs_unwinds <$> get
@@ -990,14 +992,14 @@ heapPatchPgm winds unwinds hm pgm =
         errorSameLoc s = (printf "BUG: wind and unwind at %s" (ppshow s))
 
 buildWindCalls ws s 
-  = patchStmt windStmts s 
+  = patchStmt' windStmts s 
   where 
-    display (j,ls,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow (j:ls)) (ppshow i))
+    display (j,ls,i)          = VarRef l $ Id l (printf "%s ↦ %s" (ppshow (j:ls)) (ppshow i))
     windStmts                 = [WindAll l $ map display ws] -- map (buildWind l) ws
     l                         = getAnnotation s
     
 buildUnwindCalls uws s
-  = patchStmt unwindStmts s 
+  = patchStmt' unwindStmts s 
   where 
     display (j,i)             = VarRef l $ Id l (printf "%s ↦ %s" (ppshow j) (ppshow i))
     unwindStmts               = [UnwindAll l $ map display uws] -- map (buildWind l) ws
@@ -1020,6 +1022,8 @@ patchStmt ws (IfSingleStmt l e s) =
 
 patchStmt ws s                    = 
   BlockStmt (getAnnotation s) $  ws ++ [s]
+
+patchStmt' ws s = patchStmt ws $ tracePP "patchStmts'" s
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])
@@ -1058,35 +1062,35 @@ patchExpr m hm e = go a2 AssumeH $ go a1 Assume e
 --     fs = ann_fact a
 --     a  = getAnnotation e
 
---------------------------------------------------------------------------------
-undoRenamesM :: (Ord r, F.Reftable r, PP r,
-                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
-                (AnnInfo_ r, M.Map (AnnSSA_ r) (S.Set (AnnSSA_ r))) -> TCM r (AnnInfo_ r)
---------------------------------------------------------------------------------
-undoRenamesM (a, m)
-  = do θ   <- getSubst 
-       toS <- tc_tos <$> get
-       return $ HM.foldlWithKey' (undoRename θ toS m') a a
-  where
-    m' = M.mapKeys ann $ M.map (S.map ann) m
+-- --------------------------------------------------------------------------------
+-- undoRenamesM :: (Ord r, F.Reftable r, PP r,
+--                   Substitutable r (Fact_ r), Free (Fact_ r)) =>
+--                 (AnnInfo_ r, M.Map (AnnSSA_ r) (S.Set (AnnSSA_ r))) -> TCM r (AnnInfo_ r)
+-- --------------------------------------------------------------------------------
+-- undoRenamesM (a, m)
+--   = do θ   <- getSubst 
+--        toS <- tc_tos <$> get
+--        return $ HM.foldlWithKey' (undoRename θ toS m') a a
+--   where
+--     m' = M.mapKeys ann $ M.map (S.map ann) m
     
---------------------------------------------------------------------------------
-undoRename :: (Ord r, F.Reftable r, PP r, 
-                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
-              RSubst r -> M.Map SourceSpan SourceSpan -> M.Map SourceSpan (S.Set SourceSpan) -> AnnInfo_ r -> SourceSpan -> [Fact_ r] -> AnnInfo_ r
---------------------------------------------------------------------------------
-undoRename θ rev m a l f = HM.insert l (map (fixup θ') f) a
-  where 
-    postDoms = M.findWithDefault S.empty (M.findWithDefault l l rev) m
-    annots   = S.toList $ S.map (flip (HM.lookupDefault []) a) postDoms
-    θ'       = case tracePP "foo" [ rs | fs <- annots, (Rename rs) <- fs ] of
-                 [rs] -> tracePP "subbbb" $ mappend θ $ fromLists [] $ map swap rs
-                 _    -> mempty
+-- --------------------------------------------------------------------------------
+-- undoRename :: (Ord r, F.Reftable r, PP r, 
+--                   Substitutable r (Fact_ r), Free (Fact_ r)) =>
+--               RSubst r -> M.Map SourceSpan SourceSpan -> M.Map SourceSpan (S.Set SourceSpan) -> AnnInfo_ r -> SourceSpan -> [Fact_ r] -> AnnInfo_ r
+-- --------------------------------------------------------------------------------
+-- undoRename θ rev m a l f = HM.insert l (map (fixup θ') f) a
+--   where 
+--     postDoms = M.findWithDefault S.empty (M.findWithDefault l l rev) m
+--     annots   = S.toList $ S.map (flip (HM.lookupDefault []) a) postDoms
+--     θ'       = case tracePP "foo" [ rs | fs <- annots, (Rename rs) <- fs ] of
+--                  [rs] -> tracePP "subbbb" $ mappend θ $ fromLists [] $ map swap rs
+--                  _    -> mempty
         
---------------------------------------------------------------------------------
-fixup :: (Ord r, F.Reftable r, PP r, 
-                  Substitutable r (Fact_ r), Free (Fact_ r)) => 
-         RSubst r -> Fact_ r -> Fact_ r
---------------------------------------------------------------------------------
--- fixup θ f@(FunInst ts ls) = apply (tracePP "fixup" θ) $ tracePP "fixup fact" f
-fixup _ f                 = f
+-- --------------------------------------------------------------------------------
+-- fixup :: (Ord r, F.Reftable r, PP r, 
+--                   Substitutable r (Fact_ r), Free (Fact_ r)) => 
+--          RSubst r -> Fact_ r -> Fact_ r
+-- --------------------------------------------------------------------------------
+-- -- fixup θ f@(FunInst ts ls) = apply (tracePP "fixup" θ) $ tracePP "fixup fact" f
+-- fixup _ f                 = f

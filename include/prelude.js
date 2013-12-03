@@ -78,6 +78,10 @@ function unwind(x) {
 /*************************************************************************/
 
 /*@ measure keys :: forall A. (list[A]) => set[A]  */
+/*@ measure keysp :: forall A. (<l> + null, list[A]) => set[A]  */
+/*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else
+   keys(x)) */
+
 /*@ measure len  :: forall A. (list[A]) => number  */
 /*@ measure lenp :: forall A. (<l> + null, list[A]) => number */
 /*@ measure lenp(p,x) = (if (p = null) then 0 else len(x)) */
@@ -86,8 +90,7 @@ function unwind(x) {
 type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
      with len(x) = 1 + lenp(field(r, "next"), tl)
-     and keys(x) = (if (field(r,"next") = null) then (Set_sng (field r "data")) else (Set_cup (Set_sng (field r "data")) (keys tl)))
-
+     and keys(x) = Set_cup(Set_sng(field(r, "data")), keysp(field(r, "next"), tl))
 */
 
 /*@ measure min :: forall A. (sList[A]) => A */
@@ -105,12 +108,19 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
   and len(x) = (if (ttag(field(me,"next")) != "null") then 1 + len(tl) else 1) */
 
 /*@ measure hd :: forall A. (tree[A]) => A                              */
+/*@ measure heightf  :: forall A. (tree[A]) => number                    */
+/*@ measure heightp :: forall A. (<l>+null,tree[A]) => number           */
+/*@ measure heightp(x,p) = (if (x = null) then 0 else heightf(p))        */
 
 /*@ type tree[A] exists! l |-> sls:tree[{A | v < field(me, "data")}]
                        * r |-> srs:tree[{A | v > field(me, "data")}]
                        . me:{ data: A, left:<l>+null, right:<r>+null } 
 
        with hd(x)    = field(me, "data")
+
+       and  heightf(x) = (if (heightp(field(me,"left"),sls) > heightp(field(me,"right"),srs))
+                            then (1 + heightp(field(me,"left"),sls))
+                            else (1 + heightp(field(me,"right"),srs)))
 
        and  keys(x) = (if (ttag(field(me, "left")) = "null") then
                            (if (ttag(field(me, "right")) = "null") then

@@ -450,7 +450,9 @@ envJoin' l g g1 g2
         zipWithM_ (subTypeContainers l g1') [envFindTy x g1' | x <- xs] ts
         zipWithM_ (subTypeContainers l g2') [envFindTy x g2' | x <- xs] ts
         
-        g'  <- joinHeaps l γ g' g1' g2'
+        let t1 = tracePP "IfStmt h1" (rheap g1')
+        let t2 = tracePP "IfStmt h2" (rheap g2')
+        g'  <- t1`seq`t2`seq`joinHeaps l γ g' g1' g2'
 
         return g'
 
