@@ -406,13 +406,14 @@ get_type_annotation el =
   if length typeannotations > 1 then error ("Too many type type annotations")
   else if length typeannotations == 0 then Nothing
   else let typeannotation = snd $ typeannotations!!0 in
-  let keyword_tag = fst $ getUniqueChild typeannotation in
+  let keyword_tag = getUniqueChild typeannotation in
   Just (convert_type_keyword keyword_tag)
 
-convert_type_keyword :: String -> RType ()
---What to do wih the Any and Array types?
-convert_type_keyword "NumberKeyword" = TApp TInt [] ()
-convert_type_keyword "BooleanKeyword" = TApp TBool [] ()
-convert_type_keyword "BoolKeyword" = TApp TBool [] ()
-convert_type_keyword "StringKeyword" = TApp TString [] ()
+convert_type_keyword :: (String,Element) -> RType ()
+convert_type_keyword ("NumberKeyword",el) = TApp TInt [] ()
+convert_type_keyword ("BooleanKeyword",el) = TApp TBool [] ()
+convert_type_keyword ("BoolKeyword",el) = TApp TBool [] ()
+convert_type_keyword ("StringKeyword",el) = TApp TString [] ()
+convert_type_keyword ("AnyKeyword",el) = TApp TAny [] ()
+convert_type_keyword ("ArrayType",el) = TArr (convert_type_keyword $ getUniqueChild el) [] ()
 convert_type_keyword str = error ("Unsuported type "++str)
