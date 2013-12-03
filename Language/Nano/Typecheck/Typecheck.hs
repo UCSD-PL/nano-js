@@ -13,6 +13,7 @@ import           Control.Monad
 import qualified Data.HashSet                       as HS 
 import qualified Data.HashMap.Strict                as M 
 import qualified Data.Traversable                   as T
+import qualified Data.Foldable                      as F
 import qualified Data.List                          as L
 import           Data.Monoid
 import           Data.Maybe                         (catMaybes, isJust, fromJust)
@@ -76,7 +77,6 @@ verifyFile f
         return $ r
 
 
--- TODO: CHECK HEAP WF
 -------------------------------------------------------------------------------
 typeCheck ::
   (Data r, Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
@@ -94,7 +94,7 @@ unsafe errs = do putStrLn "\n\n\nErrors Found!\n\n"
 ppErr (l, e) = printf "Error at %s\n  %s\n" (ppshow l) e
 
 safe (Nano {code = Src fs})
-  = do V.whenLoud $ forM_ fs $ T.mapM printAnn
+  = do V.whenLoud $ forM_ fs $ F.foldlM printAnn []
        return F.Safe 
 
 -------------------------------------------------------------------------------
@@ -117,8 +117,12 @@ allCasts fs =  everything (++) ([] `mkQ` f) $ fs
         f _               = [ ]
 
 
-printAnn (Ann l fs) = when (not $ null fs) $ putStrLn 
-    $ printf "At %s: %s" (ppshow l) (ppshow fs)
+printAnn seen a@(Ann l fs)
+    | a `notElem` seen = do when (not $ null fs) $ putStrLn msg
+                            return (a:seen)
+    | otherwise        = return seen
+    where msg = printf "At %s: %s" (ppshow l) (ppshow fs)
+
 
 -------------------------------------------------------------------------------
 -- | TypeCheck Nano Program ---------------------------------------------------
