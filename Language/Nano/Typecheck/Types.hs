@@ -156,6 +156,7 @@ data TCon
   | TUn
   | TNull
   | TUndef
+  | TAny
     deriving (Ord, Show, Data, Typeable)
 
 -- | (Raw) Refined Types 

@@ -399,6 +399,29 @@ propertyassigment_expression (s,el) =
     (PropString Nothing (removequotes(getText (snd key))), xml2expression value)
 
 
+get_function_type :: Element -> (Maybe (RType ()))
+get_function_type el = 
+  let signature = getChildByTag el "CallSignature" in
+  let parlist = getChildByTag signature "ParameterList" in
+  let params = getUniqueChild parlist in
+  TFun (function_parameter_types_list params) (function_return_type el) ()
+
+
+function_parameter_types_list :: Element -> [Bind ()]
+function_parameter_types_list sparatedlist =
+  let params = createPairs separatedlist in
+  let fn a (_,el) = (B {b_sym = getText (fst (getChildByTag el "IdentifierName")), 
+      b_type = fst (getChildByTag el "TypeAnnotation")}) : a in
+  foldl fn [] params
+
+
+
+function_return_type :: Element -> RType ()
+  let typeannotation = get_type_annotation el in
+       case get_type_annotation el  of 
+                Nothing -> Tapp TAny [] () --return anything??
+                Just typeannotation  -> typeannotation
+
 
 get_type_annotation :: Element -> (Maybe (RType ()))
 get_type_annotation el =
@@ -414,6 +437,7 @@ convert_type_keyword ("NumberKeyword",el) = TApp TInt [] ()
 convert_type_keyword ("BooleanKeyword",el) = TApp TBool [] ()
 convert_type_keyword ("BoolKeyword",el) = TApp TBool [] ()
 convert_type_keyword ("StringKeyword",el) = TApp TString [] ()
+convert_type_keyword ("VoidKeyword",el) = TApp TVoid [] ()
 convert_type_keyword ("AnyKeyword",el) = TApp TAny [] ()
-convert_type_keyword ("ArrayType",el) = TArr (convert_type_keyword $ getUniqueChild el) [] ()
-convert_type_keyword str = error ("Unsuported type "++str)
+convert_type_keyword ("ArrayType",el) = TArr (convert_type_keyword $ getUniqueChild el) ()
+convert_type_keyword (str,el) = error ("Unsuported type "++str)
