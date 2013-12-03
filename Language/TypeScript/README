@@ -1,0 +1,19 @@
+Build the tests:
+To build the tests you need 3 binaries:
+-hscg: converts JS into a Haskell data structure. You can find the source code of that
+ binary in the testfiles folder.
+-run: this is a shell script that will run a modified version of th ts compiler
+ that prints the AST in XML on stdout. You can find it in the nano-ts repo.
+-Parse: converts XML into a Haskell data structure. You can find it in this same folder
+
+If you have both repositories (nano-ts and nano-js) in the same folder (i.e. at the
+same level), the make file should work directly.
+Run make test.
+This will build Parse, hscg and execue the three binaries on the corresponding files.
+
+Otherwise, you can run the python script test.py (in testfiles) by hand.
+Run python test.py --help for the options.
+If the paths of the files are different, use the -DGLOBAL=VALUE option to indicate 
+where the required binaries and tests are. You can find the four global variables
+to set at th begining of the python script.
+

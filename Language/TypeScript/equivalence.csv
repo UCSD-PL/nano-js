@@ -1,0 +1,290 @@
+    #None, EmptyStmt ()
+    #List, [Statement ()], [Expression ()]
+    #SeparatedList, [Statement ()]
+    #TriviaList, [Statement ()]
+
+
+WhitespaceTrivia, ??
+NewLineTrivia, ??
+MultiLineCommentTrivia, ??
+SingleLineCommentTrivia, ??
+SkippedTokenTrivia, ??
+
+
+
+    ErrorToken, NOTHING
+    EndOfFileToken, NOTHING
+
+
+    #IdentifierName, VarRef () (Id () NAME), LVar () NAME
+
+
+    #RegularExpressionLiteral, RegexLit()
+    #NumericLiteral, NumLit () DOUBLE, IntLit () INT 
+    #StringLiteral, StringLit () STRING
+
+
+
+
+    #BreakKeyword, NOTHING
+    #CaseKeyword, NOTHING
+    #CatchKeyword, NOTHING
+    #ContinueKeyword, NOTHING
+    #DebuggerKeyword, NOTHING
+    #DefaultKeyword, NOTHING
+    #DeleteKeyword, NOTHING
+    #DoKeyword, NOTHING
+    #ElseKeyword, NOTHING
+    #FalseKeyword, BoolLit () False
+    #FinallyKeyword, NOTHING
+    #ForKeyword, NOTHING
+    #FunctionKeyword, NOTHING
+    #IfKeyword, NOTHING
+    #InKeyword, NOTHING
+    #InstanceOfKeyword, NOTHING
+    #NewKeyword, NOTHING
+    #NullKeyword, NullLit ()
+    #ReturnKeyword, NOTHING
+    #SwitchKeyword, NOTHING
+    #ThisKeyword, ThisRef ()
+    #ThrowKeyword, NOTHING
+    #TrueKeyword, BoolLit () True
+    #TryKeyword, NOTHING
+    #TypeOfKeyword, NOTHING
+    #VarKeyword, NOTHING
+    #VoidKeyword, NOTHING
+    #WhileKeyword, NOTHING
+    #WithKeyword,NOTHING
+
+
+ClassKeyword,  TS
+ConstKeyword, ??
+EnumKeyword, TS
+ExportKeyword, TS
+ExtendsKeyword, TS
+ImportKeyword, TS
+SuperKeyword, TS
+
+
+ImplementsKeyword, TS
+InterfaceKeyword, TS
+LetKeyword, ??
+PackageKeyword,  TS
+PrivateKeyword,  TS
+ProtectedKeyword, TS
+PublicKeyword, TS
+StaticKeyword, TS
+YieldKeyword, ??
+
+
+AnyKeyword, TS
+BooleanKeyword, TS
+BoolKeyword, TS
+ConstructorKeyword, TS
+DeclareKeyword, TS
+GetKeyword, TS
+ModuleKeyword, TS
+RequireKeyword, TS
+NumberKeyword, TS
+SetKeyword, TS
+StringKeyword, TS
+
+
+    #OpenBraceToken, NOTHING
+    #CloseBraceToken, NOTHING
+    #OpenParenToken, NOTHING
+    #CloseParenToken, NOTHING
+    #OpenBracketToken, NOTHING
+    #CloseBracketToken, NOTHING
+    #DotToken, NOTHING
+    #DotDotDotToken, NOTHING
+    #SemicolonToken, NOTHING
+    #CommaToken, NOTHING
+    #LessThanToken, NOTHING
+    #GreaterThanToken, NOTHING
+    #LessThanEqualsToken, NOTHING
+    #GreaterThanEqualsToken, NOTHING
+    #EqualsEqualsToken, NOTHING
+    #EqualsGreaterThanToken, NOTHING
+    #ExclamationEqualsToken, NOTHING
+    #EqualsEqualsEqualsToken, NOTHING
+    #ExclamationEqualsEqualsToken, NOTHING
+    #PlusToken, NOTHING
+    #MinusToken, NOTHING
+    #AsteriskToken, NOTHING
+    #PercentToken, NOTHING
+    #PlusPlusToken, NOTHING
+    #MinusMinusToken, NOTHING
+    #LessThanLessThanToken, NOTHING
+    #GreaterThanGreaterThanToken, NOTHING
+    #GreaterThanGreaterThanGreaterThanToken, NOTHING
+    #AmpersandToken, NOTHING
+    #BarToken, NOTHING
+    #CaretToken, NOTHING
+    #ExclamationToken, NOTHING
+    #TildeToken, NOTHING
+    #AmpersandAmpersandToken, NOTHING
+    #BarBarToken, NOTHING
+    #QuestionToken, NOTHING
+    #ColonToken, NOTHING
+    #EqualsToken, NOTHING
+    #PlusEqualsToken, NOTHING
+    #MinusEqualsToken, NOTHING
+    #AsteriskEqualsToken, NOTHING
+    #PercentEqualsToken, NOTHING
+    #LessThanLessThanEqualsToken, NOTHING
+    #GreaterThanGreaterThanEqualsToken, NOTHING
+    #GreaterThanGreaterThanGreaterThanEqualsToken, NOTHING
+    #AmpersandEqualsToken, NOTHING
+    #BarEqualsToken, NOTHING
+    #CaretEqualsToken, NOTHING
+    #SlashToken, NOTHING
+    #SlashEqualsToken, NOTHING
+
+
+    #SourceUnit, Script () STATEMENTSLIST
+
+
+QualifiedName, ??
+
+
+ObjectType,  ??
+FunctionType,  ??
+ArrayType,  ??
+ConstructorType,   ??
+GenericType,  ??
+TypeQuery,  ??
+
+
+InterfaceDeclaration, TS
+    #FunctionDeclaration, 
+ModuleDeclaration, TS
+ClassDeclaration, TS
+EnumDeclaration, TS
+ImportDeclaration, TS
+ExportAssignment, TS
+
+
+MemberFunctionDeclaration, TS
+MemberVariableDeclaration, TS
+ConstructorDeclaration, TS
+GetMemberAccessorDeclaration, TS
+SetMemberAccessorDeclaration, TS
+
+
+PropertySignature, ??
+    #CallSignature, (part of functiondeclaration)
+ConstructSignature, ??
+IndexSignature, ??
+MethodSignature, ??
+
+
+    #Block, BlockStmt () STMTLIST
+    #IfStatement, IfSingleStmt () EXPR STMT, IfStmt () EXPR STMT STMT
+    #VariableStatement, VarDeclStmt () [VarDecl ()]
+    #ExpressionStatement, ExprStmt () EXPR
+    #ReturnStatement, ReturnStmt () Nothing, ReturnStmt () (Just EXPR)
+    #SwitchStatement, SwitchStmt ()  EXPR CASECLAUSELIST
+    #BreakStatement, BreakStmt () Nothing, BreakStmt () Just (Id () LABEL)
+    #ContinueStatement, ContinueStmt () Nothing, ContinueStmt () Just (Id () LABEL)
+    #ForStatement,
+    #ForInStatement,
+    #EmptyStatement,  EmptyStmt ()
+    #ThrowStatement, ThrowStmt ()
+    #WhileStatement, WhileStmt () EXPR STMT
+    #TryStatement,
+    #LabeledStatement, LabelledStmt () (Id () LABEL) STMT
+    #DoStatement, DoWhileStmt () STMT EXPR
+DebuggerStatement, ??
+    #WithStatement,
+
+
+    #PlusExpression,
+    #NegateExpression,
+    #BitwiseNotExpression,
+    #LogicalNotExpression,
+    #PreIncrementExpression,
+    #PreDecrementExpression,
+    #DeleteExpression,
+    #TypeOfExpression,
+    #VoidExpression,
+    #CommaExpression,
+    #AssignmentExpression,
+    #AddAssignmentExpression,
+    #SubtractAssignmentExpression,
+    #MultiplyAssignmentExpression,
+    #DivideAssignmentExpression,
+    #ModuloAssignmentExpression,
+    #AndAssignmentExpression,
+    #ExclusiveOrAssignmentExpression,
+    #OrAssignmentExpression,
+    #LeftShiftAssignmentExpression,
+    #SignedRightShiftAssignmentExpression,
+    #UnsignedRightShiftAssignmentExpression,
+    #ConditionalExpression, CondExpr () EXPR EXPR EXPR
+    #LogicalOrExpression,
+    #LogicalAndExpression,
+    #BitwiseOrExpression,
+    #BitwiseExclusiveOrExpression,
+    #BitwiseAndExpression,
+    #EqualsWithTypeConversionExpression,
+    #NotEqualsWithTypeConversionExpression,
+    #EqualsExpression,
+    #NotEqualsExpression,
+    #LessThanExpression,
+    #GreaterThanExpression,
+    #LessThanOrEqualExpression,
+    #GreaterThanOrEqualExpression,
+    #InstanceOfExpression,
+    #InExpression,
+    #LeftShiftExpression,
+    #SignedRightShiftExpression,
+    #UnsignedRightShiftExpression,
+    #MultiplyExpression,
+    #DivideExpression,
+    #ModuloExpression,
+    #AddExpression,
+    #SubtractExpression,
+    #PostIncrementExpression,
+    #PostDecrementExpression,
+    #MemberAccessExpression, DotRef () EXPR (Id () NAME),   LDot () EXPR NAME
+    #InvocationExpression, ??
+    #ArrayLiteralExpression, ArrayLit () EXPRLIST
+    #ObjectLiteralExpression, ObjectLit ()
+    #ObjectCreationExpression, NewExpr() CONSTRUCTORNAME ARGLIST
+    #ParenthesizedExpression,
+ParenthesizedArrowFunctionExpression, ??
+SimpleArrowFunctionExpression, ??
+CastExpression, ??
+    #ElementAccessExpression,   BracketRef () EXPR EXPR , LBracket () EXPR EXPR
+FunctionExpression, ??
+OmittedExpression, ??
+
+
+    #VariableDeclaration, NOTHING
+    #VariableDeclarator, VarDecl () (Id () NAME) Nothing, VarDecl () (Id () NAME) (Just EXPR)
+
+
+    #ArgumentList,
+    #ParameterList,
+TypeArgumentList, ??
+TypeParameterList, ??
+
+
+HeritageClause, TS
+    #EqualsValueClause, EXPR
+    #CaseSwitchClause,   CaseClause () EXPR STMTLIST
+    #DefaultSwitchClause, CaseDefault () STMTLIST
+    #ElseClause,  STMT
+    #CatchClause,
+    #FinallyClause,
+
+
+TypeParameter, ??
+Constraint, ??
+
+
+SimplePropertyAssignment, ??
+GetAccessorPropertyAssignment, ??
+SetAccessorPropertyAssignment, ??
+FunctionPropertyAssignment, ??

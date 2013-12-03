@@ -16,7 +16,7 @@ data-files:          README.md,
                      include/prelude.js
 
 executable nanojs
-  build-depends:       base, containers, 
+  build-depends:       base, containers, xml, 
                        pretty, 
                        vector, bytestring, text, aeson, 
                        hashable < 1.2, 
