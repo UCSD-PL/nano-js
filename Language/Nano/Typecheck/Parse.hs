@@ -55,7 +55,7 @@ idBindP = xyP identifierP dcolon bareTypeP
 identifierP :: Parser (Id SourceSpan)
 identifierP = withSpan Id lowerIdP -- <$> getPosition <*> lowerIdP -- Lexer.identifier
 
-tBodyP :: Parser (Id SourceSpan, RType Reft, [TypeMeasure])
+tBodyP :: Parser (Id SourceSpan, RType Reft, [Measure])
 tBodyP = do  id <- identifierP 
              tv <- option [] tParP
              th <- option heapEmpty extHeapP
@@ -78,7 +78,7 @@ typeMeasuresP = do
 typeMeasureP = do
   id <- symbolP
   spaces
-  v  <- parens $ symbolP
+  v  <- parens $ sepBy symbolP comma
   spaces >> reserved "=" >> spaces
   e  <- exprP
   return (id, v, e)
@@ -326,10 +326,10 @@ specWraps = betweenMany start stop
 ---------------------------------------------------------------------------------
 data PSpec l t 
   = Meas (Id l, t)
-  | MeasImpl (Symbol, [Symbol], Expr)
+  | MBody Measure
   | Bind (Id l, t) 
   | Qual Qualifier
-  | Type (Id SourceSpan, t, [TypeMeasure])
+  | Type (Id SourceSpan, t, [Measure])
   | Invt l t 
   deriving (Show)
 
@@ -344,7 +344,7 @@ specP
 measureP :: Parser (PSpec SourceSpan RefType)                     
 measureP 
   = (try (Meas <$> idBindP))
-    <|> (try (MeasImpl <$> measureImpP))
+    <|> (try (MBody <$> measureImpP))
 
 measureImpP
   = do m    <- symbolP
@@ -367,9 +367,9 @@ mkSpec xs = Nano { code   = Src []
                  , specs  = envFromList [b | Bind b <- xs] 
                  , defs   = envEmpty
                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
-                 , impls  = M.fromList  [(i, (as,e))  | MeasImpl (i, as, e) <- xs]
+                 , tMeas  = M.fromList  [(i,(i,as,e))     | MBody (i, as, e) <- xs]
+                 , tRMeas = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
                  , tDefs  = envFromList [(i,t)        | Type (i,t,_) <- xs]
-                 , tMeas  = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
                  , quals  =             [q            | Qual q <- xs]
                  , invts  =             [Loc l' t     | Invt l t <- xs, let l' = srcPos l]
                  }
@@ -390,9 +390,9 @@ mkCode ss = Nano { code   = Src (checkTopStmt <$> ss)
                  , specs  = envEmpty  
                  , defs   = envEmpty
                  , consts = envEmpty 
-                 , impls  = M.empty
                  , tDefs  = envEmpty
                  , tMeas  = M.empty
+                 , tRMeas  = M.empty
                  , quals  = [] 
                  , invts  = [] 
                  } 

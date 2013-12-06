@@ -35,15 +35,15 @@ import           Language.Nano.Types
 import qualified Language.Nano.Annots               as A
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
--- import           Language.Nano.Typecheck.WindFuns
-import           Language.Nano.Typecheck.Parse
 import           Language.Nano.Typecheck.Lower
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Typecheck  (typeCheck) 
 import           Language.Nano.Typecheck.Compare
+import           Language.Nano.Typecheck.Parse
 import           Language.Nano.SSA.SSA
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.CGMonad
+import           Language.Nano.Liquid.Measures
 import           Language.Nano.Misc
 
 import           System.Console.CmdArgs.Default
@@ -137,8 +137,8 @@ envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft
     = do (su', g') <- envAddHeap l g h
-         ts''      <- tracePP "envAddFun" <$> mapM (\t -> addHeapMeasures g' (rTypeValueVar t, t)) ts'
-         g''       <- envAdds (envBinds su' xs ts'') =<< (return $ envAddReturn f (F.subst su' t') g')
+         -- ts''      <- tracePP "envAddFun" <$> mapM (\t -> addHeapMeasures g' (rTypeValueVar t, t)) ts'
+         g''       <- envAdds (envBinds su' xs ts') =<< (return $ envAddReturn f (F.subst su' t') g')
          envAdds tyBinds g''
   where  
     (αs, yts, h, _, t)  = mfromJust "envAddFun" $ bkFun ft
@@ -269,18 +269,12 @@ consStmt g s@(FunctionStmt _ _ _ _)
   = Just <$> consFun g s
     
 consStmt g (WindAll l _)    
-  = Just <$> foldM (consWind l) (g'{ rheap = app θm $ rheap g'} ) (tracePP "consStmt WindAll" ws)
+  = Just <$> foldM (consWind l) g' ws
   where
-   --- Shouldn't have to do this here, move me!!! --
-    θm = case [fromLists [] ls | Rename ls <- ann_fact l ] of
-                  [θ] -> mempty :: RSubst F.Reft
-                  _   -> mempty
-    -------------------------------------------------
-    ws     = reverse [ (apply θm l, apply θm wls, t, fromLists αs ls)
+    ws     = reverse [ (l, wls, t, fromLists αs ls)
                      | WindInst l wls t αs ls <- ann_fact l ]
     dels   = okDels $ concat [ ls | Delete ls <- ann_fact l ]
     okDels = filter (`notElem` (concat $ snd4 <$> ws))
-    app θ  = heapFromBinds "WindAll" . map (\(l,x) -> (apply θ l, x)) . heapBinds
     g'   = g { rheap = heapFromBinds "WindAll deletes" . filter ((`notElem` dels) . fst) . heapBinds $ rheap g
              , renv  = envMap (deleteLocsTy dels) $ renv g
              }
@@ -370,8 +364,8 @@ consExpr g (NullLit l)
 
 consExpr g (VarRef i x)
   = do addAnnot l x t
-       t' <- addHeapMeasures g (rTypeValueVar t, t)
-       g' <- envAdds [(x, t')] g
+       -- t' <- addHeapMeasures g (rTypeValueVar t, t)
+       g' <- envAdds [(x, t)] g
        return ({- trace ("consExpr:VarRef" ++ ppshow x ++ " : " ++ ppshow t)-} x, tracePP "VarRef g" g') 
     where 
        t           = tracePP (printf "findTy %s" (ppshow x)) $ envFindTy x g
@@ -570,18 +564,17 @@ consWind l g (m, wls, ty, θ)
   -- What needs to be done here:
   -- Given the instantiation θ:
   -- Instantiate C[α] and add a new binder. oh wait, that is fairly easy...
-  = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
-       let xts               = (fmap (F.subst xsu) . toIdTyPair) <$> heapTypes σenv'
-           xsu               = F.mkSubst [(F.symbol x, F.eVar x')]
+  = do (σenv, (x,tw), t, ms) <- freshConsWind g l θ ty m
+       let xts               = toIdTyPair <$> heapTypes σenv'
            σw                = toId <$> σenv'
            (hsu, σenv')      = renameHeapBinds (rheap g) σenv
            g'                = g { rheap =  heapDiff (rheap g) (m:wls) }
-           x'                = hpRead m (rheap g)
            v                 = rTypeValueVar t
            wls'              = filter (`elem` (heapLocs (rheap g))) (wls)
            su                = F.mkSubst $ zip (map (F.symbol . flip hpRead σw) wls') (map (F.eVar . flip hpRead (rheap g)) wls')
            ms'               = map (\(x,y,p) -> (x,y,F.subst su p)) ms
-           p                 = F.predReft . F.PAnd . map (instProp v x' x) $ ms'
+           -- p                 = F.predReft . F.PAnd . map (instProp v x' x) $ ms'
+           p                 = error "TBD: consWind"
        g_st                 <- envAdds xts g
        subTypeWind l g_st σw (snd $ safeRefReadHeap "consWind" g_st (rheap g_st) m) $ F.subst hsu tw
        (z, g'')             <- envAdds xts g' >>= envFreshHeapBind l m
@@ -593,60 +586,89 @@ consWind l g (m, wls, ty, θ)
          toIdTyPair b  = (toId b, b_type b)
          heapDiff σ ls = foldl (flip heapDel) σ ls
 
+freshConsWind g l θ ty m
+    = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
+         let σenv' = fmap (F.subst xsu) <$> σenv'
+             tw'   = F.subst xsu tw
+             t'    = F.subst xsu t
+             ms'   = subMeas xsu <$> ms 
+         return (σenv', (x',tw), t', ms)
+    where
+      xsu                 = F.mkSubst [(x, F.eVar x')]
+      x'                  = hpRead m (rheap g)
+      subMeas su (f,as,e) = (f, as, F.subst su e)
+
+
 ---------------------------------------------------------------------------------
 consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
 ---------------------------------------------------------------------------------
 consUnwind l g (m, ty, θl) =
   do 
     (σ,s,t,αs)  <- envFindTyDef ty
-    (su,σ')     <- freshHeapEnv l σ
-    ms          <- getMeasures ty
-    (b,g')      <- envFreshHeapBind l m g
-    let θ       = θl `mappend` fromLists (zip αs vs) []
-        t'      = apply θ t
-        σ''     = apply θ σ'
-        v       = F.symbol $ heapRead "consUnwind v" m (rheap g)
-        ms'     = map (\(x,y,p) -> (x,y,F.subst su p)) ms
-        p       = F.predReft . F.PAnd . map (instProp v b s) $ ms'
-        σ'''    = instPropBind p . (F.subst (F.mkSubst [(F.symbol s, F.eVar b)]) <$>) <$> σ''
-    g''         <- envAdds [(b, strengthenObjBinds b $ F.subst su <$> t')] g'
-    (_, g''')   <- envAddHeap l g'' σ'''
-    return $ g'''
-  where 
-    vs = case safeRefReadHeap "consUnwind" g (rheap g) m of
-           (_,TApp _ vs _)  -> vs
-           p                -> error (printf "%s BUG: unwound something bad! %s" (ppshow (srcPos l)) (ppshow p))
-    
+    (σ',t',su)  <- unwindInst l (unwindTyApp l g m αs) θl (σ,t)
+    ms          <- getRMeasures ty
+    (s',g')     <- envFreshHeapBind l m g
+    let b       = F.symbol $ heapRead "consUnwind" m (rheap g)
+        p       = F.predReft . F.PAnd . map (instRMeas su b s (F.symbol s')) $ ms
+        σ''     = instPropBind p <$> σ'
+    g''         <- envAdds [(s', strengthenObjBinds s' t')] g'
+    (_, g''')   <- envAddHeap l g'' σ''
+    return $ tracePP "consUnwind g'''" g'''
+  where
+    b = heapRead "consUnwind" m $ rheap g
+  
 instPropBind prop (B x t) = B x $ strengthen t prop
+
+instRMeas hsu b' me me' (foo,[b],e)
+  = instMeasure [b'] $ (foo, [b], F.subst su e)
+  where
+    su = F.mkSubst [(me, F.eVar me')]    
+
+unwindTyApp l g m αs
+  = flip fromLists [] $ zip αs vs
+    where
+      msg   = "%s BUG: unwound something bad! %s"
+      err p = error $ printf (ppshow (srcPos l)) (ppshow p)
+      vs    = case safeRefReadHeap "consUnwind" g (rheap g) m of
+                (_,TApp _ vs _)  -> vs
+                p                -> err p
+
+unwindInst l θα θl (σ,t)
+  = do (su, σ'') <- freshHeapEnv l σ'
+       return (σ'', t', su)
+  where 
+    θ     = θα <> θl
+    σ'    = apply θ σ
+    t'    = apply θ t
 
 instProp z x' x = mkProp . instMeas (F.symbol z) (F.mkSubst [(F.symbol x, F.eVar x')])
     where      
       mkProp (i,v,e)           = F.PAtom F.Eq (F.EApp i [F.eVar v]) e 
       instMeas v' su (i, v, e) = (i, v', F.subst su $ F.subst (F.mkSubst [(v',F.eVar v)]) e)
 
-addHeapMeasures g (x, TApp TUn ts r)
-  = do ts' <- mapM (\t -> addHeapMeasures g (tracePP "addHeapMeasure vv" $ rTypeValueVar $ tracePP "addHeapMeasure t" t, t)) ts
-       return $ TApp TUn ts' r                    
+-- addHeapMeasures g (x, TApp TUn ts r)
+--   = do ts' <- mapM (\t -> addHeapMeasures g (tracePP "addHeapMeasure vv" $ rTypeValueVar $ tracePP "addHeapMeasure t" t, t)) ts
+--        return $ TApp TUn ts' r                    
 
-addHeapMeasures g (x, t@(TApp (TRef l) [] (F.Reft (vv,_))))
-  = instHeapMeasures (tracePP "addHeapMeasure vv" $ vv, t) $ heapRead "addHeapMeasures"  l $ rheap g
+-- addHeapMeasures g (x, t@(TApp (TRef l) [] (F.Reft (vv,_))))
+--   = instHeapMeasures (tracePP "addHeapMeasure vv" $ vv, t) $ heapRead "addHeapMeasures"  l $ rheap g
 
-addHeapMeasures _ (_, t)
-  = return t                
+-- addHeapMeasures _ (_, t)
+--   = return t                
 
-instHeapMeasures (x,t) b
-  = do hms <- heapMeasures <$> getMeasureImpls
-       let pred = F.PAnd $ map (instHeapMeasure (F.vv Nothing) b) hms
-       let p = tracePP "instHeapMeasures reft" (show $ rTypeReft t) `seq`F.predReft pred
-       return $ tracePP "instHeapMeasures out" (tracePP "instHeapMeasures in t" t `strengthen` tracePP "instHeapMeasures p" p)
-    where
-      heapMeasures hms = [(m,x,b,body) | (m, ([x,b], body)) <- hms]              
+-- instHeapMeasures (x,t) b
+--   = do hms <- heapMeasures <$> getMeasure
+--        let pred = F.PAnd $ map (instHeapMeasure (F.vv Nothing) b) hms
+--        let p = tracePP "instHeapMeasures reft" (show $ rTypeReft t) `seq`F.predReft pred
+--        return $ tracePP "instHeapMeasures out" (tracePP "instHeapMeasures in t" t `strengthen` tracePP "instHeapMeasures p" p)
+--     where
+--       heapMeasures hms = [(m,x,b,body) | (m, ([x,b], body)) <- hms]              
 
-instHeapMeasure x' b' (m,x,b,body)
-  = tracePP "instHeapMeasure sub" (show su) `seq` F.PAtom F.Eq lhs rhs
-    where su  = F.mkSubst [(x, F.eVar x'), (b, F.eVar b')]
-          lhs = F.EApp m [F.eVar x', F.eVar b']
-          rhs = F.subst su body
+-- instHeapMeasure x' b' (m,x,b,body)
+--   = tracePP "instHeapMeasure sub" (show su) `seq` F.PAtom F.Eq lhs rhs
+--     where su  = F.mkSubst [(x, F.eVar x'), (b, F.eVar b')]
+--           lhs = F.EApp m [F.eVar x', F.eVar b']
+--           rhs = F.subst su body
 
 consRename _ _ _
   = error "consRename"

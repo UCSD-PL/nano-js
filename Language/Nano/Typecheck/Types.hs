@@ -28,8 +28,7 @@ module Language.Nano.Typecheck.Types (
   , RHeapEnv -- l |-> x:T
   , RType (..)
   , Bind (..)
-  , TypeMeasure
-  , MeasureImpl
+  , Measure
   , TDefId
   , toType
   , ofType
@@ -151,7 +150,7 @@ data TBody r
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
 
-type TypeMeasure = (F.Symbol, F.Symbol, F.Expr) -- (name, v in keys(v) := ..., e)
+type Measure = (F.Symbol, [F.Symbol], F.Expr) -- (name, v in keys(v) := ..., e)
 
 -- | Type Constructors
 data TCon 
@@ -443,9 +442,9 @@ data Nano a t =
          , specs  :: !(Env t)                  -- ^ Imported Specifications
          , defs   :: !(Env t)                  -- ^ Signatures for Code
          , consts :: !(Env t)                  -- ^ Measure Signatures 
-         , impls  :: !(M.HashMap F.Symbol ([F.Symbol], F.Expr)) -- ^ Measure implementations
          , tDefs  :: !(Env t)                  -- ^ Type definitions
-         , tMeas  :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ Type (recursive) measure definitions
+         , tMeas  :: !(M.HashMap F.Symbol Measure) -- ^ Measure implementations
+         , tRMeas :: !(M.HashMap F.Symbol [Measure]) -- ^ Type (recursive) measure definitions
          , quals  :: ![F.Qualifier]            -- ^ Qualifiers
          , invts  :: ![Located t]              -- ^ Type Invariants
          } deriving (Functor, Data, Typeable)
@@ -457,8 +456,6 @@ type NanoTypeR r   = Nano (AnnType_ r) (RType r)
 type NanoBare   = NanoBareR ()
 type NanoSSA    = NanoSSAR ()
 type NanoType   = NanoTypeR ()
-
-type MeasureImpl = (F.Symbol, ([F.Symbol], F.Expr))
 
 {-@ measure isFunctionStatement :: (Statement SourceSpan) -> Prop 
     isFunctionStatement (FunctionStmt {}) = true
@@ -488,7 +485,7 @@ instance PP t => PP (Nano a t) where
     $+$ pp (consts pgm) 
     $+$ text "********************** TYPE DEFS *****************"
     $+$ pp (tDefs  pgm)
-    $+$ text "********************** TYPE MEASURES *************"
+    $+$ text "********************** MEASURES *************"
     $+$ (vcat . (pp <$>) . M.toList $ tMeas  pgm)
     $+$ text "********************** QUALS *********************"
     $+$ F.toFix (quals  pgm) 
@@ -497,8 +494,17 @@ instance PP t => PP (Nano a t) where
     $+$ text "**************************************************"
     
 instance Monoid (Nano a t) where 
-  mempty        = Nano (Src []) envEmpty envEmpty envEmpty M.empty envEmpty M.empty [] [] 
-  mappend p1 p2 = Nano ss e e' cs ims tds tms qs is 
+  mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty M.empty M.empty [] [] 
+  mappend p1 p2 = Nano { code   = ss
+                       , specs  = e
+                       , defs   = e'
+                       , consts = cs 
+                       , tDefs  = tds
+                       , tMeas  = tms
+                       , tRMeas = trms
+                       , quals  = qs
+                       , invts  = is
+                       }
     where 
       ss        = Src $ s1 ++ s2
       Src s1    = code p1
@@ -508,15 +514,15 @@ instance Monoid (Nano a t) where
       cs        = envFromList $ (envToList $ consts p1) ++ (envToList $ consts p2)
       tds       = envFromList $ (envToList $ tDefs p1) ++ (envToList $ tDefs p2)
       tms       = M.fromList $ (M.toList $ tMeas p1) ++ (M.toList $ tMeas p2)
+      trms      = M.fromList $ (M.toList $ tRMeas p1) ++ (M.toList $ tRMeas p2)
       qs        = quals p1 ++ quals p2
       is        = invts p1 ++ invts p2
-      ims       = M.fromList $ (M.toList $ impls p1) ++ (M.toList $ impls p2)
 
 mapCode :: (a -> b) -> Nano a t -> Nano b t
 mapCode f n = n { code = fmap f (code n) }
 
-instance PP (F.Symbol, F.Symbol, F.Expr) where
-    pp (m, x, e) = pp m <+> ppArgs parens comma [x] <+> text ":=" <+> text (show e)
+instance PP (F.Symbol, [F.Symbol], F.Expr) where
+    pp (m, xs, e) = pp m <+> ppArgs parens comma xs <+> text "=" <+> text (show e)
 
 ---------------------------------------------------------------------------
 -- | Pretty Printer Instances ---------------------------------------------

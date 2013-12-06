@@ -107,10 +107,12 @@ type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
 
   and len(x) = (if (ttag(field(me,"next")) != "null") then 1 + len(tl) else 1) */
 
-/*@ measure hd :: forall A. (tree[A]) => A                              */
+/*@ measure hd :: forall A. (tree[A]) => A                               */
 /*@ measure heightf  :: forall A. (tree[A]) => number                    */
-/*@ measure heightp :: forall A. (<l>+null,tree[A]) => number           */
-/*@ measure heightp(x,p) = (if (x = null) then 0 else heightf(p))        */
+/*@ measure heightp :: forall A. (x:<l>+null)/l |-> t:tree[A] => number  */
+/* heightp(x:<l>)  = height(*x) */
+/* heightp(x:null) = 0          */
+                          
 
 /*@ type tree[A] exists! l |-> sls:tree[{A | v < field(me, "data")}]
                        * r |-> srs:tree[{A | v > field(me, "data")}]

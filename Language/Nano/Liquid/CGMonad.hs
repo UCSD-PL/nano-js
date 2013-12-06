@@ -21,7 +21,7 @@ module Language.Nano.Liquid.CGMonad (
   -- * Get Defined Types
   , getTDefs
   , getMeasures
-  , getMeasureImpls
+  , getRMeasures
     
   -- * Get Current Function
   , getFun, withFun
@@ -150,7 +150,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) (impls pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -181,15 +181,22 @@ getTDefs :: CGM (E.Env RefType)
 getTDefs  = cg_tdefs <$> get
 
 ---------------------------------------------------------------------------------------
-getMeasures :: (F.Symbolic s) => s -> CGM [TypeMeasure]             
+getMeasures :: (F.Symbolic s) => s -> CGM [Measure]
 ---------------------------------------------------------------------------------------
-getMeasures t = do m <- cg_tmeas <$> get
-                   let x = tracePP "Measures:" (M.toList m)
-                   return $ M.lookupDefault [] (F.symbol t) m
+getMeasures = error "TBD: getMeasures"
+-- getMeasures t = do m <- cg_tmeas <$> get
+--                    let x = tracePP "Measures:" (M.toList m)
+--                    maybe err return $ M.lookup [] (F.symbol t) m
+--     where
+--       err = error $ "BUG: unbound measure %s"
 
-                   
-getMeasureImpls :: CGM [(F.Symbol, ([F.Symbol], F.Expr))]
-getMeasureImpls = M.toList <$> cg_impls <$> get
+---------------------------------------------------------------------------------------
+getRMeasures :: (F.Symbolic s) => s -> CGM [Measure]             
+---------------------------------------------------------------------------------------
+getRMeasures t = do m <- cg_trmeas <$> get
+                    let x = tracePP "Rec Measures:" (M.toList m)
+                    return $ M.lookupDefault [] (F.symbol t) m
+
 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
@@ -263,8 +270,8 @@ data CGState
         , cg_fun   :: !(Maybe F.Symbol)    -- ^ current function
         , cg_defs  :: !(E.Env RefType)     -- ^ type sigs for all defined functions
         , cg_tdefs :: !(E.Env RefType)     -- ^ type definitions
-        , cg_tmeas :: !(M.HashMap F.Symbol [TypeMeasure]) -- ^ (recursive) type measure definitions
-        , cg_impls :: !(M.HashMap F.Symbol ([F.Symbol], F.Expr))
+        , cg_tmeas :: !(M.HashMap F.Symbol Measure)   -- ^ (regular) measure definitions
+        , cg_trmeas:: !(M.HashMap F.Symbol [Measure]) -- ^ (recursive) type measure definitions
         , cs       :: ![SubC]              -- ^ subtyping constraints
         , ws       :: ![WfC]               -- ^ well-formedness constraints
         , count    :: !Integer             -- ^ freshness counter
@@ -529,14 +536,14 @@ freshTyInst l g αs τs tbody
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
                CGEnv -> l -> RSubst F.Reft -> Id SourceSpan
-               -> CGM (RHeapEnv F.Reft, (F.Symbol, RefType), RefType, [TypeMeasure])
+               -> CGM (RHeapEnv F.Reft, (F.Symbol, RefType), RefType, [Measure])
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
   = do (σ,s,t,vs)  <- envFindTyDef ty
        let (αs,ls)  = toLists θ
        θ'          <- flip fromLists ls <$> mapM freshSubst αs
        (su,σ')     <- freshHeapEnv l (apply (tracePP "freshTyWind inst" θ') $ tracePP "freshTyWind sig" σ)
-       ms          <- (instMeas su <$>) <$> getMeasures (tracePP "freshTyWind" ty)
+       ms          <- (instMeas su <$>) <$> getRMeasures (tracePP "freshTyWind" ty)
        -- g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
        return (tracePP "freshTyWind sig out" σ', (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms)
     where 
