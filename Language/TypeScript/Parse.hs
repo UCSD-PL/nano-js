@@ -5,6 +5,7 @@ import Text.XML.Light
 import Text.Regex.Posix
 import Language.ECMAScript3.Syntax
 import Language.Nano.Typecheck.Types
+import Language.Fixpoint.Types as F (Symbol, stringSymbol)
 
 
 split     :: (Char -> Bool) -> String -> [String]
@@ -34,8 +35,16 @@ createPairs :: Element -> [(String, Element)]
 createPairs el  = [ (qName (elName e), e) | x@(Elem e) <- (elContent el)]
 
 
-getChildByTag :: Element -> String -> [(String,Element)]
-getChildByTag el str = let target x = ((fst x) == str) in filter target (createPairs el)
+getChildByTag :: Element -> String -> [Element]
+getChildByTag el str = 
+  let target x = ((fst x) == str) in 
+  map snd (filter target (createPairs el))
+
+getUChildByTag :: Element -> String -> Element
+getUChildByTag el str = 
+  let pairs = getChildByTag el str in
+  if length pairs > 1 then error ("The tag "++qName (elName el)++" should only have one child of tag"++str++".")
+    else pairs!!0
 
 getChildByRegex :: Element -> String -> [(String,Element)]
 getChildByRegex el str = let target x = (((fst x) =~ str)::Bool) in filter target (createPairs el)
@@ -71,15 +80,15 @@ xml2statement ("IfStatement",elmt) =
   -- if with else
   else IfStmt Nothing (xml2expression (exprParts!!0)) 
                       (xml2statement (exprParts!!1)) 
-                      (xml2statement $ (getChildByTag elmt "ElseClause")!!0) 
+                      (xml2statement ("ElseClause",getUChildByTag elmt "ElseClause")) 
 --ElseClause can only have one clause (might be a block to contain more than one statement)
 xml2statement ("ElseClause",elmt) = xml2statement (getUniqueChild elmt)
 --ForStatement has four children.
 xml2statement ("ForStatement",elmt) =
-  ForStmt Nothing (forinit_expression (snd $ getChildByTag elmt "ForLoopInit"!!0))
-                  (forcond_expression (snd $ getChildByTag elmt "ForLoopTest"!!0))
-                  (forincr_expression (snd $ getChildByTag elmt "ForLoopInc"!!0))
-                  (xml2statement $ (createPairs (snd $ getChildByTag elmt "ForLoopBody"!!0))!!0)             
+  ForStmt Nothing (forinit_expression (getUChildByTag elmt "ForLoopInit"))
+                  (forcond_expression (getUChildByTag elmt "ForLoopTest"))
+                  (forincr_expression (getUChildByTag elmt "ForLoopInc"))
+                  (xml2statement $ (createPairs (getUChildByTag elmt "ForLoopBody"))!!0)             
 --ForInStatement: three children: the iterator, the iterable and the block
 xml2statement ("ForInStatement",elmt) =
   let pairs = createPairs elmt in
@@ -114,12 +123,12 @@ xml2statement ("ContinueStatement",elmt) =
 --and a Statement of any kind (only one!)
 xml2statement ("LabeledStatement",elmt) = 
   let exprParts = createPairs elmt in
-  LabelledStmt Nothing (Id Nothing (getText (snd $ (getChildByTag elmt "IdentifierName")!!0))) 
+  LabelledStmt Nothing (Id Nothing (getText (getUChildByTag elmt "IdentifierName"))) 
                        (xml2statement $ (createPairs elmt)!!1)
 --VaribleStatement contisn a list of modifiers and the variabledeclaration statement wich contains a separatedlist
 xml2statement ("VariableStatement",elmt) = 
-  let sepList = snd $ (getChildByRegex (snd $ (getChildByTag elmt "VariableDeclaration")!!0) "(.)*List$")!!0 in
-  VarDeclStmt Nothing (map variabledeclarator_expression (map snd (getChildByTag sepList "VariableDeclarator")))
+  let sepList = snd $ (getChildByRegex (getUChildByTag elmt "VariableDeclaration") "(.)*List$")!!0 in
+  VarDeclStmt Nothing (map variabledeclarator_expression (getChildByTag sepList "VariableDeclarator"))
 --SwitchStatement contains the test expression and a list of Case/DefaultSwitchDlause
 xml2statement ("SwitchStatement",elmt) =
   let children = createPairs elmt in 
@@ -136,9 +145,10 @@ xml2statement ("ThrowStatement",elmt) =
 --FunctionDeclaration contains modifiers, name,args and body.
 xml2statement ("FunctionDeclaration",elmt) =
   let children = createPairs elmt in
-  FunctionStmt Nothing (Id Nothing(getText $ snd $ getChildByTag elmt "IdentifierName"!!0 )) 
-                       (xml2list_id (getUniqueChild (snd $ getChildByTag elmt "CallSignature"!!0))) 
-                       [(xml2statement (children!!3))]
+  FunctionStmt (get_function_type elmt) 
+               (Id Nothing(getText $ getUChildByTag elmt "IdentifierName" )) 
+               (xml2list_id ("ParameterList",(getUChildByTag (getUChildByTag elmt "CallSignature") "ParameterList"))) 
+               [(xml2statement (children!!3))]
 --TryStatement 
 xml2statement ("TryStatement",elmt) = trycatchfinnaly_statement elmt
 --FinallyClause contains only one child
@@ -324,10 +334,10 @@ variabledeclarator_expression :: Element -> VarDecl (Maybe (RType ()))
 variabledeclarator_expression el =
     let varAndInit = (createPairs el) in
     if length varAndInit == 1 then -- no initialization
-      VarDecl (get_type_annotation el) (Id Nothing (getText $ snd $ (getChildByTag el "IdentifierName")!!0)) Nothing
+      VarDecl (get_type_annotation el) (Id Nothing (getText $ getUChildByTag el "IdentifierName")) Nothing
     else --initialization
-      VarDecl (get_type_annotation el) (Id Nothing (getText $ snd $ (getChildByTag el "IdentifierName")!!0)) 
-                      (Just (xml2expression $ (getChildByTag el "EqualsValueClause")!!0))
+      VarDecl (get_type_annotation el) (Id Nothing (getText $ getUChildByTag el "IdentifierName")) 
+                      (Just (xml2expression ("EqualsValueClause",getUChildByTag el "EqualsValueClause")))
 
 caseclause_expression :: (String,Element) -> CaseClause (Maybe (RType ()))
 caseclause_expression ("CaseSwitchClause",el) = 
@@ -401,25 +411,34 @@ propertyassigment_expression (s,el) =
 
 get_function_type :: Element -> (Maybe (RType ()))
 get_function_type el = 
-  let signature = getChildByTag el "CallSignature" in
-  let parlist = getChildByTag signature "ParameterList" in
-  let params = getUniqueChild parlist in
-  TFun (function_parameter_types_list params) (function_return_type el) ()
+  let signature = getUChildByTag el "CallSignature" in
+  let parlist = getUChildByTag signature "ParameterList" in
+  let params = snd $ getUniqueChild parlist in
+  Just (TFun (function_parameter_types_list params) (function_return_type signature) ())
 
 
 function_parameter_types_list :: Element -> [Bind ()]
-function_parameter_types_list sparatedlist =
+function_parameter_types_list separatedlist =
   let params = createPairs separatedlist in
-  let fn a (_,el) = (B {b_sym = getText (fst (getChildByTag el "IdentifierName")), 
-      b_type = fst (getChildByTag el "TypeAnnotation")}) : a in
+  let fn acc (_,el) = (format_par_type el):acc in
   foldl fn [] params
 
+format_par_type :: Element -> Bind ()
+format_par_type el =
+  let (x,t) = parameter_name_type el in 
+  case t of
+    Nothing ->     (B (F.stringSymbol x) (TApp TAny [] ()))
+    Just ty ->     (B (F.stringSymbol x) ty)
 
+parameter_name_type :: Element -> (String, Maybe(RType ()))
+parameter_name_type el = ((getText (getUChildByTag el "IdentifierName")),
+                          get_type_annotation el)
 
 function_return_type :: Element -> RType ()
+function_return_type el =
   let typeannotation = get_type_annotation el in
        case get_type_annotation el  of 
-                Nothing -> Tapp TAny [] () --return anything??
+                Nothing -> TApp TVoid [] ()
                 Just typeannotation  -> typeannotation
 
 
@@ -428,7 +447,7 @@ get_type_annotation el =
   let typeannotations = getChildByTag el "TypeAnnotation" in
   if length typeannotations > 1 then error ("Too many type type annotations")
   else if length typeannotations == 0 then Nothing
-  else let typeannotation = snd $ typeannotations!!0 in
+  else let typeannotation = typeannotations!!0 in
   let keyword_tag = getUniqueChild typeannotation in
   Just (convert_type_keyword keyword_tag)
 
