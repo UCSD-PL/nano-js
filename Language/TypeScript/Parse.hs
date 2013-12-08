@@ -420,7 +420,7 @@ get_function_type el =
 function_parameter_types_list :: Element -> [Bind ()]
 function_parameter_types_list separatedlist =
   let params = createPairs separatedlist in
-  let fn acc (_,el) = (format_par_type el):acc in
+  let fn acc (_,el) = acc++[format_par_type el] in
   foldl fn [] params
 
 format_par_type :: Element -> Bind ()
