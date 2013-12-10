@@ -28,6 +28,8 @@ module Language.Nano.Types (
   , isSpecification
   , returnSymbol
   , returnId
+  , nilSymbol
+  , nilId
   , symbolId
   , mkId
 
@@ -268,16 +270,23 @@ mkId = Id (initialPos "")
 returnName :: String
 returnName = "$result"
 
+nilName :: String
+nilName = "$nil"
+
 symbolId :: (IsLocated l, F.Symbolic x) => l -> x -> Id l
 symbolId l x = Id l $ F.symbolString $ F.symbol x
 
 returnId   :: a -> Id a
 returnId x = Id x returnName 
 
+nilId   :: a -> Id a
+nilId x = Id x nilName 
+
 returnSymbol :: F.Symbol
 returnSymbol = F.stringSymbol returnName
 
-
+nilSymbol :: F.Symbol
+nilSymbol = F.stringSymbol nilName
 
 isSpecification :: Statement a -> Bool
 isSpecification s  = not $ null $ catMaybes $ ($ s) <$> specs 

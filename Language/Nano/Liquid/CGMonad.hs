@@ -20,8 +20,10 @@ module Language.Nano.Liquid.CGMonad (
 
   -- * Get Defined Types
   , getTDefs
+  , getMEnv
   , getMeasures
   , getRMeasures
+  , addMeasuresM
     
   -- * Get Current Function
   , getFun, withFun
@@ -100,6 +102,7 @@ import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Unify
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
+import           Language.Nano.Liquid.Measures
 
 
 import qualified Language.Fixpoint.Types as F
@@ -150,7 +153,7 @@ execute cfg pgm act
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (consts pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -181,14 +184,14 @@ getTDefs :: CGM (E.Env RefType)
 getTDefs  = cg_tdefs <$> get
 
 ---------------------------------------------------------------------------------------
-getMeasures :: (F.Symbolic s) => s -> CGM [Measure]
+getMEnv :: CGM (E.Env RefType)            
 ---------------------------------------------------------------------------------------
-getMeasures = error "TBD: getMeasures"
--- getMeasures t = do m <- cg_tmeas <$> get
---                    let x = tracePP "Measures:" (M.toList m)
---                    maybe err return $ M.lookup [] (F.symbol t) m
---     where
---       err = error $ "BUG: unbound measure %s"
+getMEnv   = cg_meas <$> get
+
+---------------------------------------------------------------------------------------
+getMeasures :: CGM [Measure]
+---------------------------------------------------------------------------------------
+getMeasures = cg_tmeas <$> get >>= (return . map snd . M.toList)
 
 ---------------------------------------------------------------------------------------
 getRMeasures :: (F.Symbolic s) => s -> CGM [Measure]             
@@ -197,6 +200,14 @@ getRMeasures t = do m <- cg_trmeas <$> get
                     let x = tracePP "Rec Measures:" (M.toList m)
                     return $ M.lookupDefault [] (F.symbol t) m
 
+addMeasuresM g b
+    = do γt    <- getTDefs
+         γm    <- getMEnv
+         ms    <- getMeasures
+         return $ addMeasures γm γt ms σ b
+       where
+         σ      = bind <$> rheap g
+         bind x = B (F.symbol x) (envFindTy x g)
 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
@@ -269,6 +280,7 @@ data CGState
   = CGS { binds    :: F.BindEnv            -- ^ global list of fixpoint binders
         , cg_fun   :: !(Maybe F.Symbol)    -- ^ current function
         , cg_defs  :: !(E.Env RefType)     -- ^ type sigs for all defined functions
+        , cg_meas  :: !(E.Env RefType)     -- ^ type sigs for measures
         , cg_tdefs :: !(E.Env RefType)     -- ^ type definitions
         , cg_tmeas :: !(M.HashMap F.Symbol Measure)   -- ^ (regular) measure definitions
         , cg_trmeas:: !(M.HashMap F.Symbol [Measure]) -- ^ (recursive) type measure definitions
@@ -542,10 +554,10 @@ freshTyWind g l θ ty
   = do (σ,s,t,vs)  <- envFindTyDef ty
        let (αs,ls)  = toLists θ
        θ'          <- flip fromLists ls <$> mapM freshSubst αs
-       (su,σ')     <- freshHeapEnv l (apply (tracePP "freshTyWind inst" θ') $ tracePP "freshTyWind sig" σ)
+       (su,σ')     <- freshHeapEnv l (apply θ' σ)
        ms          <- (instMeas su <$>) <$> getRMeasures (tracePP "freshTyWind" ty)
        -- g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return (tracePP "freshTyWind sig out" σ', (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms)
+       return (tracePP (printf "freshTyWind sig out [%s] [%s]" (show su) (show ms)) σ', (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms)
     where 
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l
@@ -612,16 +624,19 @@ updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
   l -> CGEnv -> Id SourceSpan -> Id SourceSpan -> f -> Id l -> CGM CGEnv
 ---------------------------------------------------------------------------------------
 updateFieldM l g x x' f y
-  = do let t_obj       = tracePP "t_obj" $ envFindTy x g
-           t_fld       = tracePP "deref" $ envFindTy y g
-       (y', g')       <- envAddFresh l t_fld g
-       (t_obj', g'')  <- freshObjBinds l g' $ strengthenObjBinds x' $ updateField (envFindTy y' g') s t_obj
-       envAdds [(tracePP "updateFieldM x'" x', tracePP "updateFieldM t_obj'" t_obj')] g''
-       -- return $ (tracePP "updateField" $ updateField (envFindTy y' g') s t_obj, g')
+  = do let t_obj       = envFindTy x g
+           t_fld       = envFindTy y g
+       (y', g')        <- envAddFresh l t_fld g
+       let t_obj'      = updateField (envFindTy y' g') s t_obj
+       t_objm          <- addMeasObjBinds g' t_obj'
+       (t_objm', g'')  <- freshObjBinds l g' $ strengthenObjBinds x' t_objm
+       envAdds [(x',  t_objm')] g''
     where   
       s           = F.symbol f
       deref x t b = t `eSingleton` (field x b)
 
+addMeasObjBinds g (TObj bs r)                    
+    = mapM ((tracePP "addMeasObjBinds2" <$>) . addMeasuresM g . tracePP "addMeasObjBinds1") bs >>= \bs' -> return (TObj bs' r)
 
 -- HACK
 field x y = F.EApp (F.symbol "field") [F.expr $ F.symbol x, bind2sym y]
@@ -796,15 +811,20 @@ alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
  
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
+------------------------------------------------------------------------------------------
 renameHeapBinds :: RefHeap -> RHeapEnv F.Reft -> (F.Subst, RHeapEnv F.Reft)
+------------------------------------------------------------------------------------------
 renameHeapBinds σ1 σ2
   = (su, fmap (F.subst su) <$> σ2)
   where l1s = heapLocs σ1
         l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
-        xs  = map (F.eVar . flip (heapRead "renameHeapBinds") σ1) ls
-        ys  = map (b_sym <$> flip (heapRead "renameHeapBinds") σ2) ls
-        su  = F.mkSubst $ zip ys xs
+        nil = filter (`notElem` l1s) l2s
+        xs  = map (F.eVar . lx σ1) ls
+        ys  = map (b_sym <$> lx σ2) ls
+        nys = map (b_sym <$> lx σ2) nil
+        su  = F.mkSubst $ (zip ys xs ++ (zip nys (repeat (F.eVar nilSymbol))))
+        lx  = flip (heapRead "renameHeapBinds")
 
 ------------------------------------------------------------------------------------------
 strengthenUnion :: RefType -> RefType

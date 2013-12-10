@@ -69,6 +69,10 @@ module Language.Nano.Typecheck.Types (
   , tNull
   , tRef
 
+  -- * Nil
+  , nilLoc
+  , nilBind
+
   -- * Operator Types
   , infixOpTy
   , prefixOpTy 
@@ -85,6 +89,7 @@ module Language.Nano.Typecheck.Types (
     
   , restrictHeap  
   , locs
+  , locsNil
   , deleteLocsTy
   ) where 
 
@@ -171,6 +176,9 @@ type TDefId = Id SourceSpan
 type RHeap r = Heap (RType r)    
 type RHeapEnv r = Heap (Bind r)
 
+nilLoc  = "?null"
+nilBind = B nilSymbol tUndef
+
 -- | (Raw) Refined Types 
 data RType r  
   = TApp  TCon [RType r]                               r
@@ -202,15 +210,26 @@ ofType :: (F.Reftable r) => Type -> RType r
 ofType = fmap (const F.top)
 
 locs :: RType r -> [Location]
-locs t             = L.nub (go t)
+locs = locs' locsNonNil'
+
+locsNil :: RType r -> [Location]
+locsNil = locs' locsNil'
+
+locs' f t             = L.nub (go t)
   where
-    go (TApp c ts _) = locs' c ++ (concatMap go ts)
+    go (TApp c ts _) = f c ++ (concatMap go ts)
     go (TObj bs _)   = concatMap (go . b_type) bs
     go _             = []
 
-locs' :: TCon -> [Location]
-locs' (TRef l) = [l]
-locs' _        = []
+locsNonNil' :: TCon -> [Location]
+locsNonNil' (TRef l) = [l]
+locsNonNil' _        = []
+
+locsNil' :: TCon -> [Location]
+locsNil' (TRef l) = [l]
+locsNil' TNull    = [nilLoc]
+locsNil' _        = []
+
 
 -- | RHeap utils
 ---------------------------------------------------------------------------------

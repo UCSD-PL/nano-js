@@ -1,14 +1,21 @@
 //import "singly-linked-list.js"
 
-/*@ copy :: forall A. (x:<l>+null)/l |-> ls:list[A] => {v:<m>+null | ((x != null) <=> (v != null))}
-                                  /l |-> nls:{list[A] | (keys(v) = keys(ls) && len(v) = len(ls)) }
-                                 * m |-> {list[A] | (len(v) = len(ls) && keys(v) = keys(ls))} */
+/*@
+  copy :: forall A.
+    (x:<l>+null)/l |-> xs:list[A]
+      => {v:<m>+null | ((lenp(v,ms) = lenp(x,xs))
+                     && (keysp(v,ms) = keysp(x,xs)))}
+        /l |-> xss:list[A] * m |-> ms:list[A]
+*/
 function copy(x){
   if (x == null){
-    return null;
+    var ret = null;
+    return ret;
   } else {
     var u  = copy(x.next);
-    var t  = {data: x.data, next : u};
+    var d  = x.data;
+    var n  = u;
+    var t  = {data: d, next: n};
     return t;
   } 
 }

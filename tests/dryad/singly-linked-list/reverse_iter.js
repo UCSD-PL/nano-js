@@ -1,13 +1,10 @@
 //import "singly-linked-list.js"
 
-/*@ reverseLoop :: forall A. (i:<i>+null, j:<j>+null)/i |-> is:list[A] * j |-> js:list[A]
-                                 => {v:<k>+null | ((v = null) <=> ((i = null) && (j = null)))}/
-                                 k |-> {list[A] | (if (i = null)
-                                                      then ((len(v) = len(js)) && (keys(v) = keys(js)))
-                                                      else (if (j = null)
-                                                               then ((len(v) = len(is)) && (keys(v) = keys(is)))
-                                                               else ((len(v) = len(is) + len(js))
-                                                                  && (keys(v) = Set_cup(keys(is), keys(js))))))}
+/*@ reverseLoop :: forall A.
+  (i:<i>+null, j:<j>+null)/i |-> is:list[A] * j |-> js:list[A]
+    => {v:<k>+null | ((lenp(v,ks) = lenp(i,is) + lenp(j,js))
+                   && (keysp(v,ks) = Set_cup(keysp(i,is),keysp(j,js)))) }
+    /k |-> ks:list[A]
 */
 function reverseLoop(i, j){
   if (i != null) {
@@ -20,9 +17,10 @@ function reverseLoop(i, j){
   }
 }
 
-/* reverse :: (x:list[A])/h => {v:list[A]}/v |-> keys(v) = keys(x,h) */
-
-/*@ reverse :: forall A. (x:<x>)/x |-> xs:list[A] => <y>/y |-> ys:list[{A | true}]*/
+/*@ reverse :: forall A.
+  (x:<x>)/x |-> xs:list[A] => {v:<y>+null | ((lenp(v,ys) = lenp(x,xs))
+                                          && (keysp(v,ys) = keysp(x,xs))) }
+                              /y |-> ys:list[A]*/
 function reverse(x){
   var y = null;
   var r = reverseLoop(x,y);

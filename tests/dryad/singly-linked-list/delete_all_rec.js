@@ -1,10 +1,11 @@
 //import "singly-linked-list.js"
 
-/*@ remove :: forall A. (x:<l>+null, k:A)/l |-> as:list[A]
-                              => {v:<m>+null | ((v = null) <=> ((keys(as) = Set_sng(k)) || (x = null))) }
-                                  /m |-> bs:{list[A] | (if (lqreturn != null)
-                                                           then (keys(v) = Set_dif(keys(as), Set_sng(k)))
-                                                           else (Set_emp(keys(v))))} */
+/*@
+  remove :: forall A.
+    (x:<l>+null, k:A)/l |-> xs:list[A]
+     => {v:<m>+null | (keysp(v,ms) = Set_dif(keysp(x,xs),Set_sng(k)))}
+        /m |-> ms:list[A]
+*/
 function remove(x, k){
   if (x != null) {
     var xn = x.next;
@@ -17,6 +18,7 @@ function remove(x, k){
       return x;
     }
   } else {
-    return null;
+    r = null;
+    return r;
   } 
 }

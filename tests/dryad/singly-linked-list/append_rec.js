@@ -19,10 +19,15 @@
                                                                  then ((len(v) = len(ys)) && (keys(v) = keys(ys)))
                                                                  else true))}
 */
-/*@ append:: forall A. (x1:<l>+null,x2:<m>+null)/l |-> xs:list[A] * m |-> ys:list[A]
-                                  => {v:<k>+null | ((((x1 != null) || (x2 != null)) <=> (v != null))
-                                                    && (lenp(v,zs) = lenp(x1,xs) + lenp(x2,ys)))}
-                                     /k |-> zs:list[A]
+
+
+
+
+/*@ append:: forall A.
+  (x1:<l>+null,x2:<m>+null)/l |-> x1s:list[A] * m |-> x2s:list[A]
+   => {v:<k>+null | ((lenp(v,ks) = lenp(x1,x1s) + lenp(x2,x2s))
+                  && (keysp(v,ks) = Set_cup(keysp(x1,x1s),keysp(x2,x2s))))}
+      /k |-> ks:list[A]
 */
 function append(x1, x2){
   if (x1 != null){
