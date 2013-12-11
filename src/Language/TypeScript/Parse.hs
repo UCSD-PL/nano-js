@@ -23,8 +23,11 @@ parseTypeScript fts
 
 
 -- | convertTs2XML takes a path to a .ts file and converts and returns a path to a .xml file
-convertTs2XML :: FilePath -> IO FilePath
-convertTs2XML = error "TODO: convertTs2XML"
+convertTs2XML     :: FilePath -> IO FilePath
+convertTs2XML fts = executeShellCommand "ts2xml" $ convertCommand fts
+
+convertCommand     :: FilePath -> String
+convertCommand fts = error "TODO: convertTs2XML"
 
 
 parseTypeScriptXML :: FilePath -> IO (JavaScript (Maybe Type))
