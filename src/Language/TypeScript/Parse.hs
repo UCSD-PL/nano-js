@@ -17,7 +17,18 @@ main = do (arg :_) <- getArgs
 
 
 parseTypeScript :: FilePath -> IO (JavaScript (Maybe Type))
-parseTypeScript arg =
+parseTypeScript fts
+  = do fxml <- convertTs2XML f
+       parseTypeScriptXML fxml
+
+
+-- | convertTs2XML takes a path to a .ts file and converts and returns a path to a .xml file
+convertTs2XML :: FilePath -> IO FilePath
+convertTs2XML = error "TODO: convertTs2XML"
+
+
+parseTypeScriptXML :: FilePath -> IO (JavaScript (Maybe Type))
+parseTypeScriptXML arg =
   do contents <- readFile arg
      case parseXMLDoc contents of -- returns a Maybe Element
         Nothing     -> error "Failed to parse xml"
