@@ -2,6 +2,8 @@
 import qualified Language.Nano.ESC.ESC              as ESC
 import qualified Language.Nano.Typecheck.Typecheck  as TC 
 import qualified Language.Nano.Liquid.Liquid        as Liquid 
+import qualified Language.TypeScript.Parse          as TS 
+
 import           Language.Nano.CmdLine              (getOpts)
 import           Language.Nano.Errors
 import           Language.Nano.Types
@@ -28,6 +30,8 @@ main = do cfg  <- getOpts
 verifier (Esc    {} ) = ESC.verifyFile 
 verifier (TC     {} ) = TC.verifyFile
 verifier (Liquid {} ) = Liquid.verifyFile
+verifier (TS {})      = tsVerifyFile
+
 
 run verifyFile cfg 
   = do rs   <- mapM (runOne verifyFile) $ files cfg
@@ -63,3 +67,12 @@ renderAnnotations srcFile res (SomeAnn ann sol)
        annFile  = extFileName Annot srcFile
        ann'     = sol ann
 
+----------------------------------------------------------------------------------
+-- tsVerifyFile :: Config -> FilePath -> IO (F.FixResult Error)  
+----------------------------------------------------------------------------------
+tsVerifyFile cfg f 
+  = do pgm <- parseTypeScript f
+       putStrLn $ "******************* Converted TS TO ***************************"
+       putStrLn $ render $ pp pgm
+       putStrLn $ "***************************************************************"
+       return (NoAnn, F.Safe)
