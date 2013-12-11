@@ -93,6 +93,8 @@ data Config
            , incdirs     :: [FilePath]     -- ^ path to directory for include specs
            , kVarInst    :: Bool           -- ^ instantiate function types with k-vars
            }
+  | TS     { files       :: [FilePath]     -- ^ source files to check
+           }
   deriving (Data, Typeable, Show, Eq)
 
 

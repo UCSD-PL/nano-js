@@ -70,9 +70,9 @@ renderAnnotations srcFile res (SomeAnn ann sol)
 ----------------------------------------------------------------------------------
 -- tsVerifyFile :: Config -> FilePath -> IO (F.FixResult Error)  
 ----------------------------------------------------------------------------------
-tsVerifyFile cfg f 
-  = do pgm <- parseTypeScript f
+tsVerifyFile f 
+  = do pgm <- TS.parseTypeScript f
        putStrLn $ "******************* Converted TS TO ***************************"
-       putStrLn $ render $ pp pgm
+       putStrLn $ render $ javaScript pgm
        putStrLn $ "***************************************************************"
        return (NoAnn, F.Safe)
