@@ -1,3 +1,6 @@
+module Language.TypeScript.Parse (parseTypeScript) where
+
+
 import System.Environment
 import System.IO
 import Data.List
@@ -7,6 +10,18 @@ import Language.ECMAScript3.Syntax
 import Language.Nano.Typecheck.Types
 import Language.Fixpoint.Types as F (Symbol, stringSymbol)
 
+
+
+main = do (arg :_) <- getArgs
+          parseTypeScript arg
+
+
+parseTypeScript :: FilePath -> IO (JavaScript (Maybe Type))
+parseTypeScript arg =
+  do contents <- readFile arg
+     case parseXMLDoc contents of -- returns a Maybe Element
+        Nothing     -> error "Failed to parse xml"
+        Just rootEl -> return $ xml2script rootEl
 
 split     :: (Char -> Bool) -> String -> [String]
 split p s = case dropWhile p s of
@@ -22,11 +37,6 @@ removequotes s =
   else if (last s) == '\"' || (last s) == '\'' then (init s)
     else s
 
-main = do (arg :_) <- getArgs
-          contents <- readFile arg
-          case parseXMLDoc contents of -- returns a Maybe Element
-                Nothing -> error "Failed to parse xml"
-                Just rootEl  -> print (xml2script rootEl)--print (xml2statement (qName(elName rootEl),rootEl))
 
 
 --Takes an element and creates a list of pairs (s,e) where
