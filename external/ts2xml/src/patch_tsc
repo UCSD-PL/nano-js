@@ -1,0 +1,25 @@
+--- newtsc.ts	2013-08-21 18:17:33.000000000 +0200
++++ tsc.ts	2013-10-25 13:39:29.994375882 +0200
+@@ -16,6 +16,8 @@
+ ///<reference path='typescript.ts'/>
+ ///<reference path='io.ts'/>
+ ///<reference path='optionsParser.ts'/>
++///<reference path='../../../src/xml_generator.ts'/>
++///<reference path='../../../src/tsdom.ts'/>
+ 
+ module TypeScript {
+     class SourceFile {
+@@ -192,7 +194,12 @@
+             for (var i = 0, n = this.resolvedFiles.length; i < n; i++) {
+                 var resolvedFile = this.resolvedFiles[i];
+                 var sourceFile = this.getSourceFile(resolvedFile.path);
+-                compiler.addSourceUnit(resolvedFile.path, sourceFile.scriptSnapshot, sourceFile.byteOrderMark, /*version:*/ 0, /*isOpen:*/ false, resolvedFile.referencedFiles);
++                
++                var doc = compiler.addSourceUnit(resolvedFile.path, sourceFile.scriptSnapshot, sourceFile.byteOrderMark, /*version:*/ 0, /*isOpen:*/ false, resolvedFile.referencedFiles);
++                
++                if (i > 0){ //Avoid the library
++                    new XMLGenerator(doc.syntaxTree());
++                }
+ 
+                 var syntacticDiagnostics = compiler.getSyntacticDiagnostics(resolvedFile.path);
+                 compiler.reportDiagnostics(syntacticDiagnostics, this);

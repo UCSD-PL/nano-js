@@ -1,0 +1,53 @@
+This plugin for the TypeScript compiler allows the user to save the syntax tree
+of a given program in an XML format. The XML corresponds exactly to the tree 
+that the compiler creates, so it might not work correctly in a malformed program.
+
+
+##CONFIGURATION:
+1. Checkout this repository (say in folder cse199-code-0).
+
+2. Go to the folder cse199-code-0.
+
+3. Clone the typescript repository (git) or create a folder called "typescript" and copy 
+the content of the git repository (download the zip and extract it there).
+ The repo is in: http://typescript.codeplex.com/SourceControl/latest#README.txt
+
+Your file system should look like this:
+cse199-code-0
+-rwxr-xr-x 1  applypatch
+drwxr-xr-x 2  bin
+-rw-r--r-- 1  Makefile
+-rw-r--r-- 1  README
+-rwxr-xr-x 1  run
+drwxr-xr-x 2  src
+drwxr-xr-x 2  tests
+drwxr-xr-x 8  typescript
+
+4. Install node.js and tsc.
+   4.1 Install node.js:
+       This runs JavaScript code outside of any browser. 
+       http://nodejs.org/
+       Make sure that the command "node" works on the terminal.
+	   If you dont, create a link (ln -s) in /usr/local/bin in to
+	   the node script (which is in the folder where you installed it).   
+   4.2 Install tsc:
+       After 4.1, you have the npm utility to install new js code.
+       The command npm might not be available, but the npm script is
+       in the folder where you installed node.js, in node-v0.10.20/deps/npm/bin/npm
+       Execute npm install -g typescript
+	   Make sure you have the "tsc" command in the terinal, otherwise, do the same
+	   thing as in 4.1.
+
+5. Apply the patch :
+ Go to cse199-code-0
+ run: ./applypatch
+
+##RUNNING
+
+6. Build the project
+   make TSC
+   (can take up to a minute)
+
+7. Run an example:
+   ./run tests/oneline.ts
+   ./run test/functions.ts > functions.xml

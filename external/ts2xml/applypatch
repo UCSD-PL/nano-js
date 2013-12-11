@@ -1,0 +1,2 @@
+cd typescript/src/compiler
+patch -p0 <../../../src/patch_tsc

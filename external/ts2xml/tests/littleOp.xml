@@ -1,0 +1,21 @@
+<SourceUnit>
+    <List>
+        <ExpressionStatement>
+            <MultiplyExpression>
+                <ParenthesizedExpression>
+                    <AddExpression>
+                        <NumericLiteral>3</NumericLiteral>
+                        <NumericLiteral>2</NumericLiteral>
+                    </AddExpression>
+                </ParenthesizedExpression>
+                <ParenthesizedExpression>
+                    <AddExpression>
+                        <NumericLiteral>4</NumericLiteral>
+                        <NumericLiteral>5</NumericLiteral>
+                    </AddExpression>
+                </ParenthesizedExpression>
+            </MultiplyExpression>
+        </ExpressionStatement>
+    </List>
+</SourceUnit>
+
