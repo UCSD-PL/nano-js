@@ -48,8 +48,10 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
-  
   , AnnTypeR
+
+  -- * Raw low-level Location-less constructors
+  , rawStringSymbol 
   ) where
 
 import           Data.Maybe             (fromMaybe) -- (catMaybes, , isJust)
@@ -84,17 +86,19 @@ type AnnTypeR    = AnnType F.Reft
 
 data CGEnv   
   = CGE { 
-        -- TODO: add opts 
-        --opts   :: OptionConf
-          renv   :: !(Env RefType) -- ^ bindings in scope 
-        , fenv   :: F.IBindEnv     -- ^ fixpoint bindings
-        , guards :: ![F.Pred]      -- ^ branch target conditions  
+         -- TODO: add opts 
+         --opts    :: OptionConf
+          renv    :: !(Env RefType) -- ^ bindings in scope 
+        , fenv    :: F.IBindEnv     -- ^ fixpoint bindings
+        , guards  :: ![F.Pred]      -- ^ branch target conditions  
+        , cge_ctx :: !IContext      -- ^ intersection-type context 
         }
 
-emptyCGEnv = CGE {-[] -} envEmpty F.emptyIBindEnv []
+
+emptyCGEnv = CGE {-[] -} envEmpty F.emptyIBindEnv [] emptyContext
 
 instance PP CGEnv where
-  pp (CGE {-_ -} re _ gs) = vcat [pp re, pp gs] 
+  pp (CGE {-_ -} re _ gs ctx) = vcat [pp re, pp gs, pp ctx] 
 
 ----------------------------------------------------------------------------
 -- | Constraint Information ------------------------------------------------
@@ -197,30 +201,30 @@ rTypeValueVar t   = vv where F.Reft (vv,_) =  rTypeReft t
 rTypeSort :: (F.Reftable r) => RType r -> F.Sort
 ------------------------------------------------------------------------------------------
 
+
 rTypeSort (TApp TInt [] _) = F.FInt
 rTypeSort (TVar α _)       = F.FObj $ F.symbol α 
 rTypeSort t@(TAll _ _)     = rTypeSortForAll t 
 rTypeSort (TFun xts t _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> xts) ++ [t]
 rTypeSort (TApp c ts _)    = rTypeSortApp c ts 
-rTypeSort (TObj _ _)       = F.FApp (F.stringFTycon "object") []
-rTypeSort (TArr _ _)       = F.FApp (F.stringFTycon "array") []
-rTypeSort t                = error ("Type: " ++ ppshow t ++ 
-                                    " is not supported in rTypeSort")
-
+rTypeSort (TObj _ _)       = F.FApp (rawStringFTycon "object") []
+rTypeSort (TArr _ _)       = F.FApp (rawStringFTycon "array") []
+rTypeSort (TAnd (t:_))     = rTypeSort t
+rTypeSort t                = error $ render $ text "BUG: rTypeSort does not support " <+> pp t
 
 rTypeSortApp TInt [] = F.FInt
 rTypeSortApp TUn  _  = F.FApp (tconFTycon TUn) [] -- simplifying union sorts, the checks will have been done earlier
 rTypeSortApp c ts    = F.FApp (tconFTycon c) (rTypeSort <$> ts) 
 
 tconFTycon TInt      = F.intFTyCon
-tconFTycon TBool     = F.stringFTycon "boolean"
-tconFTycon TVoid     = F.stringFTycon "void"
-tconFTycon (TDef s)  = F.stringFTycon $ unId s
-tconFTycon TUn       = F.stringFTycon "union"
+tconFTycon TBool     = rawStringFTycon "boolean"
+tconFTycon TVoid     = rawStringFTycon "void"
+tconFTycon (TDef s)  = F.stringFTycon $ F.Loc (sourcePos s) (unId s)
+tconFTycon TUn       = rawStringFTycon "union"
 tconFTycon TString   = F.strFTyCon -- F.stringFTycon "string"
-tconFTycon TTop      = F.stringFTycon "top"
-tconFTycon TNull     = F.stringFTycon "null"
-tconFTycon TUndef    = F.stringFTycon "undefined"
+tconFTycon TTop      = rawStringFTycon "top"
+tconFTycon TNull     = rawStringFTycon "null"
+tconFTycon TUndef    = rawStringFTycon "undefined"
 
 
 rTypeSortForAll t    = genSort n θ $ rTypeSort tbody
@@ -276,7 +280,7 @@ emapReft _ _ _              = error "Not supported in emapReft"
 emapReftBind f γ (B x t)    = B x $ emapReft f γ t
 
 ------------------------------------------------------------------------------------------
-mapReftM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RType a -> m (RType b)
+-- mapReftM :: (PP a, F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RType a -> m (RType b)
 ------------------------------------------------------------------------------------------
 mapReftM f (TVar α r)      = TVar α <$> f r
 mapReftM f (TApp c ts r)   = TApp c <$> mapM (mapReftM f) ts <*> f r
@@ -284,7 +288,8 @@ mapReftM f (TFun xts t _)  = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f
 mapReftM f (TAll α t)      = TAll α <$> mapReftM f t
 mapReftM f (TObj bs r)     = TObj   <$> mapM (mapReftBindM f) bs <*> f r
 mapReftM f (TArr t r)      = TArr   <$> (mapReftM f t) <*> f r
-mapReftM _ _               = error "Not supported in mapReftM"
+mapReftM f (TAnd ts)       = TAnd   <$> mapM (mapReftM f) ts
+mapReftM _ t               = error   $ render $ text "Not supported in mapReftM: " <+> pp t 
 
 mapReftBindM f (B x t)     = B x <$> mapReftM f t
 
@@ -310,7 +315,8 @@ efoldReft g f γ z (TObj xts r)     = f γ r $ (efoldRefts g f γ' z (b_type <$>
   where 
     γ'                             = foldr (efoldExt g) γ xts
 efoldReft g f γ z (TArr t r)       = f γ r $ efoldReft g f γ z t    
-efoldReft _ _ _ _ _                = error "Not supported in efoldReft"
+efoldReft g f γ z (TAnd ts)        = efoldRefts g f γ z ts 
+efoldReft _ _ _ _ t                = error $ "Not supported in efoldReft: " ++ ppshow t
 
 efoldRefts g f γ z ts              = L.foldl' (efoldReft g f γ) z ts
 
@@ -343,3 +349,5 @@ infixOpRTy :: InfixOp -> CGEnv -> RefType
 infixOpRTy o g = infixOpTy o $ renv g
 
 
+rawStringSymbol            = F.Loc F.dummyPos . F.stringSymbol
+rawStringFTycon            = F.stringFTycon . F.Loc F.dummyPos 

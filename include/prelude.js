@@ -73,19 +73,18 @@ function pos(){
 
 /*@ measure len :: forall A. (list [A]) => number                                                 */
 
-/*@ cons  :: forall A. (A, list[A] + null) => list [A]                                            */
-/*@ nil   :: () => null                                                                           */
-/*@ head  :: forall A. (xs:list [A]) => A                                                         */
+/*@ cons  :: forall A. (A, xs:list[A] + null) => {list[A] | (len v) = 1 + (len xs)}               */
+/*@ nil   :: () => { null | (len v) = 0}                                                           */
+/*@ head  :: forall A. (xs:list[A]) => A                                                         */
 /*@ tail  :: forall A. (xs:list [A]) => list [A] + null                                           */
 /*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
 /*@ empty :: forall A. (xango: list[A] + null ) => 
-                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}                      */
+                        {v: boolean | (((Prop v) <=> len(xango) = 0) && ((Prop v) <=> ttag(xango) = "null"))}                      */
 /*@ emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
 
-
-/*@ length   :: forall A. (xs:list [A]) => {v:number | ((v >= 0) && v = (len xs))}                */
-/*@ safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
-/*@ safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
+/*@ length   :: forall A. (xs:list[A] + null) => {v:number | ((v >= 0) && v = (len xs))}         */
+/*@ safehead :: forall A. (list[A]) => A                                     */
+/*@ safetail :: forall A. (xs:list[A]) => {v:list[A] + null | (len v) = (len xs) - 1} */
 
 /*@ Array    :: (n : { v: number | 0 <= v } ) => { v: [ undefined ] | (len v) = n }               */
 
@@ -94,7 +93,7 @@ function pos(){
 /*************************************************************************/
 /************************* Type Conversions ******************************/
 /*************************************************************************/
-/*@ sstring  :: forall A. (x: A) => string                                                         */
+/*@ sstring  :: forall A. (x: A) => string                               */
 
 
 
@@ -103,6 +102,7 @@ function pos(){
 /*************************************************************************/
 /************** Types for Builtin Operators ******************************/
 /*************************************************************************/
+/*@ builtin_OpUndefined :: forall A. {A | false} */
 
 /*@ builtin_OpLT        :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x <  y)) }   */
 /*@ builtin_OpLEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x <= y)) }   */
@@ -110,9 +110,9 @@ function pos(){
 /*@ builtin_OpGEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x >= y)) }   */
 
 //PV: @==@ and @===@ could be handled more precisely
-/*@ builtin_OpEq        :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
-/*@ builtin_OpSEq       :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
-/*@ builtin_OpNEq       :: forall A B. ({x:A|true}, {y:B|true}) => {v:boolean | ((Prop v) <=> (x != y)) } */
+/*@ builtin_OpEq        :: forall A.   (x:A, y:A) => {v:boolean | ((Prop v) <=> (x = y)) }  */
+/*@ builtin_OpSEq       :: forall A B. (x:A, y:B) => {v:boolean | ((Prop v) <=> (x = y)) }  */
+/*@ builtin_OpNEq       :: forall A B. (x:A, y:B) => {v:boolean | ((Prop v) <=> (x != y)) } */
 
 /*@ builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) => {v:boolean | true}                             */
 /*  builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) =>
@@ -125,15 +125,35 @@ function pos(){
 /*  builtin_OpLOr       :: (x:top, y:top) => 
       { top | ((Prop v) <=> (if (falsy x) then (v = y) else (v = x) ))}           */
 
-/*@ builtin_OpAdd       :: ({x:number | true}, {y:number | true})  => {v:number | v = x + y}              */
 
 //TODO: We would like to have a more precise type (like the following) that 
 //would include strings into the game, but this does not work well with 
 //equality at the moment:
 
-/*  builtin_OpAdd       :: (x: number + string, y: number + string)  => 
-      { number | (((ttag x) = "string") || ((ttag y) = "string") => false ) } + 
-      { string | (((ttag x) = "number") && ((ttag y) = "number") => false ) }                             */
+/*@ builtin_OpAdd :: /\ (x:number, y:number) => {number | v = x + y}
+                     /\ (x:number, y:string) => string
+                     /\ (x:string, y:number) => string
+                     /\ (x:string, y:string) => string
+  */
+
+/* builtin_OpAdd      :: (x:number + string, y:number + string) => 
+                              {v:number + string | (if ((ttag x) = "number" && (ttag y) = "number") 
+                                                    then ((ttag v) = "number" && v = x + y) 
+                                                    else (ttag v)  = "string")} 
+  */
+
+/* builtin_OpAdd       :: ({x:number | true}, {y:number | true})  => {v:number | v = x + y}              */
+
+// The following causes problems with equality. Can't "prove" 0 == (0 + 1) as
+// the RHS has type {num | v = 0 + 1} + string. The crucial fact is buried under
+// the sum -- the `top-level` refinement is `top` which is useless.
+
+/* builtin_OpAdd       :: (x:number + string, y:number + string) => 
+                              {number | ((ttag x) = "number" && (ttag y) = "number" && v = x + y) } + 
+                              {string | ((ttag x) = "string" || (ttag y) = "string") } 
+                      
+  */
+
 
 /*@ builtin_OpSub       :: ({x:number | true}, {y:number | true})  => {v:number | v = x - y}              */
 /*@ builtin_OpMul       :: (number,  number)  => number                                                   */

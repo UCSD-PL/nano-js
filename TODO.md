@@ -1,7 +1,6 @@
 # Quicktask v1.2
 # http://quicktask.aaronbieber.com/doc.html
 
-
 JS SUPPORT / FEATURES:
   - Dynamic Writes `x[i] = e`
     @ Added [Mon 2013-11-24]
@@ -60,57 +59,62 @@ FAILING TESTS:
     Using new representation of lists.
     @ Added [Sun 2013-09-15]
 
-Failed 16 tests: 
- liquid/pos/arrays/arr-04.js,
- liquid/pos/arrays/safemap.js,
- liquid/pos/lists/safeLists.js,
- liquid/pos/lists/safemap.js,
- liquid/pos/lists/safereverse.js,
- liquid/pos/loops/obj-02.js,
- liquid/pos/loops/while-03.js,
- liquid/pos/misc/apply.js,
- liquid/pos/misc/twice-hof.js,
- liquid/pos/objects/obj-03.js,
- liquid/pos/operators/add-04.js,
- liquid/pos/operators/sum-00.js,
- liquid/pos/operators/sum-01.js,
- liquid/pos/operators/sum-02.js,
- liquid/pos/operators/sum-infer-00.js,
- liquid/pos/simple/obj-00.js
-
-
-
-
-
-liquid/pos/arrays/safemap.js,
-liquid/pos/lists/safeLists.js,
-liquid/pos/lists/safemap.js,
-liquid/pos/lists/safereverse.js,
-liquid/pos/loops/obj-02.js,
-liquid/pos/loops/while-03.js,
-liquid/pos/misc/apply.js,
-liquid/pos/misc/twice-hof.js,
-liquid/pos/objects/obj-03.js,
-liquid/pos/operators/sum-00.js,
-liquid/pos/operators/sum-01.js,
-liquid/pos/operators/sum-02.js,
-liquid/pos/operators/sum-infer-00.js,
-liquid/pos/simple/obj-00.js
-
-
-predicate Like X Y = (tag X) = (tag Y)
-(x:num + str, {y:num + str | (Like x V)}) => {v:num + str | (Like X v) && ((num x) && (num y) => v = x + y)}
-
-(x:num + str, y:num + str) => {v: number | (((ttag x) = "number" && (ttag y) = "number") <=> (v = x + y))} + {string | ((ttag x) = "string" || (ttag y) = "string")}
-
-(x:number + string, y:number + string) => {number | ((num x) && (num y) && (v = x + y))} + {string | (string x) || (string y)}
-
-[HEREHEREHEREHERE] 
-
-    + add support for string +    (liquid/pos/operators/add-0{3,4}.js)
-    + add support for array-write (liquid/pos/arrays/arr-04.js)
+RJ TODO
+-------
+    + fix ARR-READ                    <----------------------- HEREHEREHEREHERE 
+    + fix ARR-WRITE (arrays/arr-04.js)
+    + fix OBJ
+    + fix RIGID
     + add support for predicate aliases
+    + scrape qualifiers
+    + type and predicate aliases
 
 
+Failing Tests 
+-------------
+
+Exceptions thrown on 33 tests:
+
+ [ARR]
+ liquid/pos/arrays/arr-00.js,
+ liquid/pos/arrays/arr-01.js,
+ liquid/pos/arrays/arr-02.js,
+ liquid/pos/arrays/arr-03.js,
+ liquid/pos/arrays/arr-04.js,
+ liquid/pos/arrays/arr-05.js,
+ liquid/pos/arrays/safemap.js,
+
+ [OBJ]
+ liquid/pos/lists/list-01.js,
+ liquid/pos/lists/list-02.js,
+ liquid/pos/lists/list-03.js,
+ liquid/pos/lists/list-head-01.js,
+ liquid/pos/lists/list-head-02.js,
+ liquid/pos/loops/obj-00.js,
+ liquid/pos/loops/obj-01.js,
+ liquid/pos/loops/obj-02.js,
+ liquid/pos/objects/obj-00.js,
+ liquid/pos/objects/obj-01.js,
+ liquid/pos/objects/obj-02.js,
+ liquid/pos/objects/obj-03.js,
+ liquid/pos/objects/obj-04.js,
+ liquid/pos/objects/obj-05.js,
+ liquid/pos/objects/obj-subtype-00.js,
+ liquid/pos/objects/obj-subtype-01.js,
+ liquid/pos/objects/update-00.js,
+ liquid/pos/objects/update-01.js,
+ liquid/pos/objects/update-02.js,
+ liquid/pos/objects/update-03.js,
+ liquid/pos/simple/obj-00.js,
+ liquid/pos/simple/parse-01.js
+
+
+ [LOOPINV+OBJ]
+ liquid/pos/loops/while-04.js,
+ 
+ [RIGID]
+ liquid/pos/misc/apply.js,
+ liquid/pos/misc/cousot-01.js,
+ liquid/pos/misc/twice-hof.js,
 
 # vim:ft=quicktask

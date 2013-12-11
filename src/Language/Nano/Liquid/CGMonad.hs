@@ -40,15 +40,21 @@ module Language.Nano.Liquid.CGMonad (
   , envAddReturn
   , envAddGuard
   , envFindTy
-  -- , envFindTy'
   , envToList
   , envFindReturn
   , envJoin
+  , envPushContext
+  , envGetContextCast
+  , envGetContextTypArgs
 
   -- * Add Subtyping Constraints
-  , subTypes, subTypes', subType, subType'
-  , subTypeContainers, subTypeContainers'
-  , alignTsM, withAlignedM
+  , subTypes
+  , subType
+  , subTypeContainers
+
+  -- RJ: all alignment should already be done in TC why again?
+  -- , alignTsM
+  , withAlignedM
   , wellFormed
 
   , addInvariant
@@ -242,12 +248,39 @@ cgError _ e = throwError e
 ---------------------------------------------------------------------------------------
 
 ---------------------------------------------------------------------------------------
-envAddFresh :: (IsLocated l) => String -> l -> RefType -> CGEnv -> CGM (Id l, CGEnv) 
+envPushContext :: (CallSite a) => a -> CGEnv -> CGEnv
 ---------------------------------------------------------------------------------------
-envAddFresh _  l t g 
-  = do x  <- {- tracePP ("envAddFresh: " ++ s ++ ": "++ ppshow t) <$> -} freshId l
+envPushContext c g = g {cge_ctx = pushContext c (cge_ctx g)}
+
+---------------------------------------------------------------------------------------
+envGetContextCast :: CGEnv -> AnnTypeR -> Maybe (Cast RefType)
+---------------------------------------------------------------------------------------
+envGetContextCast g a 
+  = case [c | TCast cx c <- ann_fact a, cx == cge_ctx g] of
+      [ ] -> Nothing
+      [c] -> Just c
+      cs  -> die $ errorMultipleCasts (srcPos a) cs
+
+---------------------------------------------------------------------------------------
+envGetContextTypArgs :: CGEnv -> AnnTypeR -> [TVar] -> [RefType]
+---------------------------------------------------------------------------------------
+envGetContextTypArgs g a αs 
+  = case [i | TypInst ξ' i <- ann_fact a, ξ' == cge_ctx g] of 
+      [i] | length i == length αs -> i 
+      _                           -> die $ bugMissingTypeArgs $ srcPos a
+
+
+---------------------------------------------------------------------------------------
+envAddFresh :: (IsLocated l) => String -> l -> RefType -> CGEnv -> CGM (Id AnnTypeR, CGEnv) 
+---------------------------------------------------------------------------------------
+envAddFresh s  l t g 
+  = do x  <- freshId loc
        g' <- envAdds [(x, t)] g
        return (x, g')
+    where loc = srcPos l
+   
+freshId l = Id (Ann l []) <$> fresh
+
 
 ---------------------------------------------------------------------------------------
 envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv -> CGM CGEnv
@@ -361,8 +394,8 @@ envJoin' l g g1 g2
         g1' <- envAdds (zip xs $ snd4 <$> t4) g1 
         g2' <- envAdds (zip xs $ thd4 <$> t4) g2
 
-        zipWithM_ (subTypeContainers l g1') [envFindTy x g1' | x <- xs] ts
-        zipWithM_ (subTypeContainers l g2') [envFindTy x g2' | x <- xs] ts
+        zipWithM_ (subTypeContainers "envJoin" l g1') [envFindTy x g1' | x <- xs] ts
+        zipWithM_ (subTypeContainers "envJoin" l g2') [envFindTy x g2' | x <- xs] ts
 
         return g'
 
@@ -413,7 +446,7 @@ freshTyPhisWhile l g xs τs
 
 -- | Fresh Array Type
 ---------------------------------------------------------------------------------------
-freshTyArr :: (PP l, IsLocated l) => l -> CGEnv -> RefType -> CGM (Id l, CGEnv)
+freshTyArr :: (PP l, IsLocated l) => l -> CGEnv -> RefType -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------
 freshTyArr l g t 
   = do t'     <- freshTy "freshTyPhis" {-tracePP "From" -} t
@@ -431,7 +464,7 @@ freshTyArr l g t
 subTypes :: (IsLocated x, F.Expression x, F.Symbolic x) 
          => AnnTypeR -> CGEnv -> [x] -> [RefType] -> CGM ()
 ---------------------------------------------------------------------------------------
-subTypes l g xs ts = zipWithM_ (subType l g) [envFindTy x g | x <- xs] ts
+subTypes l g xs ts      = zipWithM_ (subType l g)      [envFindTy x g | x <- xs] ts
 
 
 subTypes' msg l g xs ts = zipWithM_ (subType' msg l g) [envFindTy x g | x <- xs] ts
@@ -443,7 +476,7 @@ subTypes' msg l g xs ts = zipWithM_ (subType' msg l g) [envFindTy x g | x <- xs]
 -- objects)? Probably not, so this process should be done after the splitC.
 
 ---------------------------------------------------------------------------------------
-subType :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
+subType :: (IsLocated l) => l -> CGEnv -> RefType -> RefType -> CGM ()
 ---------------------------------------------------------------------------------------
 subType l g t1 t2 =
   do tt1   <- addInvariant t1
@@ -454,11 +487,9 @@ subType l g t1 t2 =
   where
     c      = uncurry $ Sub g (ci l)
     checkTypes tdefs t1 t2 | equivWUnions tdefs t1 t2 = (t1,t2)
-    checkTypes  _ t1 t2    | otherwise                = errorstar $ msg t1 t2
-    msg t1 t2 = printf "[%s]\nCGMonad: checkTypes not aligned: \n%s\nwith\n%s"
-                  (ppshow $ ann l) (ppshow $ toType t1) (ppshow $ toType t2)
-
--- A more verbose version
+    checkTypes  _ t1 t2    | otherwise                = die $ bugMalignedSubtype (srcPos l) t1 t2
+    
+ -- A more verbose version
 subType' msg l g t1 t2 = 
   subType l g (trace (printf "SubType[%s]:\n\t%s\n\t%s" msg (ppshow t1) (ppshow t2)) t1) t2
 
@@ -474,13 +505,11 @@ equivWUnions γ t t' = equiv γ t t'
 
 equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 
-
-
 -- | Subtyping container contents: unions, objects. Includes top-level
 
--- `subTypeContainers` breaks down container types (unions and objects) to their
--- sub-parts and recursively creates subtyping constraints for these parts. It
--- returns simple subtyping for the rest of the cases (non-container types).
+-- `subTypeContainers'` breaks down container types (unions and objects) to their
+-- sub-parts and recursively creates subtyping constraints for these parts. 
+-- It returns simple subtyping for the rest of the cases (non-container types).
 --
 -- The top-level refinements of the container types strengthen the parts.
 --
@@ -491,66 +520,70 @@ equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 --
 --
 -- TODO: Will loop infinitely for cycles in type definitions
---
 -------------------------------------------------------------------------------
-subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
+subTypeContainers :: (IsLocated l) => String -> l -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeContainers l g (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _) | d == d' = 
-  mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
-
-subTypeContainers l g t1 t2@(TApp (TDef _) _ _ ) = 
-  unfoldSafeCG t2 >>= \t2' -> subTypeContainers' "subc def1" l g t1 t2'
-
-subTypeContainers l g t1@(TApp (TDef _) _ _ ) t2 = 
-  unfoldSafeCG t1 >>= \t1' -> subTypeContainers' "subc def2" l g t1' t2
-
-subTypeContainers l g u1@(TApp TUn _ r1) u2@(TApp TUn _ r2) = 
-  getTDefs >>= \γ -> sbs $ bkPaddedUnion "subTypeContainers" γ u1 u2
-  where        
-    -- Fix the ValueVar of the top-level refinement to be the same as the
-    -- Valuevar of the part
-    fix t b v    | v == b    = rTypeValueVar t
-                 | otherwise = v
-    rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
-    sb  (t1 ,t2) = subTypeContainers' "subc union" l g (t1 `strengthen` rr t1 r1)
-                                                       (t2 `strengthen` rr t2 r2)
-    sbs ts       = mapM_ sb ts
-
-subTypeContainers l g (TArr t1 r1) (TArr t2 r2) = do
-    subTypeContainers' "subc arr" l g (t1 `strengthen` rr t1 r1) 
-                                      (t2 `strengthen` rr t2 r2)
-    -- Array subtyping co- and contra-variant?                                    
-    -- subTypeContainers' "subc arr" l g (t2 `strengthen` rr t2 r2) 
-    --                                   (t1 `strengthen` rr t1 r1)
-  where
-    -- Fix the ValueVar of the top-level refinement 
-    -- to be the same as the Valuevar of the part
-    fix t b v    | v == b    = rTypeValueVar t
-                 | otherwise = v
-    rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
+subTypeContainers msg l g t1 t2 = {- subTypeContainers' msg -} subType l g t1 t2
+    where 
+      msg'                      = render $ text "subTypeContainers:" 
+                                           $+$ text "  t1 =" <+> pp t1
+                                           $+$ text "  t2 =" <+> pp t2
 
 
+-- BUG RIGHT HERE. SIGH.
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _) | d == d' = 
+-- RJ: ALL THIS SHOULD BE IN `splitC`   mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g t1 t2@(TApp (TDef _) _ _ ) = 
+-- RJ: ALL THIS SHOULD BE IN `splitC`   unfoldSafeCG t2 >>= \t2' -> subTypeContainers' "subc def1" l g t1 t2'
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g t1@(TApp (TDef _) _ _ ) t2 = 
+-- RJ: ALL THIS SHOULD BE IN `splitC`   unfoldSafeCG t1 >>= \t1' -> subTypeContainers' "subc def2" l g t1' t2
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g u1@(TApp TUn _ r1) u2@(TApp TUn _ r2) = 
+-- RJ: ALL THIS SHOULD BE IN `splitC`   getTDefs >>= \γ -> sbs $ bkPaddedUnion "subTypeContainers'" γ u1 u2
+-- RJ: ALL THIS SHOULD BE IN `splitC`   where        
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- Fix the ValueVar of the top-level refinement to be the same as the
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- Valuevar of the part
+-- RJ: ALL THIS SHOULD BE IN `splitC`     fix t b v    | v == b    = rTypeValueVar t
+-- RJ: ALL THIS SHOULD BE IN `splitC`                  | otherwise = v
+-- RJ: ALL THIS SHOULD BE IN `splitC`     rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
+-- RJ: ALL THIS SHOULD BE IN `splitC`     sb  (t1 ,t2) = subTypeContainers' "subc union" l g (t1 `strengthen` rr t1 r1)
+-- RJ: ALL THIS SHOULD BE IN `splitC`                                                        (t2 `strengthen` rr t2 r2)
+-- RJ: ALL THIS SHOULD BE IN `splitC`     sbs ts       = mapM_ sb ts
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g (TArr t1 r1) (TArr t2 r2) = do
+-- RJ: ALL THIS SHOULD BE IN `splitC`     subTypeContainers' "subc arr" l g (t1 `strengthen` rr t1 r1) 
+-- RJ: ALL THIS SHOULD BE IN `splitC`                                       (t2 `strengthen` rr t2 r2)
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- Array subtyping co- and contra-variant?                                    
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- subTypeContainers' "subc arr" l g (t2 `strengthen` rr t2 r2) 
+-- RJ: ALL THIS SHOULD BE IN `splitC`     --                                   (t1 `strengthen` rr t1 r1)
+-- RJ: ALL THIS SHOULD BE IN `splitC`   where
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- Fix the ValueVar of the top-level refinement 
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- to be the same as the Valuevar of the part
+-- RJ: ALL THIS SHOULD BE IN `splitC`     fix t b v    | v == b    = rTypeValueVar t
+-- RJ: ALL THIS SHOULD BE IN `splitC`                  | otherwise = v
+-- RJ: ALL THIS SHOULD BE IN `splitC`     rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` -- TODO: the environment for subtyping each part of the object should have the
+-- RJ: ALL THIS SHOULD BE IN `splitC` -- tyopes for the rest of the bindings
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g o1@(TObj _ r1) o2@(TObj _ r2) = 
+-- RJ: ALL THIS SHOULD BE IN `splitC`     sbs $ bkPaddedObject o1 o2
+-- RJ: ALL THIS SHOULD BE IN `splitC`   where
+-- RJ: ALL THIS SHOULD BE IN `splitC`     sbs          = mapM_ sb
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- Fix the ValueVar of the top-level refinement 
+-- RJ: ALL THIS SHOULD BE IN `splitC`     -- to be the same as the Valuevar of the part
+-- RJ: ALL THIS SHOULD BE IN `splitC`     fix t b v    | v == b    = rTypeValueVar t
+-- RJ: ALL THIS SHOULD BE IN `splitC`                  | otherwise = v
+-- RJ: ALL THIS SHOULD BE IN `splitC`     rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
+-- RJ: ALL THIS SHOULD BE IN `splitC`     sb (t1 ,t2)  = subTypeContainers' "subc obj" l g (t1 `strengthen` rr t1 r1) 
+-- RJ: ALL THIS SHOULD BE IN `splitC`                                          (t2 `strengthen` rr t2 r2)
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` 
+-- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g t1 t2 = subType l g t1 t2
 
--- TODO: the environment for subtyping each part of the object should have the
--- tyopes for the rest of the bindings
-subTypeContainers l g o1@(TObj _ r1) o2@(TObj _ r2) = 
-    sbs $ bkPaddedObject o1 o2
-  where
-    sbs          = mapM_ sb
-    -- Fix the ValueVar of the top-level refinement 
-    -- to be the same as the Valuevar of the part
-    fix t b v    | v == b    = rTypeValueVar t
-                 | otherwise = v
-    rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
-    sb (t1 ,t2)  = subTypeContainers' "subc obj" l g (t1 `strengthen` rr t1 r1) 
-                                         (t2 `strengthen` rr t2 r2)
-
-subTypeContainers l g t1 t2 = subType l g t1 t2
-
-
-subTypeContainers'   msg  l g t1 t2 = 
-  subTypeContainers l g ({- trace (printf "subTypeContainers[%s]:\n\t%s\n\t%s\n" 
-                                msg (ppshow t1) (ppshow t2)) -} t1) t2
 
 
 -------------------------------------------------------------------------------
@@ -563,7 +596,7 @@ alignTsM t t' = getTDefs >>= \g -> return $ alignTs g t t'
 withAlignedM :: (RefType -> RefType -> CGM a) -> RefType -> RefType -> CGM a
 -------------------------------------------------------------------------------
 withAlignedM f t t' = alignTsM t t' >>= uncurry f 
- 
+-- withAlignedM f = f 
 
 -- | Monadic unfolding
 -------------------------------------------------------------------------------
@@ -611,9 +644,6 @@ instance Freshable F.Symbol where
 instance Freshable String where
   fresh = F.symbolString <$> fresh
 
-freshId   :: (IsLocated l) => l -> CGM (Id l)
-freshId l = Id l <$> fresh
-
 freshTy :: RefTypable a => s -> a -> CGM RefType
 freshTy _ τ = refresh $ rType τ
 
@@ -658,7 +688,7 @@ splitC c = splitC' c
 -- | Function types
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i tf1@(TFun xt1s t1 _) tf2@(TFun xt2s t2 _))
-  = do let bcs    = bsplitC g i tf1 tf2
+  = do bcs       <- bsplitC g i tf1 tf2
        g'        <- envTyAdds i xt2s g 
        cs        <- concatMapM splitC $ safeZipWith "splitC1" (Sub g' i) t2s t1s' 
        cs'       <- splitC $ Sub g' i (F.subst su t1) t2      
@@ -686,19 +716,25 @@ splitC' (Sub g i (TAll α1 t1) (TAll α2 t2))
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i t1@(TVar α1 _) t2@(TVar α2 _)) 
   | α1 == α2
-  = return $ bsplitC g i t1 t2
+  = bsplitC g i t1 t2
   | otherwise
   = errorstar "UNEXPECTED CRASH in splitC"
 
 ---------------------------------------------------------------------------------------
 -- | Unions:
 -- We need to get the bsplitC for the top level refinements 
--- Nothing more should be added, the internal subtyping constrains have been
+-- Nothing more should be added, the internal subtyping constraints have been
 -- dealt with separately
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TApp TUn _ _) t2@(TApp TUn _ _)) =
+splitC' (Sub g i t1@(TApp TUn t1s r1) t2@(TApp TUn t2s r2)) =
   ifM (equivWUnionsM t1 t2) 
-    (return    $ bsplitC g i t1 t2) 
+    (do  cs      <- bsplitC g i t1 t2
+         -- constructor parameters are covariant
+         let t1s' = (`strengthen` r1) <$> t1s
+         let t2s' = (`strengthen` r2) <$> t2s
+         cs'     <- concatMapM splitC $ safeZipWith "splitcTDef" (Sub g i) t1s' t2s'
+         return   $ cs ++ cs'
+    )
     (errorstar $ printf "Unequal unions in splitC: %s - %s" (ppshow $ toType t1) (ppshow $ toType t2))
 
 splitC' (Sub _ _ t1@(TApp TUn _ _) t2) = 
@@ -710,7 +746,7 @@ splitC' (Sub _ _ t1 t2@(TApp TUn _ _)) =
 -- |Type definitions
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i t1@(TApp d1@(TDef _) t1s _) t2@(TApp d2@(TDef _) t2s _)) | d1 == d2
-  = do  let cs = bsplitC g i t1 t2
+  = do  cs    <- bsplitC g i t1 t2
         -- constructor parameters are covariant
         cs'   <- concatMapM splitC $ safeZipWith "splitcTDef" (Sub g i) t1s t2s
         return $ cs ++ cs' 
@@ -728,7 +764,7 @@ splitC' (Sub g i  t1 t2@(TApp (TDef _) _ _)) =
 -- | Rest of TApp
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i t1@(TApp _ t1s _) t2@(TApp _ t2s _))
-  = do let cs = bsplitC g i t1 t2
+  = do cs    <- bsplitC g i t1 t2
        cs'   <- concatMapM splitC $ safeZipWith 
                                     (printf "splitC4: %s - %s" (ppshow t1) (ppshow t2)) 
                                     (Sub g i) t1s t2s
@@ -738,8 +774,9 @@ splitC' (Sub g i t1@(TApp _ t1s _) t2@(TApp _ t2s _))
 -- | Objects
 -- Just the top-level constraint will be included here
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TObj _ _ ) t2@(TObj _ _ ))
-  = return $ bsplitC g i t1 t2
+splitC' (Sub g i t1@(TObj _ _) t2@(TObj _ _ ))
+  = do errorstar "TODO: splitC' TObj" 
+       bsplitC g i t1 t2
 
 splitC' (Sub _ _ t1 t2@(TObj _ _ ))
   = error $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
@@ -753,25 +790,31 @@ splitC' (Sub _ _ t1@(TObj _ _ ) t2)
 ---------------------------------------------------------------------------------------
 -- | TArr
 ---------------------------------------------------------------------------------------
--- Only top-level constraints here. The splitting for the inner parts of the
--- types should have been done earlier.
-splitC' (Sub g i t1@(TArr _ _ ) t2@(TArr _ _ ))
-  = return $ bsplitC g i t1 t2
-
+splitC' (Sub g i t1@(TArr t1v _ ) t2@(TArr t2v _ ))
+  = do cs    <- bsplitC g i t1 t2
+       cs'   <- splitC' (Sub g i t1v t2v) -- whither CONTRAVARIANCE?
+       errorstar "TODO: splitC' TArr"
+       return $ cs ++ cs'
 
 splitC' x 
   = cgError l $ bugBadSubtypes l x where l = srcPos x
 
 ---------------------------------------------------------------------------------------
-bsplitC :: (F.Reftable r) => CGEnv -> a -> RType r -> RType r -> [F.SubC a]
+-- bsplitC :: (F.Reftable r) => CGEnv -> a -> RType r -> RType r -> CGM [F.SubC a]
 ---------------------------------------------------------------------------------------
 bsplitC g ci t1 t2
+  = bsplitC' g ci <$> addInvariant t1 <*> addInvariant t2
+  -- = do t1'   <- tracePP "addInv1: " <$> addInvariant t1
+  --      t2'   <- tracePP "addInv2: " <$> addInvariant t2
+  --      return $ bsplitC' g ci t1' t2'
+
+bsplitC' g ci t1 t2
   | F.isFunctionSortedReft r1 && F.isNonTrivialSortedReft r2
   = [F.subC (fenv g) F.PTrue (r1 {F.sr_reft = F.top}) r2 Nothing [] ci]
   | F.isNonTrivialSortedReft r2
   = [F.subC (fenv g) p r1 r2 Nothing [] ci]
   | otherwise
-  = {- tracePP "bsplitC trivial" -} []
+  = []
   where
     p  = F.pAnd $ guards g
     r1 = rTypeSortedReft t1
@@ -814,7 +857,10 @@ splitW (W g i t@(TObj ts _ ))
         ws    <- concatMapM splitW [W g' i ti | B _ ti <- ts]
         return $ bs ++ ws
 
-splitW (W _ _ _ ) = error "Not supported in splitW"
+splitW (W g i (TAnd ts))
+  = concatMapM splitW [W g i t | t <- ts]
+
+splitW (W _ _ t) = error $ render $ text "Not supported in splitW: " <+> pp t
 
 bsplitW g t i 
   | F.isNonTrivialSortedReft r'

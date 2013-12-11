@@ -24,9 +24,10 @@ module Language.Nano.Typecheck.Compare (
 
   
   -- * Casting
-  , Cast(..)
-  , Casts, Casts_
-  , zipType1, zipType2
+  -- , Casts
+  , Casts_
+  , zipType1
+  , zipType2
 
   , SubDirection (..)
 
@@ -107,15 +108,8 @@ instance Equivalent e (Id a) where
 -- Casts ------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------
 
-type Casts    = M.Map (Expression (AnnSSA F.Reft)) (Cast RefType)
+-- type Casts    = M.Map (Expression (AnnSSA F.Reft)) (Cast RefType)
 type Casts_ r = M.Map (Expression (AnnSSA r)) (Cast (RType r))
-
-data Cast t  = UCST t | DCST t | DC t
-
-instance (PP a) => PP (Cast a) where
-  pp (UCST t) = text "Upcast  : " <+> pp t
-  pp (DCST t) = text "Downcast: " <+> pp t
-  pp (DC   t) = text "Deadcast: " <+> pp t
 
 
 ---------------------------------------------------------------------------------------
@@ -216,10 +210,7 @@ alignTs γ t1 t2     = (t1', t2')
     (_,t1', t2', _) = compareTs γ t1 t2
 
 
--- | `compareTs`
-
--- General purpose function that returns:
---
+-- | `compareTs` returns:
 -- ∙ A padded version of the upper bound of @t1@ and @t2@
 -- ∙ An equivalent version of @t1@ that has the same sort as the second output
 -- ∙ An equivalent version of @t2@ that has the same sort as the first output

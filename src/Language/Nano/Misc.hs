@@ -12,7 +12,8 @@ module Language.Nano.Misc (
   , mapPairM
   , mkEither
   , either2Bool
-  , maybeM, maybeM_
+  , maybeM
+  , maybeM_
   , unique
 
   , fst4, snd4, thd4, fth4  
@@ -38,6 +39,7 @@ import           Text.PrettyPrint.HughesPJ
 import           Language.Nano.Typecheck.Types        ()
 
 import           Data.Generics.Aliases
+
 
 -------------------------------------------------------------------------------
 mapFstM :: (Functor m, Monad m) => (a -> m c) -> (a, b) -> m (c, b)
@@ -80,6 +82,7 @@ unique :: (Eq a) => [a] -> Bool
 -------------------------------------------------------------------------------
 unique xs = length xs == length (L.nub xs)
 
+uncurry3 f (x, y, z) = f x y z
 
 fst4 (a,_,_,_) = a
 snd4 (_,b,_,_) = b

@@ -58,20 +58,29 @@ instance PP Error where
 ---------------------------------------------------------------------------
 
 
-bug l s                   = mkErr l $ printf "BUG: %s" s 
+bug l s                   = mkErr l $ "BUG: " ++ s 
 bugBadPhi l t1s t2s       = mkErr l $ printf "BUG: Unbalanced Phi at %s \n %s \n %s" (ppshow l) (ppshow t1s) (ppshow t2s)
 bugBadSubtypes l x        = mkErr l $ printf "BUG: Unexpected Subtyping Constraint \n %s" (ppshow x)
+bugMalignedSubtype l t t' = mkErr l $ printf "BUG: [%s] \n CGMonad: checkTypes not aligned: \n%s\nwith\n%s" (ppshow l) (ppshow t) (ppshow t')
 bugUnboundPhiVar l x      = mkErr l $ printf "BUG: Phi Variable %s is unbound" (ppshow x)
 bugUnboundVariable l x    = mkErr l $ printf "BUG: Variable %s is unbound in environment at %s" (ppshow x) (ppshow l)
 bugMissingTypeArgs l      = mkErr l $ printf "BUG: Missing Type Arguments at %s" (ppshow l)
 bugTBodiesOccur l s       = mkErr l $ printf "BUG: There should be no TBodies herie %s" s
 bugBadUnions l s          = mkErr l $ printf "BUG: No unions should be found here (%s)" s
 bugBadFunction l          = mkErr l $ printf "BUG: No function expression was found"
+bugUnknown l thing x      = mkErr l $ printf "BUG: Cannot find %s %s" thing (ppshow x) 
 errorArgName l x y        = mkErr l $ printf "Wrong Parameter Name at %s: Saw %s but Expected %s" (ppshow l) (ppshow x) (ppshow y)  
 errorMissingSpec l f      = mkErr l $ printf "Missing Signature For %s defined at %s" (ppshow f) (ppshow l)
 errorDuplicate i l l'     = mkErr l $ printf "Duplicate Specification for %s:\n  %s \n  %s" (ppshow i) (ppshow l) (ppshow l')
 errorArgMismatch l        = mkErr l $ printf "Mismatch in Number of Args in Call" 
-errorNonFunction l f t    = mkErr l $ printf "Non-function type for %s :: %s" (ppshow f) (ppshow t)  
+errorMultipleCasts l cs   = mkErr l $ render $ text "Multiple Casts: " <+> (vcat (map pp cs)) 
+errorNoMatchCallee l ts t = mkErr l $ render $   text "No matching callee type!" 
+                                             $+$ text "Argument Types: " <+> pp ts 
+                                             $+$ text "Function Type : " <+> pp t
+
+errorNonFunction l f t    = mkErr l $ render $ text "Non-function type " 
+                                                 $+$ pp f <+> text "::" <+> pp t
+
 errorUnboundId l x        = mkErr l $ printf "Identifier %s unbound" (ppshow x) 
 errorUnboundType l x      = mkErr l $ printf "Type identifier \'%s\' unbound" (ppshow x)
 errorUnboundIdEnv l x t   = mkErr l $ printf "ZOGBERT Identifier %s unbound in %s" (ppshow x) (ppshow t)

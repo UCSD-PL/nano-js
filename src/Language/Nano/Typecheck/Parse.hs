@@ -26,7 +26,7 @@ import           Data.Char (toLower, isLower, isSpace)
 import           Data.Monoid (mconcat)
 
 import           Language.Fixpoint.Names (propConName)
-import           Language.Fixpoint.Types hiding (quals)
+import           Language.Fixpoint.Types hiding (quals, Loc)
 import           Language.Fixpoint.Parse 
 
 import           Language.Nano.Errors
@@ -106,11 +106,17 @@ bareTypeP
 
 bareTypeNoUnionP
   =  try bareAllP
+ <|> try bareFun1P
  <|> try bareFunP
  <|>     (bareAtomP bbaseP)
 
--- Creating the bindings right away at bareArgP
-bareFunP
+-- | `bareFunP` parses an ordered-intersection type
+
+bareFunP 
+  = tAnd <$> many1 (reserved "/\\" >> bareFun1P)
+
+-- | `bareFun1P` parses a single function type
+bareFun1P
   = do args   <- parens $ sepBy bareArgP comma
        reserved "=>" 
        ret    <- bareTypeP 

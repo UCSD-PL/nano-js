@@ -123,18 +123,29 @@ instance Free (RType r) where
   free (TAll α t)           = S.delete α $ free t 
   free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ α t _ ))  = foldr S.delete (free t) α
+  free (TAnd ts)            = S.unions   $ free <$> ts 
+
+instance (PP r, F.Reftable r) => Substitutable r (Cast (RType r)) where
+  apply θ c = c { castTarget = apply θ (castTarget c) }
 
 instance (PP r, F.Reftable r) => Substitutable r (Fact r) where
-  apply _ x@(PhiVar _)  = x
-  apply θ (TypInst ts)  = TypInst $ apply θ ts
-  apply θ (Assume  t )  = Assume  $ apply θ t
+  apply _ x@(PhiVar _)     = x
+  apply θ (TypInst ξ ts)   = TypInst ξ $ apply θ ts
+  apply θ (TCast   ξ c)    = TCast   ξ $ apply θ c
   apply _ x@(LoopPhiVar _) = x
-  apply θ (TAnnot t)    = TAnnot  $ apply θ t
+  apply θ (TAnnot t)       = TAnnot  $ apply θ t
+
+
+instance (PP r, F.Reftable r) => Substitutable r (Annot (Fact r) z) where
+  apply θ (Ann z fs)       = Ann z $ apply θ fs
+
+instance Free (Cast (RType r)) where
+  free = free . castTarget 
 
 instance Free (Fact r) where
   free (PhiVar _)       = S.empty
-  free (TypInst ts)     = free ts
-  free (Assume t)       = free t
+  free (TypInst _ ts)   = free ts
+  free (TCast _ c)      = free c
   free (LoopPhiVar _)   = S.empty
   free (TAnnot t)       = free t
  
@@ -143,7 +154,8 @@ instance Free (Fact r) where
 appTy :: (PP r, F.Reftable r) => RSubst r -> RType r -> RType r
 ------------------------------------------------------------------------
 appTy θ (TApp c ts z)            = TApp c (apply θ ts) z 
-appTy θ (TObj bs z)              = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
+appTy θ (TAnd ts)                = TAnd (apply θ ts) 
+appTy θ (TObj bs z)              = TObj ((\b -> b { b_type = appTy θ $ b_type b}) <$> bs) z
 appTy (Su m) t@(TVar α r)        = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t r)            = TFun  (apply θ ts) (apply θ t) r
 appTy (Su m) (TAll α t)          = apply (Su $ M.delete α m) t 
@@ -164,7 +176,8 @@ unfoldFirst env t = go t
   where 
     go (TFun its ot r)         = TFun (appTBi go <$> its) (go ot) r
     go (TObj bs r)             = TObj (appTBi go <$> bs) r
-    go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
+    go (TBd  _)                = errorstar "BUG: unfoldTDefDeep: there should not be a TBody here"
+    go (TAnd _)                = errorstar "BUG: unfoldFirst: cannot unfold intersection"
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _) = 
       case envFindTy (F.symbol id) env of

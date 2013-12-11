@@ -16,6 +16,7 @@ module Language.Nano.Typecheck.Types (
   , NanoBare
   , NanoSSA, NanoSSAR, NanoTypeR 
   , NanoType
+  , ExprSSAR, StmtSSAR
   , Source (..)
   , FunctionStatement
   , mapCode
@@ -28,7 +29,7 @@ module Language.Nano.Typecheck.Types (
   , toType
   , ofType
   , strengthen 
-  , strengthenContainers 
+  -- , strengthenContainers 
 
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
@@ -37,13 +38,16 @@ module Language.Nano.Typecheck.Types (
   , mkUnion, mkUnionR
 
   -- * Deconstructing Types
-  , bkFun
+  , bkFun, bkFuns
   , bkAll
-  , bkUnion, rUnion, rTypeR, setRTypeR
+  , bkAnd
+  , bkUnion, rUnion
+  , rTypeR, setRTypeR
   , noUnion
   , unionCheck
-  -- , funTy
-  -- , renameBinds 
+  , funTys
+  , renameBinds 
+  , calleeType
 
   -- * Regular Types
   , Type
@@ -63,6 +67,7 @@ module Language.Nano.Typecheck.Types (
   , tArr
   , tUndef
   , tNull
+  , tAnd
 
   , isTVar
   , isArr
@@ -70,18 +75,26 @@ module Language.Nano.Typecheck.Types (
   -- * Operator Types
   , infixOpTy
   , prefixOpTy 
-  
+  , builtinOpTy
+
   -- * Annotations
   , Annot (..)
   , UFact
   , Fact (..)
-  , AnnBare ,UAnnBare
-  , AnnSSA, UAnnSSA
+  , Cast(..)
+
+  -- * Aliases for annotated Source 
+  , AnnBare, UAnnBare
+  , AnnSSA , UAnnSSA
   , AnnType, UAnnType
   , AnnInfo, UAnnInfo
-  , isAsm
-
   , SST
+
+  -- * Contexts
+  , CallSite (..)
+  , IContext
+  , emptyContext
+  , pushContext
 
   ) where 
 
@@ -93,7 +106,7 @@ import qualified Data.List                      as L
 import qualified Data.HashMap.Strict            as M
 import           Data.Generics                   
 import           Data.Typeable                  ()
-import           Language.ECMAScript3.Syntax
+import           Language.ECMAScript3.Syntax    hiding (Cast)
 import           Language.ECMAScript3.Syntax.Annotations
 import           Language.ECMAScript3.PrettyPrint
 import           Language.ECMAScript3.Parser    (SourceSpan (..))
@@ -161,13 +174,14 @@ data TCon
 
 -- | (Raw) Refined Types 
 data RType r  
-  = TApp TCon [RType r]     r
-  | TVar TVar               r 
-  | TFun [Bind r] (RType r) r
-  | TObj [Bind r]           r
-  | TArr (RType r)          r
-  | TBd  (TBody r)
-  | TAll TVar (RType r)
+  = TApp TCon [RType r]     r   -- ^ C T1,...,Tn
+  | TVar TVar               r   -- ^ A
+  | TFun [Bind r] (RType r) r   -- ^ (x1:T1,...,xn:Tn) => T
+  | TObj [Bind r]           r   -- ^ {f1:T1,...,fn:Tn} 
+  | TArr (RType r)          r   -- ^ [T] 
+  | TBd  (TBody r)              -- ^ ???
+  | TAll TVar (RType r)         -- ^ forall A. T
+  | TAnd [RType r]              -- ^ (T1..) => T1' /\ ... /\ (Tn..) => Tn' 
     deriving (Ord, Show, Functor, Data, Typeable)
 
 
@@ -189,6 +203,46 @@ toType = fmap (const ())
 ofType :: (F.Reftable r) => Type -> RType r
 ofType = fmap (const F.top)
 
+-- | `calleeType` uses the types at the callsite to extract the appropriate
+--   conjunct from an intersection.
+
+calleeType l ts ft@(TAnd fts) = L.find (argsMatch ts) fts
+calleeType _ _ ft             = Just ft
+
+-- calleeType l ts ft@(TAnd fts) = fromMaybe uhOh $ L.find (argsMatch ts) fts
+--   where 
+--     uhOh                      = die $ errorNoMatchCallee (srcPos l) ts ft
+-- calleeType _ _ ft             = ft
+
+-- | `argsMatch ts ft` holds iff the arg-types in `ft` are identical to `ts` ... 
+argsMatch :: [RType a] -> RType b -> Bool
+argsMatch ts ft = case bkFun ft of 
+                    Nothing        -> False
+                    Just (_,xts,_) -> (toType <$> ts) == ((toType . b_type) <$> xts)
+
+
+funTys l f xs ft 
+  = case bkFuns ft of
+      Nothing -> die $ errorNonFunction (srcPos l) f ft 
+      Just ts -> zip ([0..] :: [Int]) [funTy l f xs t | t <- ts]
+
+
+funTy l f xs (αs, yts, t) 
+  | eqLen xs yts = let (su, ts') = renameBinds yts xs 
+                   in  (αs, ts', F.subst su t)    
+  | otherwise    = die $ errorArgMismatch (srcPos l)
+
+eqLen xs ys       = length xs == length ys 
+
+renameBinds yts xs    = (su, [F.subst su ty | B _ ty <- yts])
+  where 
+    su                = F.mkSubst $ safeZipWith "renameBinds" fSub yts xs 
+    fSub yt x         = (b_sym yt, F.eVar x)
+
+
+bkFuns :: RType r -> Maybe [([TVar], [Bind r], RType r)]
+bkFuns = sequence . fmap bkFun . bkAnd 
+
 bkFun :: RType r -> Maybe ([TVar], [Bind r], RType r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'')  <- bkArr t'
@@ -203,6 +257,9 @@ bkAll t              = go [] t
     go αs (TAll α t) = go (α : αs) t
     go αs t          = (reverse αs, t)
 
+bkAnd                :: RType r -> [RType r]
+bkAnd (TAnd ts)      = ts
+bkAnd t              = [t]
 
 ---------------------------------------------------------------------------------
 mkUnion :: (Ord r, Eq r, F.Reftable r) => [RType r] -> RType r
@@ -246,16 +303,18 @@ strengthen t _               = t
 -- refinements of an equivalent (having the same raw version) 
 -- type @t1@.
 -- TODO: Add checks for equivalence in union and objects
-strengthenContainers (TApp TUn ts r) (TApp TUn ts' r') =
-  TApp TUn (zipWith strengthenContainers ts ts') $ r' `F.meet` r
-strengthenContainers (TObj ts r) (TObj ts' r') = 
-  TObj (zipWith doB ts ts') $ r' `F.meet` r
-  where 
-    doB (B s t) (B s' t') | s == s' =  B s $ strengthenContainers t t'
-    doB _       _                   = errorstar "strengthenContainers: sanity check - 1"
-strengthenContainers t t' | toType t == toType t' = strengthen t' $ rTypeR t
-strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity check - 2"
-  
+
+-- RJ: Not used anywhere, commenting out
+-- strengthenContainers (TApp TUn ts r) (TApp TUn ts' r') =
+--   TApp TUn (zipWith strengthenContainers ts ts') $ r' `F.meet` r
+-- strengthenContainers (TObj ts r) (TObj ts' r') = 
+--   TObj (zipWith doB ts ts') $ r' `F.meet` r
+--   where 
+--     doB (B s t) (B s' t') | s == s' =  B s $ strengthenContainers t t'
+--     doB _       _                   = errorstar "strengthenContainers: sanity check - 1"
+-- strengthenContainers t t' | toType t == toType t' = strengthen t' $ rTypeR t
+-- strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity check - 2"
+--   
 
 
 ---------------------------------------------------------------------------------
@@ -290,7 +349,7 @@ rUnion (TApp TUn _ r) = r
 rUnion _              = F.top
  
 -- Get the top-level refinement 
-rTypeR :: RType r -> r
+rTypeR               :: RType r -> r
 rTypeR (TApp _ _ r ) = r
 rTypeR (TVar _ r   ) = r
 rTypeR (TFun _ _ r ) = r
@@ -298,6 +357,7 @@ rTypeR (TObj _ r   ) = r
 rTypeR (TArr _ r   ) = r
 rTypeR (TBd  _     ) = errorstar "Unimplemented: rTypeR - TBd"
 rTypeR (TAll _ _   ) = errorstar "Unimplemented: rTypeR - TAll"
+rTypeR (TAnd _ )     = errorstar "Unimplemented: rTypeR - TAnd"
 
 setRTypeR :: RType r -> r -> RType r
 setRTypeR (TApp c ts _   ) r' = TApp c ts r'
@@ -307,6 +367,7 @@ setRTypeR (TObj xts _    ) r' = TObj xts r'
 setRTypeR (TArr t _      ) r  = TArr t r
 setRTypeR (TBd  _        ) _  = errorstar "Unimplemented: setRTypeR - TBd"
 setRTypeR (TAll _ _      ) _  = errorstar "Unimplemented: setRTypeR - TAll"
+setRTypeR (TAnd _        ) _  = errorstar "Unimplemented: setRTypeR - TAnd"
 
 
 ---------------------------------------------------------------------------------------
@@ -368,9 +429,12 @@ type NanoBareR r   = Nano (AnnBare r) (RType r)
 type NanoSSAR r    = Nano (AnnSSA  r) (RType r)
 type NanoTypeR r   = Nano (AnnType r) (RType r)
 
-type NanoBare   = NanoBareR ()
-type NanoSSA    = NanoSSAR ()
-type NanoType   = NanoTypeR ()
+type ExprSSAR r    = Expression (AnnSSA r)
+type StmtSSAR r    = Statement  (AnnSSA r)
+
+type NanoBare      = NanoBareR ()
+type NanoSSA       = NanoSSAR ()
+type NanoType      = NanoTypeR ()
 
 {-@ measure isFunctionStatement :: (Statement SourceSpan) -> Prop 
     isFunctionStatement (FunctionStmt {}) = true
@@ -443,11 +507,11 @@ instance PP a => PP (Maybe a) where
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
   pp (TFun xts t _)             = ppArgs parens comma xts <+> text "=>" <+> pp t 
-  pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." 
-                                   <+> pp t' where (αs, t') = bkAll t
+  pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." <+> pp t'      where (αs, t') = bkAll t
+  pp (TAnd (ts))                = vcat [text "/\\" <+> pp t | t <- ts]
+  -- pp (TAnd (t:ts))              = vcat $ (text "  " <+> pp t) : [text "/\\" <+> pp t | t <- ts]
   pp (TApp TUn ts r)            = F.ppTy r $ ppArgs id (text "+") ts 
   pp (TApp d@(TDef _)ts r)      = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
-
   pp (TApp c [] r)              = F.ppTy r $ ppTC c 
   pp (TApp c ts r)              = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TArr t r)                 = F.ppTy r $ brackets (pp t)  
@@ -496,6 +560,52 @@ instance (PP s, PP t) => PP (M.HashMap s t) where
   pp m = vcat $ pp <$> M.toList m
 
 -----------------------------------------------------------------------------
+-- | IContext keeps track of context of intersection-type cases -------------
+-----------------------------------------------------------------------------
+
+-- | Keeps track of intersection-type context, to allow casts to be guarded by
+--   context. Otherwise, the "dead-casts" for one case must be proven in another
+--   case which is impossible. See tests/liquid/pos/misc/negate-05.js
+--   A context IC [i_1,...,i_n] denotes the case where we use the conjunct i_k
+--   from the kth function in lexical scope order (ignoring functions that have
+--   a single conjunct.)
+
+class CallSite a where
+  siteIndex :: a -> Int
+
+instance CallSite Int where
+  siteIndex i = i
+
+newtype IContext = IC [Int] 
+                   deriving (Eq, Ord, Show, Data, Typeable)
+
+instance PP Int where
+  pp        = int
+
+instance PP IContext where
+  pp (IC x) = text "Context: " <+> pp x
+
+emptyContext         :: IContext
+emptyContext         = IC []
+
+pushContext          :: (CallSite a) => a -> IContext -> IContext
+pushContext s (IC c) = IC ((siteIndex s) : c) 
+
+-----------------------------------------------------------------------------
+-- | Casts ------------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+data Cast t  = UCST {castTarget :: t } -- ^ up-cast
+             | DCST {castTarget :: t } -- ^ down-cast 
+             | DC   {castTarget :: t } -- ^ dead-cast
+             deriving (Eq, Ord, Show, Data, Typeable)
+
+instance (PP a) => PP (Cast a) where
+  pp (UCST t) = text "Upcast  : " <+> pp t
+  pp (DCST t) = text "Downcast: " <+> pp t
+  pp (DC   t) = text "Deadcast: " <+> pp t
+
+-----------------------------------------------------------------------------
 -- | Annotations ------------------------------------------------------------
 -----------------------------------------------------------------------------
 
@@ -504,32 +614,35 @@ instance (PP s, PP t) => PP (M.HashMap s t) where
 --   @Expression@ type, but are tucking them in using the @a@ parameter.
 
 data Fact r
-  = PhiVar  ! [(Id SourceSpan)]
-  -- This will keep track of:
-  -- ∙ the SSA version of the Phi var before entering the loop, and 
-  -- ∙ the SSA version of the Phi var after entering the loop. 
-  -- ∙ the SSA version of the Phi var at the end of the loop.
-  -- This will be helpful to keep track of the base types that the phi vars will 
-  -- need to have in the loop (since there is no definition of them in the
-  -- source).
-  | LoopPhiVar  ! [(Id SourceSpan, Id SourceSpan, Id SourceSpan)]
-  | TypInst ! [RType r]
-  | Assume  ! (RType r)
-  | TAnnot  ! (RType r)
+  = PhiVar      ![(Id SourceSpan)]
+  | LoopPhiVar  ![(Id SourceSpan, Id SourceSpan, Id SourceSpan)]
+  | TypInst     !IContext ![RType r]
+  | TCast       !IContext !(Cast (RType r))
+  | TAnnot      !(RType r)
     deriving (Eq, Ord, Show, Data, Typeable)
+
+-- TODO: make a record with three suitably named fields instead of a raw-tuple.
+-- | LoopPhiVar: will keep track of:
+-- ∙ the SSA version of the Phi var before entering the loop, and 
+-- ∙ the SSA version of the Phi var after entering the loop. 
+-- ∙ the SSA version of the Phi var at the end of the loop.
+-- This will be helpful to keep track of the base types that the phi vars will 
+-- need to have in the loop (since there is no definition of them in the
+-- source).
 
 type UFact = Fact ()
 
 data Annot b a = Ann { ann :: a, ann_fact :: [b] } deriving (Show, Data, Typeable)
-type AnnBare r  = Annot (Fact r) SourceSpan -- NO facts
-type AnnSSA  r  = Annot (Fact r) SourceSpan -- Only Phi + Assume     facts
-type AnnType r  = Annot (Fact r) SourceSpan -- Only Phi + Typ        facts
-type AnnInfo r  = M.HashMap SourceSpan [Fact r] 
+type AnnBare r = Annot (Fact r) SourceSpan -- NO facts
+type AnnSSA  r = Annot (Fact r) SourceSpan -- Only Phi facts
+type AnnType r = Annot (Fact r) SourceSpan -- Only Phi + Cast facts
+type AnnInfo r = M.HashMap SourceSpan [Fact r] 
 
 type UAnnBare = AnnBare () 
 type UAnnSSA  = AnnSSA  ()
 type UAnnType = AnnType ()
 type UAnnInfo = AnnInfo ()
+
 
 
 instance HasAnnotation (Annot b) where 
@@ -544,14 +657,18 @@ instance Eq (Annot a SourceSpan) where
 instance IsLocated (Annot a SourceSpan) where 
   srcPos = ann
 
+instance IsLocated TCon where
+  srcPos (TDef z) = srcPos z
+  srcPos _        = srcPos dummySpan
+
 instance (F.Reftable r, PP r) => PP (Fact r) where
   pp (PhiVar x)       = text "phi"  <+> pp x
   pp (LoopPhiVar xs)  = text "loopphi ("  
                           <+> cat ((\(x,x0,x1) -> pp x  <+> text "," 
                                               <+> pp x0 <+> text "," 
                                               <+> pp x1 <+> text ")") <$> xs)
-  pp (TypInst ts)     = text "inst" <+> pp ts 
-  pp (Assume t)       = text "assume" <+> pp t
+  pp (TypInst ξ ts)   = text "inst" <+> pp ξ <+> pp ts 
+  pp (TCast  ξ c)     = text "cast" <+> pp ξ <+> pp c
   pp (TAnnot t)       = text "annotation" <+> pp t
 
 instance (F.Reftable r, PP r) => PP (AnnInfo r) where
@@ -562,10 +679,9 @@ instance (F.Reftable r, PP r) => PP (AnnInfo r) where
 instance (PP a, PP b) => PP (Annot b a) where
   pp (Ann x ys) = text "Annot: " <+> pp x <+> pp ys
 
-isAsm  :: UFact -> Bool
-isAsm  (Assume _) = True
-isAsm  _          = False
-
+-- isAsm  :: UFact -> Bool
+-- isAsm  (CastTo _ _) = True
+-- isAsm  _          = False
 
 type SST r     = (SourceSpan, Maybe (RType r))
 
@@ -580,15 +696,19 @@ isTVar (TVar _ _) = True
 isTVar _          = False
 
 tInt, tBool, tUndef, tNull, tString, tVoid, tErr :: (F.Reftable r) => RType r
-tInt    = TApp TInt     [] F.top 
-tBool   = TApp TBool    [] F.top
-tString = TApp TString  [] F.top
-tTop    = TApp TTop     [] F.top
-tVoid   = TApp TVoid    [] F.top
-tUndef  = TApp TUndef   [] F.top
-tNull   = TApp TNull    [] F.top
-tErr    = tVoid
-tFunErr = ([],[],tErr)
+tInt     = TApp TInt     [] F.top 
+tBool    = TApp TBool    [] F.top
+tString  = TApp TString  [] F.top
+tTop     = TApp TTop     [] F.top
+tVoid    = TApp TVoid    [] F.top
+tUndef   = TApp TUndef   [] F.top
+tNull    = TApp TNull    [] F.top
+tErr     = tVoid
+tFunErr  = ([],[],tErr)
+tAnd ts  = case ts of 
+             [ ] -> errorstar "BUG: empty intersection"
+             [t] -> t
+             _   -> TAnd ts
 
 tArr    = (`TArr` F.top)
 
@@ -604,6 +724,15 @@ isArr _           = False
 -- | Operator Types ---------------------------------------------------
 -----------------------------------------------------------------------
 
+-----------------------------------------------------------------------
+builtinOpTy       :: SourceSpan -> BuiltinOp -> Env t -> t
+-----------------------------------------------------------------------
+builtinOpTy l o g = fromMaybe err $ envFindTy ox g
+  where 
+    err           = die $ bugUnknown (srcPos l) "builtinOp" o
+    ox            = builtinOpId o
+ 
+builtinOpId Undefined = builtinId "OpUndefined"
 
 -----------------------------------------------------------------------
 infixOpTy :: InfixOp -> Env t -> t 

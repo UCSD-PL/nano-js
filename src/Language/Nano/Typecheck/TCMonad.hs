@@ -26,25 +26,27 @@ module Language.Nano.Typecheck.TCMonad (
 
   -- * Freshness
   , freshTyArgs
-  , freshTArray
+  -- , freshTArray
 
   -- * Dot Access
-  , safeGetProp
-  , safeGetIdx
-  , indexType
+  -- , safeGetProp
+  -- , safeGetIdx
+  -- , indexType
 
   -- * Type definitions
   , getTDefs
 
   -- * Substitutions
-  , getSubst, setSubst
+  , getSubst
+  , setSubst
 
   -- * Annotations
   , accumAnn
   , getAllAnns
 
   -- * Unfolding
-  , unfoldFirstTC, unfoldSafeTC
+  , unfoldFirstTC
+  , unfoldSafeTC
 
   -- * Subtyping
   , subTypeM  , subTypeM'
@@ -52,20 +54,23 @@ module Language.Nano.Typecheck.TCMonad (
   , checkAnnotation
 
   -- * Unification
-  , unifyTypeM, unifyTypesM
+  , unifyTypeM
+  , unifyTypesM
 
   -- * Casts
-  , getCasts
-  , castM, castsM
-  
+  , castM
+  , addDeadCast 
+
   -- * Get Type Signature 
   , getDefType 
 
   -- * Expression Getter/Setter
-  , getExpr, setExpr, withExpr
+  , setExpr
+  -- , getExpr
+  -- , withExpr
 
   -- * Patch the program with assertions
-  , patchPgmM
+  -- , patchPgmM
 
   -- * Verbosity
   , whenLoud', whenLoud
@@ -118,8 +123,6 @@ data TCState r = TCS {
                    -- Annotations
                    , tc_anns  :: AnnInfo r
                    , tc_annss :: [AnnInfo r]
-                   -- Cast map: 
-                   , tc_casts :: M.Map (Expression (AnnSSA r)) (Cast (RType r))
                    -- Function definitions
                    , tc_defs  :: !(Env (RType r))
                    -- Type definitions
@@ -171,9 +174,6 @@ getSubst :: TCM r (RSubst r)
 -------------------------------------------------------------------------------
 getSubst = tc_subst <$> get 
 
-getCasts = do c <- tc_casts <$> get 
-              return $ M.toList c
-
 -------------------------------------------------------------------------------
 setSubst   :: RSubst r -> TCM r () 
 -------------------------------------------------------------------------------
@@ -200,26 +200,29 @@ logError err x = (modify $ \st -> st { tc_errss = err : tc_errss st}) >> return 
 
 
 -------------------------------------------------------------------------------
-freshTyArgs :: (PP r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r (RType r)
+freshTyArgs :: (PP r, F.Reftable r)
+            => SourceSpan -> IContext -> [TVar] -> RType r -> TCM r (RType r)
 -------------------------------------------------------------------------------
-freshTyArgs l (αs, t) 
-  = (`apply` t) <$> freshSubst l αs
+freshTyArgs l ξ αs t 
+  = (`apply` t) <$> freshSubst l ξ αs
 
-freshSubst :: (PP r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
-freshSubst l αs
+freshSubst :: (PP r, F.Reftable r) => SourceSpan -> IContext -> [TVar] -> TCM r (RSubst r)
+freshSubst l ξ αs
   = do
       fUnique αs
       βs        <- mapM (freshTVar l) αs
-      setTyArgs l βs
+      setTyArgs l ξ βs
       extSubst βs 
       return     $ fromList $ zip αs (tVar <$> βs)
     where
       fUnique xs = when (not $ unique xs) $ logError (errorUniqueTypeParams l) ()
 
-setTyArgs l βs
+setTyArgs l ξ βs
   = do m <- tc_anns <$> get
        when (HM.member l m) $ tcError $ errorMultipleTypeArgs l
-       addAnn l $ TypInst (tVar <$> βs)
+       addAnn l $ {- tracePP msg $ -} TypInst ξ (tVar <$> βs)
+    where 
+       msg = printf "setTyArgs: l = %s ξ = %s" (ppshow l) (ppshow ξ) 
 
 
 -------------------------------------------------------------------------------
@@ -228,14 +231,14 @@ setTyArgs l βs
 
 -- Access field @f@ of type @t@, adding a cast if needed to avoid errors.
 -------------------------------------------------------------------------------
-safeGetProp :: (Ord r, PP r, F.Reftable r) => String -> RType r -> TCM r (RType r)
--------------------------------------------------------------------------------
-safeGetProp f t = do
-    γ <- getTDefs
-    e <- fromJust <$> getExpr
-    case getProp γ f t of
-      Just (t',tf) -> castM e t t' >> return tf
-      Nothing      -> error "safeGetProp" --TODO: deadcode
+-- RJ: TODO FIELD safeGetProp :: (Ord r, PP r, F.Reftable r) => IContext -> String -> RType r -> TCM r (RType r)
+-- RJ: TODO FIELD -------------------------------------------------------------------------------
+-- RJ: TODO FIELD safeGetProp ξ f t = do
+-- RJ: TODO FIELD      γ <- getTDefs
+-- RJ: TODO FIELD      e <- fromJust <$> getExpr
+-- RJ: TODO FIELD      case getProp γ f t of
+-- RJ: TODO FIELD        Just (t', tf) -> castM ξ e t t' >> return tf
+-- RJ: TODO FIELD        Nothing       -> error "safeGetProp" --TODO: deadcode
  
 -- DEPRECATE:
 -- Access index @i@ of type @t@.
@@ -243,30 +246,31 @@ safeGetProp f t = do
 -- So we're not gonna cast for those types
 -- the accessed type here. Instead
 -------------------------------------------------------------------------------
-safeGetIdx :: (Ord r, PP r, F.Reftable r) => Int -> RType r -> TCM r (RType r)
+safeGetIdx :: (Ord r, PP r, F.Reftable r) => IContext -> Int -> RType r -> TCM r (RType r)
 -------------------------------------------------------------------------------
-safeGetIdx f t = do  
+safeGetIdx ξ f t = do  
     γ <- getTDefs
     e <- fromJust <$> getExpr
     case getIdx γ f t of
-      Just (t',tf) -> castM e t t' >> return tf
+      Just (t',tf) -> castM ξ e t t' >> return tf
       Nothing      -> error "safeGetIdx" --TODO: deadcode
 
 -- Only support indexing in arrays atm. Discharging array bounds checks makes
 -- sense only for array types. 
 -------------------------------------------------------------------------------
-indexType :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RType r)
--------------------------------------------------------------------------------
-indexType (TArr t _) = return t 
-indexType t@(TApp TUn ts _) = do
-    e <- fromJust <$> getExpr
-    castM e t t'
-    mkUnion <$> mapM indexType arrs
-  where
-    t'   = mkUnion arrs
-    arrs = (filter isArr ts) 
-
-indexType _          = errorstar "Unimplemented: indexing type other than array."
+-- RJ: TODO FIELD indexType :: (PP r, Ord r, F.Reftable r) => IContext -> RType r -> TCM r (RType r)
+-- RJ: TODO FIELD -------------------------------------------------------------------------------
+-- RJ: TODO FIELD indexType _ (TArr t _)        = return t 
+-- RJ: TODO FIELD 
+-- RJ: TODO FIELD indexType ξ t@(TApp TUn ts _) = do
+-- RJ: TODO FIELD     e <- fromJust <$> getExpr
+-- RJ: TODO FIELD     castM ξ e t t'
+-- RJ: TODO FIELD     mkUnion <$> mapM (indexType ξ) arrs
+-- RJ: TODO FIELD   where
+-- RJ: TODO FIELD     t'   = mkUnion arrs
+-- RJ: TODO FIELD     arrs = filter isArr ts
+-- RJ: TODO FIELD 
+-- RJ: TODO FIELD indexType _ _                 = errorstar "Unimplemented: indexing type other than array."
 
 
 -------------------------------------------------------------------------------
@@ -283,7 +287,7 @@ getAnns = do θ     <- tc_subst <$> get
              return m' 
 
 -------------------------------------------------------------------------------
-addAnn :: SourceSpan -> Fact r -> TCM r () 
+-- addAnn :: (F.Reftable r) => SourceSpan -> Fact r -> TCM r () 
 -------------------------------------------------------------------------------
 addAnn l f = modify $ \st -> st { tc_anns = inserts l f (tc_anns st) } 
 
@@ -295,16 +299,18 @@ getAllAnns = tc_annss <$> get
 
 -------------------------------------------------------------------------------
 accumAnn :: (Ord r, F.Reftable r, Substitutable r (Fact r)) =>
-  (AnnInfo r -> [Error]) -> TCM r () -> TCM r ()
+  (AnnInfo r -> [Error]) -> TCM r a -> TCM r a
 -------------------------------------------------------------------------------
+-- RJ: this function is gross. Why is it being used? why are anns not just
+-- accumulated monotonically?
 accumAnn check act 
   = do m     <- tc_anns <$> get 
        modify $ \st -> st {tc_anns = HM.empty}
-       act
+       z     <- act
        m'    <- getAnns
        forM_ (check m') (`logError` ())
        modify $ \st -> st {tc_anns = m} {tc_annss = m' : tc_annss st}
-
+       return z
 -------------------------------------------------------------------------------
 execute     ::  (PP r, F.Reftable r) => 
   V.Verbosity -> Nano z (RType r) -> TCM r a -> Either [Error] a
@@ -317,14 +323,13 @@ execute verb pgm act
 
 initState ::  (PP r, F.Reftable r) => V.Verbosity -> Nano z (RType r) -> TCState r
 initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss 
-                       tc_casts tc_defs tc_tdefs tc_expr tc_verb 
+                       tc_defs tc_tdefs tc_expr tc_verb 
   where
     tc_errss = []
     tc_subst = mempty 
     tc_cnt   = 0
     tc_anns  = HM.empty
     tc_annss = []
-    tc_casts = M.empty
     tc_defs  = defs pgm
     tc_tdefs = tDefs pgm
     tc_expr  = Nothing
@@ -371,13 +376,12 @@ instance Freshable a => Freshable [a] where
 
 freshTVar l _ =  ((`TV` l). F.intSymbol "T") <$> tick
 
-
-freshTArray l = 
-  do  v <- ((`TV` l). F.intSymbol "A") <$> tick
-      extSubst [v]
-      let t = tVar v
-      addAnn l $ TypInst [t]
-      return $ tArr t
+-- freshTArray l = 
+--   do  v <- ((`TV` l). F.intSymbol "A") <$> tick
+--       extSubst [v]
+--       let t = tVar v
+--       addAnn l $ TypInst [t]
+--       return $ tArr t
               
 
 
@@ -458,98 +462,39 @@ checkAnnotation msg ta e t = do
 --------------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------
-withExpr  :: Maybe (Expression (AnnSSA r)) -> TCM r a -> TCM r a
------------------------------------------------------------------------------
-withExpr e action = 
-  do  eold  <- getExpr 
-      setExpr  e 
-      r     <- action 
-      setExpr  eold
-      return $ r
+-- withExpr  :: Maybe (Expression (AnnSSA r)) -> TCM r a -> TCM r a
+-- -----------------------------------------------------------------------------
+-- withExpr e action = 
+--   do  eold  <- getExpr 
+--       setExpr  e 
+--       r     <- action 
+--       setExpr  eold
+--       return $ r
 
 
 -- | For the expression @e@, check the subtyping relation between the type @t@
 -- which is the actual type for @e@ and @t'@ which is the desired (cast) type
 -- and insert the right kind of cast. 
 --------------------------------------------------------------------------------
-castM     :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA r) -> RType r -> RType r -> TCM r ()
+castM :: (Ord r, PP r, F.Reftable r) => 
+           IContext -> Expression (AnnSSA r) -> RType r -> RType r -> TCM r (Expression (AnnSSA r))
 --------------------------------------------------------------------------------
-castM e t t' = subTypeM t t' >>= go
+castM ξ e t t'    = subTypeM t t' >>= go
   where 
-    go SupT  = addDownCast e t t'
-    go Rel   = addDownCast e t t'
-    go SubT  = addUpCast e t'
-    go EqT   = return ()
-    go Nth   = addDeadCast e t'
+    go SupT       = addDownCast ξ e t'
+    go Rel        = addDownCast ξ e t'
+    go SubT       = addUpCast   ξ e t'
+    go Nth        = addDeadCast ξ e t'
+    go EqT        = return e 
 
+addUpCast   ξ e t = addCast ξ e (UCST t)
+addDownCast ξ e t = addCast ξ e (DCST t) 
+addDeadCast ξ e t = addCast ξ e (DC t)
 
---------------------------------------------------------------------------------
-castsM    :: (Ord r, PP r, F.Reftable r) => 
-  [Expression (AnnSSA r)] -> [RType r] -> [RType r] -> TCM r ()
---------------------------------------------------------------------------------
-castsM     = zipWith3M_ castM 
-
-
---------------------------------------------------------------------------------
-addUpCast :: (F.Reftable r, PP r) => 
-  Expression (AnnSSA r) -> RType r -> TCM r ()
---------------------------------------------------------------------------------
-addUpCast e t = modify $ \st -> st { tc_casts = M.insert e (UCST t) (tc_casts st) }
-
---------------------------------------------------------------------------------
-addDownCast :: (Ord r, PP r, F.Reftable r) => 
-  Expression (AnnSSA r) -> RType r -> RType r -> TCM r ()
---------------------------------------------------------------------------------
--- addDownCast e _ cast = modify $ \st -> st { tc_casts = M.insert e (DCST cast) (tc_casts st) }
-  
--- | Down casts will not be k-vared later - so pass the refinements here!
---   RJ: unfortunately, TC *does not* correctly propagate the refinements, 
---   e.g. applying substitutions at call-sites, so the refinements are malformed
---   c.f. tests/liquid/pos/operators/add-04.js
---   Why don't we just use "TOP"? Would it be unsound?
-  
-addDownCast e base cast = 
-  do  γ <- getTDefs
-      let cast' = zipType2 γ F.meet base cast    -- copy the refinements from the base type 
-          msg   =  printf "DOWN CAST: cast = %s" (ppshow cast)
-      modify $ \st -> st { tc_casts = M.insert e (DCST cast {- $ tracePP msg cast' -}) (tc_casts st) }
-
---------------------------------------------------------------------------------
-addDeadCast :: Expression (AnnSSA r) -> RType r -> TCM r ()
---------------------------------------------------------------------------------
-addDeadCast e t = modify $ \st -> st { tc_casts = M.insert e (DC t) (tc_casts st) }
-
-
---------------------------------------------------------------------------------
-patchPgmM :: (Data b, Typeable r) => b -> TCM r b
---------------------------------------------------------------------------------
-patchPgmM pgm = 
-  do  c <- tc_casts <$> get
-      return $ fst $ runState (everywhereM' (mkM transform) pgm) (PS c)
-
-
-data PState r = PS { m :: Casts_ r }
-type PM     r = State (PState r)
-
---------------------------------------------------------------------------------
-transform :: Expression (AnnSSA r) -> PM r (Expression (AnnSSA r))
---------------------------------------------------------------------------------
-transform e = 
-  do  c  <- m <$> get      
-      put (PS $ M.delete e c)
-      return $ patchExpr c e
-
---------------------------------------------------------------------------------
-patchExpr :: Casts_ r -> Expression (AnnSSA r) -> Expression (AnnSSA r)
---------------------------------------------------------------------------------
-patchExpr m e =
-  case M.lookup e m of
-    Just (UCST t) -> UpCast   (a { ann_fact = (Assume t):fs }) e
-    Just (DCST t) -> DownCast (a { ann_fact = (Assume t):fs }) e
-    Just (DC   t) -> DeadCast (a { ann_fact = (Assume t):fs }) e
-    _             -> e
+addCast     ξ e c = addAnn loc fact >> return (wrapCast loc fact e)
   where 
-    fs = ann_fact a
-    a  = getAnnotation e
+    loc           = srcPos e
+    fact          = TCast ξ c
 
-
+wrapCast _ f (Cast (Ann l fs) e) = Cast (Ann l (f:fs)) e
+wrapCast l f e                   = Cast (Ann l [f])    e
