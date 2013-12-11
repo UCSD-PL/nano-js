@@ -3,12 +3,14 @@ module Language.TypeScript.Parse (parseTypeScript) where
 
 import System.Environment
 import System.IO
+import System.FilePath.Posix
 import Data.List
 import Text.XML.Light
 import Text.Regex.Posix
 import Language.ECMAScript3.Syntax
 import Language.Nano.Typecheck.Types
 import Language.Fixpoint.Types as F (Symbol, stringSymbol)
+import Language.Fixpoint.Misc (executeShellCommand)
 
 
 
@@ -18,16 +20,22 @@ main = do (arg :_) <- getArgs
 
 parseTypeScript :: FilePath -> IO (JavaScript (Maybe Type))
 parseTypeScript fts
-  = do fxml <- convertTs2XML f
+  = do fxml <- convertTs2XML fts
        parseTypeScriptXML fxml
 
 
 -- | convertTs2XML takes a path to a .ts file and converts and returns a path to a .xml file
 convertTs2XML     :: FilePath -> IO FilePath
-convertTs2XML fts = executeShellCommand "ts2xml" $ convertCommand fts
+convertTs2XML tsfile = 
+  let filename = fst $ splitExtension tsfile in
+     do executeShellCommand "ts2xml" $ convertCommand tsfile
+        return $ "./" ++ filename ++".xml"
 
 convertCommand     :: FilePath -> String
-convertCommand fts = error "TODO: convertTs2XML"
+convertCommand tsfile = 
+  let filename = fst $ splitExtension tsfile in
+  "$HOME/CSE199/nano-ts/run " ++ tsfile 
+  ++" > "++ "./" ++ filename ++".xml"
 
 
 parseTypeScriptXML :: FilePath -> IO (JavaScript (Maybe Type))
@@ -145,8 +153,7 @@ xml2statement ("ContinueStatement",elmt) =
   else ContinueStmt Nothing (Just (Id Nothing (getText (snd (exprParts!!0)))))
 --LabeledStatement contains the label itself as  child in a IdentifierName tag
 --and a Statement of any kind (only one!)
-xml2statement ("LabeledStatement",elmt) = 
-  let exprParts = createPairs elmt in
+xml2statement ("LabeledStatement",elmt) =
   LabelledStmt Nothing (Id Nothing (getText (getUChildByTag elmt "IdentifierName"))) 
                        (xml2statement $ (createPairs elmt)!!1)
 --VaribleStatement contisn a list of modifiers and the variabledeclaration statement wich contains a separatedlist
@@ -178,17 +185,17 @@ xml2statement ("TryStatement",elmt) = trycatchfinnaly_statement elmt
 --FinallyClause contains only one child
 xml2statement ("FinallyClause",elmt) = xml2statement $ (createPairs elmt)!!0
 --Any other unsupported types
-xml2statement (s,elmt) = error ("Exception statement: string of type:" ++ s)
+xml2statement (s,_) = error ("Exception statement: string of type:" ++ s)
 
 xml2list_statement :: (String,Element) -> [Statement (Maybe (RType ()))]
 --List is a generic list of statements.
-xml2list_statement (s,elmt) = (map xml2statement (createPairs elmt))
+xml2list_statement (_,elmt) = (map xml2statement (createPairs elmt))
 
 xml2list_expression :: (String,Element) -> [Expression (Maybe (RType ()))]
 --ARgumentList has only one child which is a list
 xml2list_expression ("ArgumentList",elmt) = (xml2list_expression (getUniqueChild elmt))
 --List is a generic list of expressions.
-xml2list_expression (s,elmt) = (map xml2expression (createPairs elmt))
+xml2list_expression (_,elmt) = (map xml2expression (createPairs elmt))
 
 xml2list_id :: (String,Element) -> [Id (Maybe (RType ()))]
 xml2list_id ("ParameterList",elmt) = xml2list_id (getUniqueChild elmt)
@@ -263,12 +270,12 @@ xml2expression ("RegularExpressionLiteral",elmt) =
   let text = split (=='/')(getText elmt) in
   RegexpLit Nothing (head text) (isInfixOf "g" (last text)) (isInfixOf "i" (last text)) 
 --Boolean Keywords:
-xml2expression ("TrueKeyword",elmt) = BoolLit Nothing True
-xml2expression ("FalseKeyword",elmt) = BoolLit Nothing False
+xml2expression ("TrueKeyword",_) = BoolLit Nothing True
+xml2expression ("FalseKeyword",_) = BoolLit Nothing False
 --Null
-xml2expression ("NullKeyword",elmt) = NullLit Nothing 
+xml2expression ("NullKeyword",_) = NullLit Nothing 
 --This
-xml2expression ("ThisKeyword",elmt) = ThisRef Nothing 
+xml2expression ("ThisKeyword",_) = ThisRef Nothing 
 --EqualsValueClause contains only one child
 xml2expression ("EqualsValueClause",elmt) = xml2expression (getUniqueChild elmt)
 --Memebr acces expression has two children: the accesed object and the member.
@@ -299,7 +306,7 @@ xml2expression ("ObjectLiteralExpression",elmt) =
   let children = createPairs elmt in
   ObjectLit Nothing (map propertyassigment_expression (createPairs(snd(head children))))
 --Any other unsuported type
-xml2expression (s,elmt) = error ("Exception expression: string of type:" ++ s)
+xml2expression (s,_) = error ("Exception expression: string of type:" ++ s)
 
 
 xml2lvalue :: (String,Element) -> LValue (Maybe (RType ()))
@@ -316,12 +323,12 @@ xml2lvalue ("MemberAccessExpression",el) =
 xml2lvalue ("ElementAccessExpression",el) =
   let exprParts = (map xml2expression (createPairs el)) in
   LBracket Nothing (head exprParts) (last exprParts)
-xml2lvalue (s,elmt) = error ("Exception lvalue: string of type:" ++ s)
+xml2lvalue (s,_) = error ("Exception lvalue: string of type:" ++ s)
 
 xml2id :: (String,Element) -> Id (Maybe (RType ()))
 xml2id ("IdentifierName",el) = Id Nothing(getText el)
 xml2id ("Parameter",el) = xml2id (head (createPairs el))
-xml2id (s,el) = error ("Exception id: string of type:" ++ s)
+xml2id (s,_) = error ("Exception id: string of type:" ++ s)
 
 infix_expression :: InfixOp -> Element -> Expression (Maybe (RType ()))
 infix_expression op el = 
@@ -370,7 +377,7 @@ caseclause_expression ("CaseSwitchClause",el) =
 caseclause_expression ("DefaultSwitchClause",el) =
   let children = createPairs el in
   CaseDefault Nothing (xml2list_statement (children!!0))
-caseclause_expression (s,list) = error ("Exception caseclause: string of type:" ++ s)
+caseclause_expression (s,_) = error ("Exception caseclause: string of type:" ++ s)
 
 forinit_expression :: Element -> ForInit (Maybe (RType ()))
 forinit_expression el = 
@@ -421,7 +428,7 @@ catchclause_statement el =
   CatchClause Nothing (Id Nothing (getText (snd (head children)))) (xml2statement (last children))  
 
 propertyassigment_expression :: (String,Element) -> (Prop (Maybe (RType ())), Expression (Maybe (RType ())))
-propertyassigment_expression (s,el) =
+propertyassigment_expression (_,el) =
   let pair = createPairs el in
   let key = head pair in
   let value = last pair in
@@ -461,9 +468,9 @@ parameter_name_type el = ((getText (getUChildByTag el "IdentifierName")),
 function_return_type :: Element -> RType ()
 function_return_type el =
   let typeannotation = get_type_annotation el in
-       case get_type_annotation el  of 
+       case typeannotation  of 
                 Nothing -> TApp TVoid [] ()
-                Just typeannotation  -> typeannotation
+                Just ann  -> ann
 
 
 get_type_annotation :: Element -> (Maybe (RType ()))
@@ -476,11 +483,11 @@ get_type_annotation el =
   Just (convert_type_keyword keyword_tag)
 
 convert_type_keyword :: (String,Element) -> RType ()
-convert_type_keyword ("NumberKeyword",el) = TApp TInt [] ()
-convert_type_keyword ("BooleanKeyword",el) = TApp TBool [] ()
-convert_type_keyword ("BoolKeyword",el) = TApp TBool [] ()
-convert_type_keyword ("StringKeyword",el) = TApp TString [] ()
-convert_type_keyword ("VoidKeyword",el) = TApp TVoid [] ()
-convert_type_keyword ("AnyKeyword",el) = TApp TAny [] ()
+convert_type_keyword ("NumberKeyword",_) = TApp TInt [] ()
+convert_type_keyword ("BooleanKeyword",_) = TApp TBool [] ()
+convert_type_keyword ("BoolKeyword",_) = TApp TBool [] ()
+convert_type_keyword ("StringKeyword",_) = TApp TString [] ()
+convert_type_keyword ("VoidKeyword",_) = TApp TVoid [] ()
+convert_type_keyword ("AnyKeyword",_) = TApp TAny [] ()
 convert_type_keyword ("ArrayType",el) = TArr (convert_type_keyword $ getUniqueChild el) ()
-convert_type_keyword (str,el) = error ("Unsuported type "++str)
+convert_type_keyword (str,_) = error ("Unsuported type "++str)
