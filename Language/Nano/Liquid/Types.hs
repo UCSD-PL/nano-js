@@ -207,7 +207,7 @@ rTypeSort :: (F.Reftable r) => RType r -> F.Sort
 rTypeSort (TApp TInt [] _)     = F.FInt
 rTypeSort (TVar α _)           = F.FObj $ F.symbol α 
 rTypeSort t@(TAll _ _)         = rTypeSortForAll t 
-rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> xts) ++ [t]
+rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> (xts ++ [t]))
 rTypeSort (TApp c ts _)        = rTypeSortApp c ts 
 rTypeSort (TObj _ _)           = F.FApp (F.stringFTycon "object") []
 rTypeSort t                    = error ("Type: " ++ ppshow t ++ 
@@ -275,7 +275,8 @@ emapReft  :: (F.Reftable a) => ([F.Symbol] -> a -> b) -> [F.Symbol] -> RType a -
 emapReft f γ (TVar α r)          = TVar α (f γ r)
 emapReft f γ (TApp c ts r)       = TApp c (emapReft f γ <$> ts) (f γ r)
 emapReft f γ (TAll α t)          = TAll α (emapReft f γ t)
-emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts) (emapReft f γ' t) hi' ho' (f γ r) 
+emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts)
+                                        (emapReftBind f γ' t) hi' ho' (f γ r) 
   where 
     γ'                           = (b_sym <$> xts) ++ γ 
     hi'                          = fmap (emapReftBind f γ) hi
@@ -293,7 +294,8 @@ mapReftM :: (F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RType a -> m
 ------------------------------------------------------------------------------------------
 mapReftM f (TVar α r)          = TVar α <$> f r
 mapReftM f (TApp c ts r)       = TApp c <$> mapM (mapReftM f) ts <*> f r
-mapReftM f (TFun xts t h h' _) = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t
+mapReftM f (TFun xts t h h' _) = TFun   <$> mapM (mapReftBindM f) xts
+                                        <*> mapReftBindM f t
                                         <*> mapReftHeapM f h
                                         <*> mapReftHeapM f h'
                                         <*> (return F.top) --f r 
@@ -324,10 +326,12 @@ efoldReft :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> r -> a -> a) -> F.
 efoldReft _ f γ z (TVar _ r)          = f γ r z
 efoldReft g f γ z t@(TApp _ ts r)     = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
 efoldReft g f γ z (TAll _ t)          = efoldReft g f γ z t
-efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z ts) t  
+efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldRefts g f γ' z ts
   where 
-    γ'                                = foldr (efoldExt g) γ xts
-    ts                                = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
+    γ'                                = foldr (efoldExt g) γ (t:xts)
+    ts                                = (b_type <$> (t:xts))
+                                     ++ heapTypes (b_type <$> h)
+                                     ++ heapTypes (b_type <$> h')
 efoldReft g f γ z (TObj xts r)        = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
   where 
     γ'                                = foldr (efoldExt g) γ xts

@@ -60,7 +60,7 @@ unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _)
   | any isTop [t,t']                    = Right θ
 
 unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) = 
-  unifys env θ (t: (b_type <$> xts)) (t': (b_type <$> xts'))
+  unifys env θ (b_type <$> (t:xts)) (b_type <$> (t':xts'))
 
 -- TODO: Cycles
 unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)

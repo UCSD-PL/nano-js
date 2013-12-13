@@ -1,26 +1,34 @@
-//import "doubly-linked-list.js"
-/*@ qualif NNull0(v:a, x:b): ((ttag(x)  = "null") => (ttag(v) = "null")) */
-/*@ qualif NNull0(v:a, x:b): ((ttag(x) != "null") => (x = v)) */
-/*@ qualif EqLen(v:a, x:b): (len(v) = len(x)) */
+/*@ import "doubly-linked-list.js" */
+/*@ qualif EqLen(v:a, vs:b): (dlenp(v,vs) = dlenp(x,xs)) */
+
+/*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number */
+/*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x)) */
+
+/*@ measure dkeysp :: forall A B C. (<l>+null, dlist[A,B,C]) => set[A]  */
+/*@ measure dkeysp(p,x) = (if (p = null) then
+                            Set_cap(Set_sng(1),Set_sng(0))
+                         else
+                            keys(x))                            */
 
 /*@
-  type dlist[A,S,P] exists! l |-> ls:dlist[A, <l>, S] . me:{ data: A, next:<l>+null, prev:P }
+  type dlist[A,S,P] exists! l |-> tl:dlist[A, <l>, S]
+                                . me:{ data: A, next:<l>+null, prev:P }
+    with len(x) = (1 + dlenp(field(me, "next"), tl))
+    and keys(x) = Set_cup(Set_sng(field(me, "data")), dkeysp(field(me, "next"), tl))
 
-  with len(x) := (if (ttag(field(me,"next")) = "null") then 1 else (1 + len(ls)))
 */
 
-/* insert :: (x:?dlist[A,null], k:A)/h => {v:dlist[A,null]}/v |-> keys(v) = set_cup(keys(x,h), set_singleton(k))} */
-
-/*@ insert :: forall A. (x:<x>+null, k:A)/x |-> xs:dlist[A,<x>,null]
-                                   => <v>/v |-> ys:{dlist[A,<v>,null] | (if (ttag(x) != "null")
-                                                                        then (len(v) = 1 + len(xs))
-                                                                        else (len(v) = 1)) } */
+/*@
+  insert :: forall A.
+    (x:<x>+null, k:A)/x |-> xs:dlist[A,<x>,null]
+       => r:{v:<j> | dlenp(v,js) = 1 + dlenp(x,xs)}/j |-> js:dlist[A,<j>,null]
+*/
 function insert(x, k){
-  var y  = {data:k, next:null, prev:null};
+  var y  = {data:k, next:x, prev:null};
 
-  if (typeof(x) != "null") {
-      x.prev = y;
-      y.next = x;
+  if (x != null) {
+    y.next = x;
+    x.prev = y;
   }
 
   return y;

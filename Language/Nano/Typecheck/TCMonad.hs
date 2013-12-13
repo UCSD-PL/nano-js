@@ -269,7 +269,7 @@ logError l msg x = (modify $ \st -> st { tc_errss = (l,msg):(tc_errss st)}) >> r
 
 -------------------------------------------------------------------------------
 freshFun :: (PP r, PP fn, Ord r, F.Reftable r) =>
-  AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, RType r)
+  AnnSSA_ r -> fn -> RType r -> TCM r ([TVar], [Bind r], RHeap r, RHeap r, Bind r)
 -------------------------------------------------------------------------------
 freshFun l fn ft
   = do let bkft           = bkAll ft

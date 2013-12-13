@@ -183,7 +183,7 @@ nilBind = B nilSymbol tUndef
 data RType r  
   = TApp  TCon [RType r]                               r
   | TVar  TVar                                         r 
-  | TFun  [Bind r] (RType r) (RHeapEnv r) (RHeapEnv r) r
+  | TFun  [Bind r] (Bind r) (RHeapEnv r) (RHeapEnv r)  r
   | TObj  [Bind r]                                     r
   | TBd   (TBody r)
   | TAll  TVar (RType r)
@@ -276,7 +276,7 @@ restrictHeap ls h = heapCombineWith const [h1, h2]
     (bs,nbs) = L.partition ((`elem` ls) . fst) $ heapBinds h
     ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
-bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeapEnv r, RHeapEnv r, RType r)
+bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeapEnv r, RHeapEnv r, Bind r)
 bkFun t = do let (αs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'
              return (αs, xts, h, h', t'')
@@ -416,7 +416,9 @@ noUnion :: (F.Reftable r) => RType r -> Bool
 ---------------------------------------------------------------------------------------
 noUnion (TApp TUn _ _)      = False
 noUnion (TApp _  rs _)      = and $ map noUnion rs
-noUnion (TFun bs rt h h' _) = and $ map noUnion $ rt : ((map b_type bs) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h'))
+noUnion (TFun bs rt h h' _) = and $ map noUnion $ ((map b_type (rt:bs))
+                                                 ++ heapTypes (b_type <$> h)
+                                                 ++ heapTypes (b_type <$> h'))
 noUnion (TObj bs    _)      = and $ map noUnion $ map b_type bs 
 noUnion (TBd  _      )      = error "noUnion: cannot have TBodies here"
 noUnion (TAll _ t    )      = noUnion t
@@ -728,7 +730,7 @@ tVoid   = TApp TVoid    [] F.top
 tUndef  = TApp TUndef   [] F.top
 tNull   = TApp TNull    [] F.top
 tErr    = tVoid
-tFunErr = ([],[],heapEmpty,heapEmpty,tErr)
+tFunErr = ([],[],heapEmpty,heapEmpty,B returnSymbol tErr)
 
 tRef :: (F.Reftable r) => Location -> RType r
 tRef l  = TApp (TRef l) [] F.top

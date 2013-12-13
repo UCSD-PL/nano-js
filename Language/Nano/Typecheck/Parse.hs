@@ -130,7 +130,7 @@ bareFunP
   = do args   <- parens $ sepBy bareArgP comma
        h      <- (reserved "/" >> heapP) <|> return heapEmpty 
        reserved "=>" 
-       ret    <- bareTypeP
+       ret    <- bareArgP
        h' <- do reserved "/"
                 try heapP <|> (reserved "same" >> return h)
             <|> return heapEmpty 

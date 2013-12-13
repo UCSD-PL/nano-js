@@ -539,11 +539,12 @@ padFun γ (TFun b1s o1 h1 h1' r1) (TFun b2s o2 h2 h2' r2)
     where
       sameTypes              = all (== EqT) $ od:bds
       (tjs, t1s', t2s', bds) = unzip4 $ zipWith (compareTs γ) (b_type <$> b1s) (b_type <$> b2s)
-      (oj , o1' , o2' , od ) = compareTs γ o1 o2
-      t1'                    = TFun (updTs b1s t1s') o1' h1 h1' r1
-      t2'                    = TFun (updTs b2s t2s') o2' h2 h2' r2
-      joinT                  = TFun (updTs b1s tjs) oj h1 h1' F.top 
-      updTs                  = zipWith (\b t -> b { b_type = t })
+      (otj , ot1 , ot2 , od )= compareTs γ (b_type o1) (b_type o2)
+      t1'                    = TFun (updTs b1s t1s') (updT o1 ot1) h1 h1' r1
+      t2'                    = TFun (updTs b2s t2s') (updT o2 ot2) h2 h2' r2
+      joinT                  = TFun (updTs b1s tjs) (updT o1 otj) h1 h1' F.top 
+      updTs                  = zipWith updT
+      updT b t               = b { b_type = t }
 
 padFun _ _ _ = error "padFun: no other cases supported"
 
@@ -600,7 +601,7 @@ zipType2 _ f (TApp c [] r) (TApp c' [] r')    | c == c' =
 zipType2 _ f (TVar v r) (TVar v' r') | v == v' = TVar v $ f r r'
 
 zipType2 γ f (TFun xts t ih oh r) (TFun xts' t' ih' oh' r') = 
-  TFun (safeZipWith "zipType2:TFun" (zipBind2 γ f) xts xts') (zipType2 γ f t t') zih zoh $ f r r'
+  TFun (safeZipWith "zipType2:TFun" (zipBind2 γ f) xts xts') (zipBind2 γ f t t') zih zoh $ f r r'
   where zipHeaps h1 h2 = heapCombineWith (zipBind2 γ f) [h1,h2]
         zih            = zipHeaps ih ih'
         zoh            = zipHeaps oh oh'

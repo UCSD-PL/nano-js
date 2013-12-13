@@ -140,10 +140,15 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where
 instance Free (RType r) where
   free (TApp _ ts _)          = S.unions   $ free <$> ts
   free (TVar α _)             = S.singleton α 
-  free (TFun xts t h h' _)    = S.unions   $ free <$> t:ts where ts = (b_type <$> xts) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
+  free (TFun xts t h h' _)    = S.unions   $ free <$> funTs (t:xts, h, h')
   free (TAll α t)             = S.delete α $ free t 
   free (TObj bs _)            = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ _ α h t _ ))= foldr S.delete (free t) α
+
+funTs (xts, h, h') = ts                               
+    where ts = (b_type <$> xts)
+             ++ heapTypes (b_type <$> h)
+             ++ heapTypes (b_type <$> h')
 
 instance Substitutable () Fact where
   apply _ x@(PhiVar _)    = x
@@ -219,8 +224,8 @@ unfoldFirst :: (PP r, Ord r, F.Reftable r) => Env (RType r) -> RType r -> RType 
 -------------------------------------------------------------------------------
 unfoldFirst env t = go t
   where 
-    go (TFun its ot h h' r)    = TFun (appTBi go <$> its) (go ot) (appTBi go <$> h) (appTBi go <$> h') r
-    go (TObj bs r)             = TObj (appTBi go <$> bs) r
+    go (TFun its ot h h' r)    = TFun (goB <$> its) (goB ot) (goB <$> h) (goB <$> h') r
+    go (TObj bs r)             = TObj (goB <$> bs) r
     go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _) = 
@@ -229,8 +234,7 @@ unfoldFirst env t = go t
         _                              -> error $ errorUnboundId id
     go (TApp c a r)            = TApp c (go <$> a) r
     go t@(TVar _ _ )           = t
-    appTBi f (B s t)           = B s $ f t
-
+    goB (B s t)                = B s $ go t
 
 -- | Unfold a top-level type definition once. 
 -- Return @Right t@, where @t@ is the unfolded type if the unfolding is succesful.

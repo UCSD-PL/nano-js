@@ -221,13 +221,13 @@ type TCEnv r = Maybe (Env (RType r), RHeap r)
 
 tcFun (γ,_) (FunctionStmt l f xs body) 
   = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
-       checkSigWellFormed l ts t (b_type <$> σ) (b_type <$> σ')
+       checkSigWellFormed l ts (b_type t) (b_type <$> σ) (b_type <$> σ')
        let γ'  = envAdds [(f, ft)] γ
-       let γ'' = envAddFun l f αs xs ts t γ'
+       let γ'' = envAddFun l f αs xs ts (b_type t) γ'
        accumAnn (\a -> catMaybes (map (validInst γ'') (tracePP "offending a" $ M.toList a))) $  
          do q              <- withFun (F.symbol f) $ tcStmts (γ'', b_type <$> σ) body
             θ              <- getSubst
-            when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid t
+            when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid (b_type t)
        return $ Just (γ', heapEmpty)
 
     
@@ -650,9 +650,10 @@ tcCall (γ,σ) l fn es ft
         castHeapM γ l (apply θ σ') (apply θ σi)
         checkDisjoint σo
         let σ_out   = tracePP "sig out" $ heapCombine "tcCall" [subtr (tracePP "theta call" θ) (tracePP "actual sig in" σ') (tracePP "spec sig in" σi), tracePP "sig out" $ apply θ σo]
-            deletes = filter (`notElem` apply θ (heapLocs σ_out)) (apply θ $ heapLocs σ')
-        return (deleteLocsTy (L.nub deletes) $ apply θ ot, deleteLocsTy (L.nub deletes) <$> apply θ σ_out)
+            ds      = filter (`notElem` apply θ (heapLocs σ_out)) (apply θ $ heapLocs σ')
+        return (delLocs ds . b_type $ apply θ ot, delLocs ds <$> apply θ σ_out)
     where
+      delLocs dels    = deleteLocsTy (L.nub dels)
       subtr θ σ1 σ2   = foldl (flip heapDel) σ1 $ apply θ $ heapLocs σ2
       checkDisjoint σ = do σ' <- safeHeapSubstWithM (\_ _ _ -> Left ()) σ
                            case [m | (m, Left _) <- heapBinds σ'] of

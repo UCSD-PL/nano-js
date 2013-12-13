@@ -82,7 +82,7 @@ function unwind(x) {
 /*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else
    keys(x)) */
 
-/*@ measure len  :: forall A. (list[A]) => number  */
+/*@ measure len  :: forall A. (A) => number  */
 /*@ measure lenp :: forall A. (<l> + null, list[A]) => number */
 /*@ measure lenp(p,x) = (if (p = null) then 0 else len(x)) */
 

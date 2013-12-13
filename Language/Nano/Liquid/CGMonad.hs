@@ -197,7 +197,6 @@ getMeasures = cg_tmeas <$> get >>= (return . map snd . M.toList)
 getRMeasures :: (F.Symbolic s) => s -> CGM [Measure]             
 ---------------------------------------------------------------------------------------
 getRMeasures t = do m <- cg_trmeas <$> get
-                    let x = tracePP "Rec Measures:" (M.toList m)
                     return $ M.lookupDefault [] (F.symbol t) m
 
 addMeasuresM g b
@@ -309,7 +308,7 @@ cgError l msg = throwError $ printf "CG-ERROR at %s : %s" (ppshow $ srcPos l) ms
 envAddFresh :: (IsLocated l) => l -> RefType -> CGEnv -> CGM (Id l, CGEnv) 
 ---------------------------------------------------------------------------------------
 envAddFresh l t g 
-  = do x  <- tracePP ("envAddFresh " ++ ppshow t) <$> freshId l
+  = do x  <- freshId l
        g' <- envAdds [(x, t)] g
        return (x, g')
 
@@ -318,12 +317,15 @@ envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv -> CGM CG
 ---------------------------------------------------------------------------------------
 envAdds xts' g
   = do xts    <- zip xs  <$> mapM addInvariant ts
-       is     <- forM xts $  addFixpointBind 
-       _      <- forM xts $  \(x, t) -> addAnnot (srcPos x) x t
-       return  $ g { renv = E.envAdds xts        (renv g) } 
+       let g' =  g { renv = E.envAdds xts        (renv g) } 
+       xts'   <- mapM (xtwrap $ addMeasuresM g' . tracePP "envAdds") xts
+       is     <- forM xts' $  addFixpointBind 
+       _      <- forM xts' $  \(x, t) -> addAnnot (srcPos x) x t
+       return $ g' { renv = E.envAdds xts'       (renv g')}
                    { fenv = F.insertsIBindEnv is (fenv g) }
     where 
-       (xs,ts) = unzip xts'
+      (xs,ts)        = unzip xts'
+      xtwrap m (x,t) = m (B (F.symbol x) t) >>= \(B _ t') -> return (x, tracePP "envAdds'" t')
 
 ---------------------------------------------------------------------------------------
 envAddFreshHeap   :: (IsLocated l) => l -> (Location, RefType) -> CGEnv -> CGM (Id SourceSpan, CGEnv)
@@ -533,15 +535,24 @@ freshTyFun' g l _ t b
 ---------------------------------------------------------------------------------------
 freshTyInst l g αs τs tbody
   = do let (vs,bs,hi,ho,ro) = maybe (error "freshTyInst: not a function") id $ bkFun tbody
+       xr                  <- freshId l
+       let retsu            = F.mkSubst [(rs, F.eVar xr)]
+           B rs rt          = ro
+       -- (hisu, hi')         <- freshHeapEnv l (fmap (F.subst retsu) <$> hi)
+       -- (hosu, ho')         <- freshHeapEnv l (fmap (F.subst (hisu <> retsu)) <$> ho)
        (hisu, hi')         <- freshHeapEnv l hi
-       (hosu, ho')         <- freshHeapEnv l (fmap (F.subst hisu) <$> ho)
-       let su               = F.catSubst hisu hosu
+       (hosu, ho')         <- freshHeapEnv l ho
+       let su               = retsu `F.catSubst` hisu `F.catSubst` hosu
        ts                  <- mapM (freshTy "freshTyInst") (F.subst su <$> τs)
        _                   <- mapM (wellFormed l g) ts
        let θ                = fromLists (zip αs ts) []
-       let tbody' = TFun (fmap (F.subst su) <$> bs) (F.subst su ro) hi' ho' F.top
+           rs'              = F.symbol xr
+           rt'              = F.subst su rt
+           heapSu           = (fmap (F.subst su) <$>)
+           tbody' = TFun (suBind su <$> bs) (B rs' rt') (heapSu hi') (heapSu ho') F.top
        return $ tracePP msg $  apply θ tbody'
     where
+       suBind su b = F.subst su <$> b
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
 
 -- | Instantiate Fresh Type (at Wind-site)
@@ -621,22 +632,24 @@ strengthenObjBinds _ t = t
 -- loc |-> x, x.f := y
 ---------------------------------------------------------------------------------------
 updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
-  l -> CGEnv -> Id SourceSpan -> Id SourceSpan -> f -> Id l -> CGM CGEnv
+  l -> Location -> CGEnv -> f -> Id l -> CGM CGEnv
 ---------------------------------------------------------------------------------------
-updateFieldM l g x x' f y
+updateFieldM l m g f y
   = do let t_obj       = envFindTy x g
            t_fld       = envFindTy y g
+           x           = heapRead "updateField" m $ rheap g
        (y', g')        <- envAddFresh l t_fld g
        let t_obj'      = updateField (envFindTy y' g') s t_obj
        t_objm          <- addMeasObjBinds g' t_obj'
-       (t_objm', g'')  <- freshObjBinds l g' $ strengthenObjBinds x' t_objm
-       envAdds [(x',  t_objm')] g''
+       (x', g'')       <- envFreshHeapBind l m g'
+       (t_objm', g''') <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
+       envAdds [(x',  t_objm')] g'''
     where   
       s           = F.symbol f
       deref x t b = t `eSingleton` (field x b)
 
 addMeasObjBinds g (TObj bs r)                    
-    = mapM ((tracePP "addMeasObjBinds2" <$>) . addMeasuresM g . tracePP "addMeasObjBinds1") bs >>= \bs' -> return (TObj bs' r)
+    = mapM (addMeasuresM g) bs >>= \bs' -> return (TObj bs' r)
 
 -- HACK
 field x y = F.EApp (F.symbol "field") [F.expr $ F.symbol x, bind2sym y]
@@ -668,6 +681,7 @@ subType :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 subType l g t1 t2 =
   do tt1   <- addInvariant t1
      tt2   <- addInvariant t2
+     -- B _ tt1m  <- addMeasuresM g (B (F.vv Nothing) tt1)
      tdefs <- getTDefs
      let s  = checkTypes tdefs tt1 tt2
      modify $ \st -> st {cs = c s : (cs st)}
@@ -951,7 +965,7 @@ splitC' (Sub g i tf1@(TFun xt1s t1 _ _ _) tf2@(TFun xt2s t2 _ _ _))
   = do let bcs    = bsplitC g i tf1 tf2
        g'        <- envTyAdds i xt2s g 
        cs        <- concatMapM splitC $ safeZipWith "splitC1" (Sub g' i) t2s t1s' 
-       cs'       <- splitC $ Sub g' i (F.subst su t1) t2      
+       cs'       <- splitC $ Sub g' i (F.subst su (b_type t1)) (b_type t2)      
        return     $ bcs ++ cs ++ cs'
     where 
        t2s        = b_type <$> xt2s
@@ -1134,7 +1148,7 @@ subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
   | not (l2 `heapMem` σ) = return ()
     -- subTypeContainers' "dead" l g tru fls
   | l1 `elem` seen = return ()
-  | otherwise      = do (x,g') <- envAddFresh l t1 g
+  | otherwise      = do (x,g') <- envAddFresh l (tracePP "subTypeWindHeaps t1" t1) g
                         let th2 = snd $ safeRefReadHeap "subTypeWindHeaps(a)" g σ l2
                             th1 = if heapMem l1 (rheap g') then 
                                     snd $ safeRefReadHeap "subTypeWindHeaps(b)" g (rheap g') l1
@@ -1156,12 +1170,12 @@ subTypeWindHeaps _ _ _ _ _ _ = return ()
 splitW :: WfC -> CGM [FixWfC]
 ---------------------------------------------------------------------------------------
 splitW (W g i (TFun ts t h h' _)) 
-  = do let bws = bsplitW g t i
+  = do let bws = bsplitW g (b_type t) i
        g'     <- envTyAdds i ts g >>= envTyHeapAdds i h
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]
        ws'    <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h)
        g''    <- envTyHeapAdds i h' g'
-       ws''   <-            splitW (W g'' i t)
+       ws''   <-            splitW (W g'' i (b_type t))
        ws'''  <- concatMapM splitW $ W g'' i <$> heapTypes (b_type <$> h')
        return  $ bws ++ ws ++ ws' ++ ws'' ++ ws'''
 
