@@ -1,32 +1,18 @@
-/*@ type dlist[A, Self] = exists! l |-> dlist[A, <l>]. { data : A
-                                                       , next : ?<l> 
-                                                       , prev : Self 
-                                                       }
- */
+/*@ qualif EqLen(v:a, vs:b): (dlenp(v,vs) = dlenp(x,xs)) */
 
-/*@ type rdlist[A, Self] = exists! l |-> rdlist[A, <l>]. { data : A
-                                                         , next : Self 
-                                                         , prev : ?<l> 
-                                                         }
- */
+/*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number */
+/*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x)) */
 
-/*@ measure len :: (?<l>)/l |-> dlist[A, B] => number
-  measure len(x) {
-    | (x :: null) => 0 
-    | (x :: <l> ) => 1 + len(x.next) 
-  }
-*/
+/*@ measure dkeysp :: forall A B C. (<l>+null, dlist[A,B,C]) => set[A]  */
+/*@ measure dkeysp(p,x) = (if (p = null) then
+                            Set_cap(Set_sng(1),Set_sng(0))
+                         else
+                            keys(x))                            */
 
-/*@ measure keys :: (?<l>)/l |-> dlist[A, B] => set[A] 
-  measure keys(x) {
-    | (x :: null) => set_empty
-    | (x :: <l> ) => set_cup(set_singleton(x.data), keys(x.next));
-  }
-*/
+/*@
+  type dlist[A,S,P] exists! l |-> tl:dlist[A, <l>, S]
+                                . me:{ data: A, next:<l>+null, prev:P }
+    with len(x) = (1 + dlenp(field(me, "next"), tl))
+    and keys(x) = Set_cup(Set_sng(field(me, "data")), dkeysp(field(me, "next"), tl))
 
-/*@ measure rkeys :: (?<l>)/l |-> dlist[A, <l>] => set[A] 
-  measure rkeys(x) {
-    | (x :: null) => set_empty
-    | (x :: <l> ) => set_cup(set_singleton(x.data), rkeys(x.prev));
-  }
 */

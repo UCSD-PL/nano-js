@@ -8,6 +8,7 @@ module Language.Nano.Typecheck.Parse (
     parseNanoFromFile 
   ) where
 
+import           System.FilePath
 import           Data.List (sort)
 import           Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict            as M
@@ -19,7 +20,7 @@ import           Text.Parsec
 import qualified Text.Parsec.Token as Token
 import           Control.Applicative ((<$>), (<*), (<*>))
 import           Data.Char (toLower, isLower, isSpace) 
-import           Data.Monoid (mconcat)
+import           Data.Monoid (mconcat, mappend)
 
 import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Misc (errorstar)
@@ -43,6 +44,7 @@ dot        = Token.dot        lexer
 braces     = Token.braces     lexer
 plus       = Token.symbol     lexer "+"
 star       = Token.symbol     lexer "*"
+quote      = Token.symbol     lexer "\""
 -- angles     = Token.angles     lexer
 
 ----------------------------------------------------------------------------------
@@ -331,6 +333,7 @@ data PSpec l t
   | Qual Qualifier
   | Type (Id SourceSpan, t, [Measure])
   | Invt l t 
+  | Include FilePath
   deriving (Show)
 
 specP :: Parser (PSpec SourceSpan RefType)
@@ -339,7 +342,12 @@ specP
     <|> (reserved "qualif"    >> (Qual <$> qualifierP ))
     <|> (reserved "type"      >> (Type <$> tBodyP     )) 
     <|> (reserved "invariant" >> (withSpan Invt bareTypeP))
+    <|> (reserved "include"   >> (Include <$> filePathP))
     <|> ({- DEFAULT -}           (Bind <$> idBindP    ))
+
+filePathP :: Parser (FilePath)         
+filePathP
+    = many1 $ noneOf [' ']
 
 measureP :: Parser (PSpec SourceSpan RefType)                     
 measureP 
@@ -360,7 +368,18 @@ measureImpP
 --------------------------------------------------------------------------------------
 parseSpecFromFile :: FilePath -> IO (Nano SourceSpan RefType) 
 --------------------------------------------------------------------------------------
-parseSpecFromFile = parseFromFile $ mkSpec <$> specWraps specP  
+parseSpecFromFile f = do pspecs <- parseFromFile (specWraps specP) f
+                         pgms   <- mapM parseSpecFromFile (incs pspecs)
+                         return (mconcat pgms `mappend` mkSpec pspecs)
+    where
+      dir         = takeDirectory f
+      incs pspecs = [ combine dir path | Include path <- pspecs ]
+
+-- mkSpecRec ::  (PP t, IsLocated l) => FilePath -> [PSpec l t] -> IO (Nano SourceSpan t)
+-- mkSpecRec dir xs
+--     = do specs <- mapM (parseSpecFromFile . combine dir) incs
+--          return (mkSpec xs `mappend` (mconcat specs))
+--     where
 
 mkSpec    ::  (PP t, IsLocated l) => [PSpec l t] -> Nano a t
 mkSpec xs = Nano { code   = Src [] 
