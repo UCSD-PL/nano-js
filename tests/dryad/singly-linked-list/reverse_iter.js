@@ -1,4 +1,4 @@
-//import "singly-linked-list.js"
+/*@ include singly-linked-list.js */
 
 /*@ reverseLoop :: forall A.
   (i:<i>+null, j:<j>+null)/i |-> is:list[A] * j |-> js:list[A]
@@ -22,8 +22,7 @@ function reverseLoop(i, j){
                                           && (keysp(v,ys) = keysp(x,xs))) }
                               /y |-> ys:list[A]*/
 function reverse(x){
-  var y = null;
-  var r = reverseLoop(x,y);
+  var r = reverseLoop(x,null);
   return r;
 }
 

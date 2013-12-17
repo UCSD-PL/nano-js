@@ -44,7 +44,6 @@ dot        = Token.dot        lexer
 braces     = Token.braces     lexer
 plus       = Token.symbol     lexer "+"
 star       = Token.symbol     lexer "*"
-quote      = Token.symbol     lexer "\""
 -- angles     = Token.angles     lexer
 
 ----------------------------------------------------------------------------------

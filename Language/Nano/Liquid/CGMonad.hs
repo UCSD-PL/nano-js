@@ -777,10 +777,9 @@ subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
     (r1, r2)     = mapPair rTypeR        (u1, u2)
     -- Fix the ValueVar of the top-level refinement to be the same as the
     -- Valuevar of the part
-    fix t b v    | v == b    = tracePP (printf "(fix %s %s %s) (a)" (ppshow t) (ppshow b) (ppshow v)) $ rTypeValueVar t
-                 | otherwise = tracePP (printf "(fix %s %s %s) (b)" (ppshow t) (ppshow b) (ppshow v)) $ v
-    -- rr t r       = tracePP "r after" $ F.substa (fix (tracePP "fix t" t) (tracePP "fix b" b)) $ tracePP "r orig" r where F.Reft (b,_) = r
-    rr t r       = tracePP "r after" $ F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+    fix t b v    | v == b    = rTypeValueVar t
+                 | otherwise = v
+    rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
     sb  (t1 ,t2) = subTypeContainers' "subc un" l g (t1 `strengthen` rr t1 r1)
                                                     (t2 `strengthen` rr t2 r2)
     sbs ts       = mapM_ sb ts
@@ -797,11 +796,8 @@ subTypeContainers l g o1@(TObj _ _) o2@(TObj _ _) =
     -- to be the same as the Valuevar of the part
     fix t b v    | v == b    = rTypeValueVar t
                  | otherwise = v
-    --rr t r       = F.substa (fix t b) r where F.Reft (b,_) = r
     rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
     sb (t1 ,t2)  = subTypeContainers' "subc obj" l g t1 t2
-    -- sb (t1 ,t2)  = subTypeContainers' "subc obj" l g (t1 `strengthen` rr t1 r1) t2
-    --                                      (t2 `strengthen` rr t2 r2)
 
 subTypeContainers l g t1 t2 = subType l g t1 t2
 

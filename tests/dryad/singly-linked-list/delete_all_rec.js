@@ -1,4 +1,4 @@
-//import "singly-linked-list.js"
+/*@ include singly-linked-list.js */
 
 /*@
   remove :: forall A.

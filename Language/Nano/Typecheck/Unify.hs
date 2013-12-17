@@ -29,7 +29,7 @@ import           Language.Nano.Typecheck.Compare
 
 import           Control.Applicative ((<$>))
 -- import           Control.Monad
-import           Data.Maybe (fromJust)
+import           Data.Maybe (isNothing, catMaybes, fromJust)
 import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M 
 import           Data.Monoid
@@ -135,7 +135,7 @@ unifys ::  (PP r, F.Reftable r, Ord r) =>
 -----------------------------------------------------------------------------
 unifys env θ xs ys = tracePP msg $ unifys' env θ xs ys
    where
-     msg      = printf "unifys: [xs = %s] [ys = %s] [θ = %s]"  (ppshow xs) (ppshow ys) (ppshow θ)
+     msg      = printf "unifys: [xs = %s] [ys = %s] [θ = %s]"  (ppshow $ map toType xs) (ppshow $ map toType ys) (ppshow θ)
 
 unifys' γ θ ts ts' 
   | nTs == nTs' = go γ θ ts ts'
@@ -143,24 +143,57 @@ unifys' γ θ ts ts'
   where 
     nTs                      = length ts
     nTs'                     = length ts'
-    -- go γ θ ts ts' = foldl safeJoin (Right θ) $ zipWith (unify γ θ) ts ts'
-    go γ θ ts ts' = foldl foldU (Right θ) $ zip ts ts'
+    go γ θ ts ts' = foldl safeJoin (Right θ) $ zipWith (unify γ θ) ts ts'
+    -- go γ θ ts ts' = foldl foldU (Right θ) $ zip ts ts'
     -- Only allow joining unifications where the common keys map to identical
     -- types
     foldU (Left l) _         = Left l
     foldU (Right θ) (t1, t2) = unify γ θ (apply θ t1) (apply θ t2)
     safeJoin (Right θ) (Right θ')
       | check θ θ' = Right $ (θ `mappend` θ')
-      | otherwise  = Left  $ printf "Cannot join substs: %s\nand\n%s\n"
-                               (ppshow θ) (ppshow θ')
+      | otherwise  = tryJoin γ θ θ'
+
+          -- Left  $ printf "Cannot join substs: %s\nand\n%s\n"
+          --                      (ppshow θ) (ppshow θ')
     safeJoin (Left l        ) _                  = Left l
     safeJoin _                (Left l        )   = Left l
+
+tryJoin γ θ@(Su m l) θ'@(Su m' l')
+    = if length bad == 0 then
+          Right $ (Su m1 l) `mappend` (Su m2 l')
+      else
+          Left $ printf "Cannot join substs [%s]: %s\nand\n%s\n"
+                          (ppshow bad) (ppshow θ) (ppshow θ')       
+  where
+    ks         = subKs θ θ'
+    vs         = map (apply θ' <$>) $ (`M.lookup` m)  <$> ks
+    vs'        = map (apply θ  <$>) $ (`M.lookup` m') <$> ks
+    vsj        = zipWith (tryJoinVs γ) ks (zip vs vs')
+    (bad,good) = L.partition isNothing vsj
+    newKVs     = catMaybes good
+    m1         = M.fromList newKVs `M.union` m
+    m2         = M.fromList newKVs `M.union` m'
+
+tryJoinVs _ k (Nothing, Just v)    = Just (k, v)
+tryJoinVs _ k (Just v, Nothing)    = Just (k, v)
+tryJoinVs γ k (Just v1, Just v2)
+    | toType v1 == toType v2       = Just (k, v1)
+    | dir `elem` [EqT, SubT, SupT] = Just (k, vJoin)
+    | otherwise                    = Nothing
+    where
+      (vJoin,_,_,dir) = compareTs γ v1 v2
+        
                                
 check θ@(Su m l) θ'@(Su m' l') = vs == vs'
-  where vs  = map (toType . apply θ' <$>) $ (`M.lookup` m ) <$> ks
-        vs' = map (toType . apply θ  <$>) $ (`M.lookup` m') <$> ks
-        ks  = M.keys $ M.intersection (clr tVar m) (clr tVar m')
-        clr f = M.filterWithKey (\k v -> f k /= v)
+  where
+    ks = subKs θ θ'
+    vs  = map (toType . apply θ' <$>) $ (`M.lookup` m)  <$> ks
+    vs' = map (toType . apply θ  <$>) $ (`M.lookup` m') <$> ks
+
+subKs θ@(Su m l) θ'@(Su m' l')
+   = M.keys $ M.intersection (clr tVar m) (clr tVar m')
+    where
+      clr f = M.filterWithKey (\k v -> f k /= v)
 
 -----------------------------------------------------------------------------
 unifyHeaps :: (PP r, F.Reftable r, Ord r) => 

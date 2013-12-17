@@ -1,3 +1,5 @@
+/*@ include singly-linked-list.js */
+
 /*@ insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]
     => r:{v:<m> | ((lenp(v,ys) = 1 + lenp(x,xs))

@@ -1,4 +1,5 @@
 /*@ include doubly-linked-list.js */
+/*@ qualif EqLen(v:a, vs:b): (dlenp(v,vs) = dlenp(x,xs)) */
 
 /*@
   insert :: forall A.

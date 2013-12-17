@@ -1,13 +1,14 @@
-/*@ qualif EqLen(v:a, vs:b): (dlenp(v,vs) = dlenp(x,xs)) */
+/*@ measure len  :: forall A. (dlist[A]) => number                      */
+/*@ measure keys :: forall A. (dlist[A]) => set[A]                      */
 
-/*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number */
-/*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x)) */
+/*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number   */
+/*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x))             */
 
 /*@ measure dkeysp :: forall A B C. (<l>+null, dlist[A,B,C]) => set[A]  */
 /*@ measure dkeysp(p,x) = (if (p = null) then
                             Set_cap(Set_sng(1),Set_sng(0))
                          else
-                            keys(x))                            */
+                            keys(x))                                    */
 
 /*@
   type dlist[A,S,P] exists! l |-> tl:dlist[A, <l>, S]
