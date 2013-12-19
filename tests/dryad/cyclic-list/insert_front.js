@@ -1,9 +1,9 @@
-//import "cyclic_lists.js";
+/*@ include cyclic_list.js */
 
 
 
 /*@ insert :: forall A H. (x:<x>, k:A)/x |-> xs:clist[A,<x>]
-                                => void/x |-> ys:{clist[A,<x>] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
+                               => void/x |-> ys:{clist[A,<x>] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
                                                                  && (len(v) = len(xs) + 1))}
  */
 function insert(x, k){

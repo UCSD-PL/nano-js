@@ -96,31 +96,6 @@ function unwind(x) {
 /*@ safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
 /*@ safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
 
-/*@ type either[A,B] A + B     */
-
-/*@ isL   :: forall A B. (x:{either[A,B] | true}) => {v:boolean | (if Prop(v) then
-                                                                     (ttag(x) = "inl")
-                                                                  else
-                                                                     (ttag(x) = "inr"))}          */
-
-/*@ projL :: forall A B. ({either[A,B] | (ttag(v) = "inl")}) => A                                 */
-/*@ projR :: forall A B. ({either[A,B] | (ttag(v) = "inr")}) => B                                 */
-/*@ inL   :: forall A B. (A) => {either[A,B] | (ttag(v) = "inl")}                                 */
-/*@ inR   :: forall A B. (B) => {either[A,B] | (ttag(v) = "inr")}                                 */
-
-/*@
-  type clist[A,H] exists! l |-> rest:clist[A,H]
-                        . me:{data:A, next:either[<l>,H]}
-
-       with keys(x) = (if (ttag(field(me, "next")) = "inl") then
-                           Set_cup(Set_sng(field(me, "data")), keys(rest))
-                        else
-                           Set_sng(field(me, "data")))
-
-       and len(x) = (if (ttag(field(me, "next")) = "inl")
-                          then (1 + len(rest))
-                          else 1)
-*/
 
 
 

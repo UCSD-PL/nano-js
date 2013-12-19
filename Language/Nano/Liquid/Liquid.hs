@@ -246,8 +246,9 @@ consStmt g (VarDeclStmt _ ds)
 
 -- return e 
 consStmt g r@(ReturnStmt l (Just e))
-  = do  (xe, g') <- consExpr g e
-        (su, θi) <- consReturnHeap g' (Just xe) r
+  = do  b        <- getFunRetBinder g l
+        (xe, g') <- consExpr g e
+        (su, θi) <- consReturnHeap g' (Just (b, xe)) r
         let te    = F.subst su $ envFindTy xe g'
             rt    = F.subst su . apply θi $ envFindReturn g'
         g' <- envAdds [(xe, te)] g'
@@ -294,12 +295,10 @@ consStmt g (RenameLocs l _)
 consStmt _ s 
   = errorstar $ "consStmt: not handled " ++ ppshow s
 
-lqretSymbol = F.symbol "lqreturn"
-
-consReturnHeap :: CGEnv -> Maybe (Id AnnTypeR) -> Statement AnnTypeR -> CGM (F.Subst, RSubst F.Reft)
+consReturnHeap :: CGEnv -> Maybe (F.Symbol, Id AnnTypeR) -> Statement AnnTypeR -> CGM (F.Subst, RSubst F.Reft)
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
-       let rsu       = F.mkSubst $ maybe [] (\x -> [(F.symbol "lqreturn", F.eVar $ F.symbol x)]) xro
+       let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
        let (su,σ')   = fmap b_type <$> renameHeapBinds (rheap g) (fmap (F.subst rsu <$>) σ)
        let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
        -- "Relax" subtyping checks on *new* locations in the output heap
@@ -315,6 +314,11 @@ consReturnHeap _ _ _ = undefined
 
 getFunHeaps g _
   = (fromJust . funHeaps . flip envFindTy g) <$> getFun
+
+getFunRetBinder g _
+  = (retBind . fromJust . bkFun . flip envFindTy g) <$> getFun
+  where
+    retBind (_,_,_,_,b) = b_sym $ b
 
 
 ------------------------------------------------------------------------------------

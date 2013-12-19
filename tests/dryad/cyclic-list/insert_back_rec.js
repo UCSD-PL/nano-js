@@ -1,3 +1,5 @@
+/*@ include cyclic_list.js */
+
 /*@ qualif Keyz(v:a): keys(v) = Set_cup(Set_sng(k), keys(xs)) */
 /*@ qualif Lenz(v:a): len(v) = len(xs) + 1 */
 
