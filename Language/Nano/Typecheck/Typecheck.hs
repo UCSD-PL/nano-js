@@ -224,10 +224,10 @@ tcFun (γ,_) (FunctionStmt l f xs body)
        checkSigWellFormed l ts (b_type t) (b_type <$> σ) (b_type <$> σ')
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts (b_type t) γ'
-       accumAnn (\a -> catMaybes (map (validInst γ'') (M.toList a))) $  
+       accumAnn (catMaybes . map (validInst γ'') . M.toList) $  
          do q <- withFun (F.symbol f) $ tcStmts (γ'', b_type <$> σ) body
-            θ <- getSubst
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid (b_type t)
+       clearSubstM γ'
        return $ Just (γ', heapEmpty)
 
     
@@ -278,6 +278,16 @@ validInst γ (l, ts)
   = case [β | β <-  HS.toList $ free $ ts, not ((tVarId β) `envMem` γ)] of
       [] -> Nothing
       βs -> Just (l, errorFreeTyVar βs)
+
+clearSubst γ θ
+-- Assuming all of a function's locations are quantified!
+    = fromLists vs' []
+    where
+      (vs,_) = toLists θ
+      vs'    = filter (\sub -> tVarId (fst sub) `envMem` γ) vs
+      
+clearSubstM γ
+    = getSubst >>= setSubst . clearSubst γ
    
 -- | Strings ahead: HACK Alert
 tVarId (TV a l) = Id l $ "TVAR$$" ++ F.symbolString a   

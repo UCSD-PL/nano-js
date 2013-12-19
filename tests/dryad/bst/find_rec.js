@@ -1,35 +1,33 @@
-/*@ qualif LtField(v:a, x:b): v < field(x, "data")     */
-/*@ qualif LtField(v:a, x:b): v > field(x, "data")     */
-/*@ qualif EqField(v:a, x:b): v = field(x, "data")     */
-/*@ qualif EqField(v:a, x:b): v = hd(x)                */
-/*@ qualif EqField(v:a, x:b): field(v, "data") = hd(x) */
+/*@ include bst.js */
 
-/* lemma_nonMem :: (k:A, x:?bst[{v:A| v != k}]) => {v:void | not (Set_mem(k, keys(x, h)))}/same */
+/* qualif EqField(v:a, x:b): v = hd(x)                */
+/* qualif EqField(v:a, x:b): field(v, "data") = hd(x) */
+/* qualif LtField(v:a, x:b): v < field(x, "data")     */
+/* qualif LtField(v:a, x:b): v > field(x, "data")     */
+/* qualif EqField(v:a, x:b): v = field(x, "data")     */
 
-/*@ lemma_nonMem :: forall A. (k:A, x:<x>+null)/x |-> its:tree[{A | v != k}]
-                                        => {v:void | ((~(Set_mem(k, keys(its)))))}
-                                               /x |-> ots:{tree[{A | v != k}] | ((ttag(x) != "null") => ((keys(v) = keys(its)) && (hd(v) = hd(its)))) } */
-function lemma_nonMem(k, x){
-  if (typeof(x) == "null"){
+/*@ lemma_nonMem :: forall A B.
+      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]
+         => {v:void | ((~(Set_mem(k, keys(ots)))))}
+            /x |-> ots:{tree[{B | v != k}] | (keys(v) = keys(its)
+                                           && hd(v) = hd(its)
+                                           && (hd(v) != k || x = null)) } */
+function lemma_nonMem(k, x) {
+  if (x == null){
     return;
   } else {
     var xk = x.data;
     var xl = x.left;
     var xr = x.right;
-    assert(k != xk);
     return;
   }
 }
 
-/*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
-/* search :: (x:?bst[A], k:A) => {v:boolean | (Prop v) <=> Set_mem(k, keys(x, h))} */
-
 /*@ search :: forall A. (x:<t>+null, k:A)/t |-> ts:tree[A]
-                                     => {boolean | (if (ttag(x) = "null")
-                                                       then (~(Prop(v)))
-                                                       else (Prop(v) <=> Set_mem(k, keys(ts))))}/ */
+                                     => {boolean | (Prop(v) <=> Set_mem(k, keysp(x,ts)))}
+                                         /t |-> tss:tree[A]                                */
 function search(x, k){
-  if (typeof(x) == "null"){
+  if (x == null){
     return false;
   }
 

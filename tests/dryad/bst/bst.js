@@ -1,29 +1,17 @@
-// Short form
-/*@ type tree[A]<P :: A->A->Prop> <Q :: A->A->Prop> 
-      = { data  : A
-        , left  : ?tree[A<P data>]<P, Q>
-        , right : ?tree[A<Q data>]<P, Q>
-        }
+/*@ measure hd :: forall A. (tree[A]) => A                               */
+
+/*@ measure keys :: forall A. (tree[A]) => set[A]  */
+/*@ measure keysp :: forall A. (<l> + null, tree[A]) => set[A]  */
+/*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else keys(x)) */
+
+/*@ type tree[A] exists! l |-> sls:tree[{A | v < field(me, "data")}]
+                       * r |-> srs:tree[{A | v > field(me, "data")}]
+                       . me:{ data: A, left:<l>+null, right:<r>+null } 
+
+       with hd(x)    = field(me, "data")
+
+       and  keys(x) = Set_cup(Set_sng(field(me, "data")),
+                              Set_cup(keysp(field(me, "left"), sls),
+                                      keysp(field(me, "right"), srs)))
  */
 
-// Expands to
-/*@ type tree[A]<P :: A -> A -> Prop> <Q :: A -> A -> Prop> = 
-      exists! l |-> tree[{v:A | (P data v)}]<P, Q>
-            * r |-> tree[{v:A | (Q data v)}]<P, Q>
-            . { data : A, left : ?<l>, right: ?<r> }
- */
-
-/*@ type bst[A] = tree[A]<{\x y -> x < y}, {\x y -> x >y}> */
-
-/*@ measure keys :: (<l> + null) / l |-> tree[A] => set[A] 
-  measure keys(x) {
-    | (x :: null) => set_empty
-    | (x :: <l> ) => set_cup(set_singleton(x.data), set_cup(keys(x.left), keys(x.right)));
-  }
-*/
-
-/*@ measure root :: (<l>) / l |-> tree[A] => A 
-  measure keys(x) {
-    | (x :: <l> ) => x.data 
-  }
-*/

@@ -80,37 +80,6 @@ function unwind(x) {
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
-/*@ measure hd :: forall A. (tree[A]) => A                               */
-/*@ measure heightf  :: forall A. (tree[A]) => number                    */
-/*@ measure heightp :: forall A. (x:<l>+null)/l |-> t:tree[A] => number  */
-/* heightp(x:<l>)  = height(*x) */
-/* heightp(x:null) = 0          */
-                          
-
-/*@ type tree[A] exists! l |-> sls:tree[{A | v < field(me, "data")}]
-                       * r |-> srs:tree[{A | v > field(me, "data")}]
-                       . me:{ data: A, left:<l>+null, right:<r>+null } 
-
-       with hd(x)    = field(me, "data")
-
-       and  heightf(x) = (if (heightp(field(me,"left"),sls) > heightp(field(me,"right"),srs))
-                            then (1 + heightp(field(me,"left"),sls))
-                            else (1 + heightp(field(me,"right"),srs)))
-
-       and  keys(x) = (if (ttag(field(me, "left")) = "null") then
-                           (if (ttag(field(me, "right")) = "null") then
-                               Set_sng(field(me, "data"))
-                            else Set_cup(Set_sng(field(me, "data")), keys(srs)))
-                        else (if (ttag(field(me, "right")) = "null") then
-                                 Set_cup(Set_sng(field(me, "data")), keys(sls))
-                              else
-                                 Set_cup(Set_sng(field(me, "data")), Set_cup(keys(sls), keys(srs)))))
- */
-
-
-
-
-
 /*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
 
 /*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */

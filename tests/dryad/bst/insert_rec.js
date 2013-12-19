@@ -1,10 +1,11 @@
-//import "bst.js";
+/*@ include bst.js */
+
+/*@ qualif EqKeys(v:a,h:b,ts:d): keysp(v,h) = Set_cup(Set_sng(k),keysp(v,ts)) */
 
 /*@
 insert :: forall A.
   (x:<t>+null, k:A)/t |-> ts:tree[A]
-             => <r>/r |-> rs:{ tree[A] | true }
-*/
+    => {v:<r> | keysp(v,rs) = Set_cup(Set_sng(k),keysp(x,ts))}/r |-> rs:tree[A] */
 function insert(x, k) {
   if (x == null)
   {

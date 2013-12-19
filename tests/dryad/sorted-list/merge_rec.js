@@ -1,4 +1,5 @@
 /*@ include sorted-list.js */
+
 /*@ merge :: forall A.
   (x1:<a>+null, x2:<b>+null)/a |-> x1s:incList[A]
                            * b |-> x2s:incList[A]

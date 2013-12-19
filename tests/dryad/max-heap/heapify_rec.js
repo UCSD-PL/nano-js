@@ -1,46 +1,4 @@
-/*@
-  type btree[A]
-       exists! l |-> lh:btree[A] * r |-> rh:btree[A]
-               . me:{ left:<l>+null
-                    , key:A
-                    , right:<r>+null
-                    }
-
-     with hd(x)   := field(me, "key")
-      and keys(x) := (if (ttag(field(me, "left")) != "null") then
-                         (if (ttag(field(me, "right")) != "null") then
-                             Set_cup(Set_sng(field(me, "key")), Set_cup(keys(lh),keys(rh)))
-                          else
-                             Set_cup(Set_sng(field(me, "key")), keys(lh)))
-                      else
-                         (if (ttag(field(me, "right")) != "null") then
-                             Set_cup(Set_sng(field(me, "key")), keys(rh))
-                          else
-                             Set_sng(field(me, "key"))))
-       
-*/
-/*@
-  type heap[A]
-       exists! l |-> lh:heap[{A | (v <= field(me, "key"))}]
-             * r |-> rh:heap[{A | (v <= field(me, "key"))}]
-               . me:{ left:<l>+null
-                    , key:A
-                    , right:<r>+null
-                    }
-
-     with hd(x)   := field(me, "key")
-      and keys(x) := (if (ttag(field(me, "left")) != "null") then
-                         (if (ttag(field(me, "right")) != "null") then
-                             Set_cup(Set_sng(field(me, "key")), Set_cup(keys(lh),keys(rh)))
-                          else
-                             Set_cup(Set_sng(field(me, "key")), keys(lh)))
-                      else
-                         (if (ttag(field(me, "right")) != "null") then
-                             Set_cup(Set_sng(field(me, "key")), keys(rh))
-                          else
-                             Set_sng(field(me, "key"))))
-       
-*/
+/*@ include max-heaps.js */
 /*@ swapKeys :: forall A L R P Q.
   ({v:<r> | true},<n>)/r |-> r:{ left:L, key:A, right:R }
                      * n |-> n:{ left:P, key:A, right:Q }
@@ -63,27 +21,22 @@
 /* qualif NNull(v:a, x:b)     : ((ttag(x)  = "null") => (ttag(v) = "null")) */
 /* qualif NNull(v:a, x:b)     : ((ttag(x) != "null") => (ttag(v) != "null")) */
 /* qualif Fld(v:a, x:b)       : v = field(x, "key") */
-/* qualif FldGt(v:a, x:b, y:c): ((ttag(y) != "null") => (v <= field(x, "key"))) */
+/*@ qualif FldGt(v:a, x:b, y:c): ((y != null) => (v <= field(x, "key"))) */
 
-/*@ heapify :: forall A. (<x>)/x |-> bs:{left:<l>+null, key:A, right:<r>+null}
+/*@ heapify :: forall A. ({v:<x> | true})/x |-> bs:{left:<l>+null, key:A, right:<r>+null}
                              * l |-> ls:heap[A]
                              * r |-> rs:heap[A]
-                       => void/x |-> hs:{v:heap[A] | (Set_sub(keys(rs), keys(v))) }
+                       => void/x |-> hs:heap[A]
                                     
 
 */                               
-/*
-
-                                                     &&(ttag(field(bs,"right")) != "null") => Set_sub(keys(rs), keys(v))
-*/
-
 function heapify(x) {
   var l = x.left;
   var r = x.right;
   xk = x.data;
   
-  if (typeof(l) == "null")  {
-    if (typeof(r) != "null") {
+  if (l == null)  {
+    if (r != null) {
       rk = r.data;
       var xk = x.key;
       var rk = r.key;
@@ -91,39 +44,34 @@ function heapify(x) {
         r.key = xk;
         x.key = rk;
         heapify(r);
-        return;
       } 
     }
-  } // else if (typeof(r) == "null") {
-  //   //swapRoot(x,l);
-  //   if (typeof(l) != "null") {
-  //     var xk = x.key;
-  //     var lk = l.key;
-  //     if (cmpLT(xk, lk)) {
-  //       l.key = xk;
-  //       x.key = lk;
-  //       heapify(l);
-  //     }
-  //   }
-  //   return;
-  // } else {
-  //   var xk = x.key;
-  //   var lk = l.key;
-  //   var rk = r.key;
-  //   if (cmpLT(lk,rk)) { //bug here?
-  //     if (cmpLT(xk, rk)) {
-  //       x.key = rk;
-  //       r.key = xk;
-  //       heapify(r);
-  //     }
-  //     return;
-  //   } else if (cmpLT(xk, lk)) {
-  //           //               swapRoot(x,l);
-  //           // l = x.left;
-  //     x.key = lk;
-  //     l.key = xk;
-  //     heapify(l);
-  //     return;
-  //   }
-  // }
+    return;
+  } else if (r == null) {
+    if (l != null) {
+      var xk = x.key;
+      var lk = l.key;
+      if (cmpLT(xk, lk)) {
+        l.key = xk;
+        x.key = lk;
+        heapify(l);
+      }
+    }
+  } else {
+    var xk = x.key;
+    var lk = l.key;
+    var rk = r.key;
+    if (cmpLT(lk,rk)) { //bug here?
+      if (cmpLT(xk, rk)) {
+        x.key = rk;
+        r.key = xk;
+        heapify(r);
+      }
+    } else if (cmpLT(xk, lk)) {
+      x.key = lk;
+      l.key = xk;
+      heapify(l);
+    }
+  }
+  return;
 }

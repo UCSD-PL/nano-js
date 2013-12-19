@@ -1,10 +1,13 @@
-//import "bst.js";
-/*@ lemma_nonMem :: forall A B. (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]
-                                        => {v:void | ((~(Set_mem(k, keys(its)))))}
-                                               /x |-> ots:{tree[{B | v != k}] | ((keys(v) = keys(its))
-                                                                              && (hd(v) = hd(its))) } */
-function lemma_nonMem(k, x){
-  if (typeof(x) == "null"){
+/*@ include bst.js */
+
+/*@ lemma_nonMem :: forall A B.
+      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]
+         => {v:void | ((~(Set_mem(k, keys(ots)))))}
+            /x |-> ots:{tree[{B | v != k}] | (keys(v) = keys(its)
+                                           && hd(v) = hd(its)
+                                           && (hd(v) != k || x = null)) } */
+function lemma_nonMem(k, x) {
+  if (x == null){
     return;
   } else {
     var xk = x.data;
@@ -15,47 +18,48 @@ function lemma_nonMem(k, x){
 }
 
 /*@
-  removeRoot :: forall A. (x:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null}
-                                * l |-> ls:tree[{A | v < field(ts, "data")}]
-                                * r |-> rs:tree[{A | v > field(ts, "data")}]
-                      => {v:<k>+null | ((ttag(v) = "null") <=>
-                                        ((ttag(field(ts, "left")) = "null")
-                                      && (ttag(field(ts, "right")) = "null")))}
-                                 /k |-> ks:{tree[A] | (if (ttag(field(ts, "left")) = "null")
-                                                           then (if (ttag(field(ts, "right")) = "null")
-                                                                    then true 
-                                                                    else (keys(v) = keys(rs)))
-                                                           else (if (ttag(field(ts, "right")) = "null")
-                                                                    then (keys(v) = keys(ls))
-                                                                    else (keys(v) = Set_cup(keys(rs), keys(ls)))))}
+  removeRoot :: forall A.
+    (t:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null }
+          * l |-> ls:tree[{A | v < field(ts, "data")}]
+          * r |-> rs:tree[{A | v > field(ts, "data")}]
+      => {v:<k>+null | (keysp(v,ks) = Set_cup(keysp(field(ts,"left"),ls),
+                                              keysp(field(ts,"right"),rs))
+                     && (~(Set_mem(field(ts, "data"),keysp(field(ts,"left"),ls))))
+                     && (~(Set_mem(field(ts, "data"),keysp(field(ts,"right"),rs))))
+                                              )}
+         /k |-> ks:tree[{A | v != field(ts, "data")}]
 */
-function removeRoot(x){
-  var xl = x.left;
-  var xr = x.right;
+function removeRoot(t){
+  var tl = t.left;
+  var tr = t.right;
+  var tk = t.data;
 
-  if (typeof(xl) == "null") {
-    x.right = null;
-    return xr;
-  } else if (typeof(xr) == "null") {
-    x.left = null;
-    return xl;
+  if (tl == null) {
+    t.right = null;
+    lemma_nonMem(tk, tr);
+    return tr;
+  } else if (tr == null) {
+    t.left = null;
+   lemma_nonMem(tk, tl);
+    return tl;
   } else {
-   var xrl = xr.left;
-   xr.left = null;     // extra, to cut sharing
-   x.right = xrl;
-   var t = removeRoot(x);
-   xr.left = t;
-   return xr;
+   var trl = tr.left;
+   var trk = tr.data;
+   tr.left = null;     // extra, to cut sharing
+   t.right = trl;
+   t = removeRoot(t);
+   tr.left = t;
+   lemma_nonMem(tk, tr);
+   return tr;
   }
 }
 
-/*@ remove :: forall A. (x:<x>+null, k:A)/x |-> it:tree[A] =>
-                                 {v:<v>+null | ((ttag(v) = "null") => ((ttag(x) = "null") || (hd(it) = k)))}
-                                 /v |-> ot:{tree[A] | ((ttag(lqreturn) != "null") =>
-                                                       (~(Set_mem(k, keys(v)))))}
+/*@ remove :: forall A. (t:<t>+null, k:A)/t |-> in:tree[A] =>
+                                 {v:<r>+null | (v = null || (~(Set_mem(k,keys(out)))))}
+                                 /r |-> out:tree[A]
                                  */
 function remove(x, k){
-  if (typeof(x) == "null"){
+  if (x == null){
     return null;
   }
  
@@ -73,8 +77,6 @@ function remove(x, k){
     return x;
   } else {
     // k == xk
-    lemma_nonMem(k, x.left);
-    lemma_nonMem(k, x.right);
     var r = removeRoot(x);
     return r;
   }
