@@ -1,5 +1,5 @@
 all: Parse.hs
-	ghc -v -XFlexibleInstances Parse.hs 
+	ghc -XFlexibleInstances Parse.hs 
 
 
 test: all

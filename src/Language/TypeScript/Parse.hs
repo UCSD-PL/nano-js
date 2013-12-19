@@ -1,6 +1,6 @@
 module Language.TypeScript.Parse (parseTypeScript) where
 
-
+import Text.Printf
 import System.Environment
 import System.IO
 import System.FilePath.Posix
@@ -15,27 +15,23 @@ import Language.Fixpoint.Misc (executeShellCommand)
 
 
 main = do (arg :_) <- getArgs
-          parseTypeScript arg
-
+          pgm      <- parseTypeScript arg
+          print pgm
 
 parseTypeScript :: FilePath -> IO (JavaScript (Maybe Type))
 parseTypeScript fts
   = do fxml <- convertTs2XML fts
        parseTypeScriptXML fxml
 
-
 -- | convertTs2XML takes a path to a .ts file and converts and returns a path to a .xml file
-convertTs2XML     :: FilePath -> IO FilePath
-convertTs2XML tsfile = 
-  let filename = fst $ splitExtension tsfile in
-     do executeShellCommand "ts2xml" $ convertCommand tsfile
-        return $ "./" ++ filename ++".xml"
-
-convertCommand     :: FilePath -> String
-convertCommand tsfile = 
-  let filename = fst $ splitExtension tsfile in
-  "$HOME/CSE199/nano-ts/run " ++ tsfile 
-  ++" > "++ "./" ++ filename ++".xml"
+convertTs2XML :: FilePath -> IO FilePath
+convertTs2XML inFile 
+  = do executeShellCommand "ts2xml" convertCommand 
+       return outFile
+    where
+       convertCommand = printf "%s %s > %s" convFile inFile outFile
+       convFile       = "$HOME/CSE199/nano-ts/run" 
+       outFile        = replaceExtension inFile ".xml"
 
 
 parseTypeScriptXML :: FilePath -> IO (JavaScript (Maybe Type))
