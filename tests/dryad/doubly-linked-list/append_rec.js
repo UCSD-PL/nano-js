@@ -1,11 +1,15 @@
 /*@ include doubly-linked-list.js */
 
-// In below, separation between x and v in output IS obvious.
-/*@ qualif LLen(v:a): ((ttag(x1) != "null") => (if (ttag(x2) = "null") then (len(v) = len(ls)) else (len(v) = len(ls) + len(ms)))) */
+/*@ qualif LLen(v:a, y:c, ys:d):
+    ((len(v)  = 1 + dlenp(field(y, "next"), ys))
+  && (keys(v) = Set_cup(Set_sng(field(y, "data")),
+                        dkeysp(field(y, "next"), ys)))) */
 
 /*@ append :: forall A P.
-  (x1:<l>+null, x2:<m>+null)/l |-> x1s:dlist[A,<l>,P] * m |-> x2s:dlist[A,<m>,null]
-      => {v:<k>+null | true }
+  (x1:<r>+null, x2:<m>+null)/r |-> x1s:dlist[A,<r>,P]
+                           * m |-> x2s:dlist[A,<m>,null]
+      => {v:<k>+null | ((dlenp(v,ks) = dlenp(x1,x1s) + dlenp(x2,x2s)) 
+                     && (dkeysp(v,ks)= Set_cup(dkeysp(x1,x1s),dkeysp(x2,x2s))))}
         /k |-> ks:dlist[A,<k>,null]
 */
 function append(x1, x2) {

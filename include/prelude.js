@@ -80,16 +80,6 @@ function unwind(x) {
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
-/*@ type sList[A]
-      exists! l |-> tl:sList[{v:A | v >= field(me, "data")}]
-      . me: { data:A, next:<l>+null }
-
-  with min(x) = field(me, "data")
-
-  and keys(x) = (if ((ttag (field me "next")) = "null") then (Set_sng (field me "data")) else (Set_cup (Set_sng (field me "data")) (keys tl)))
-
-  and len(x) = (if (ttag(field(me,"next")) != "null") then 1 + len(tl) else 1) */
-
 /*@ measure hd :: forall A. (tree[A]) => A                               */
 /*@ measure heightf  :: forall A. (tree[A]) => number                    */
 /*@ measure heightp :: forall A. (x:<l>+null)/l |-> t:tree[A] => number  */

@@ -1,10 +1,12 @@
 /*@ include doubly-linked-list.js */
-/*@ qualif EqLen(v:a, vs:b): (dlenp(v,vs) = dlenp(x,xs)) */
-
+/*@ qualif EqMeas(v:a, vs:b): ((dlenp(v,vs) = dlenp(x,xs))
+                              && (dkeysp(v,vs) = dkeysp(x,xs))) */
 /*@
   insert :: forall A.
     (x:<x>+null, k:A)/x |-> xs:dlist[A,<x>,null]
-       => r:{v:<j> | dlenp(v,js) = 1 + dlenp(x,xs)}/j |-> js:dlist[A,<j>,null]
+       => r:{v:<j> | ((dlenp(v,js) = 1 + dlenp(x,xs))
+                  && (dkeysp(v,js) = Set_cup(Set_sng(k), dkeysp(x,xs))))}
+         /j |-> js:dlist[A,<j>,null]
 */
 function insert(x, k){
   var y  = {data:k, next:x, prev:null};

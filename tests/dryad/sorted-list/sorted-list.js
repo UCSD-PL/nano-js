@@ -1,15 +1,32 @@
+/*@ measure keys :: forall A. (list[A]+incList[A]) => set[A]  */
+/*@ measure keysp :: forall A. (<l> + null, list[A]+incList[A]) => set[A]  */
+/*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else
+   keys(x)) */
 
-/*@ type list[A]<P :: A -> A -> Prop> = 
-       exists! l |-> list[{v:A| (P data v)}]<P>. { data : A, next : <l> + null }
- */
+/*@ measure len  :: forall A. (list[A]+incList[A]) => number  */
+/*@ measure lenp :: forall A. (<l> + null, list[A]+incList[A]) => number */
+/*@ measure lenp(p,x) = (if (p = null) then 0 else len(x)) */
 
-/*@ type incList[A] = list[A]<{\x y -> x <= y}> */
+/* ---------------- -------------- ---------------- */
+/* ---------------- SORTED   LISTS ---------------- */
+/* ---------------- -------------- ---------------- */
 
-/*@ measure keys :: (<l> + null) / l |-> list[A] => set[A] 
-  measure keys(x) {
-    | (x :: null) => set_empty
-    | (x :: <l> ) => set_cup(set_singleton(x.data), keys(x.next));
-  }
+/*@ type incList[A]
+      exists! l |-> tl:incList[{v:A | field(hd, "data") <= v }]
+      . hd:{ data : A, next : <l> + null }
+
+      with len(x)  = 1 + lenp(field(hd, "next"), tl)
+      and  keys(x) = Set_cup(Set_sng(field(hd, "data")),
+                                     keysp(field(hd, "next"),tl))
 */
 
-// predicate SetPlus(X,Y,Z) = X == set_cup(Y, set_singleton(Z))
+/* ---------------- -------------- ---------------- */
+/* ---------------- UNSORTED LISTS ---------------- */
+/* ---------------- -------------- ---------------- */
+
+/*@
+type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
+
+     with len(x) = 1 + lenp(field(r, "next"), tl)
+     and keys(x) = Set_cup(Set_sng(field(r, "data")), keysp(field(r, "next"), tl))
+*/

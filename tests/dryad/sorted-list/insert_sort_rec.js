@@ -1,18 +1,13 @@
-/*@ insert :: forall A. (x:<l>+null, k:A)/l |-> in:sList[A]
-                                   => <k>/k |-> out:{sList[A]
-                                               | (if (ttag(x) != "null")
-                                                      then ((if (min(in) < k)
-                                                           then (min(v) = min(in))
-                                                           else (min(v) = k))
-                                                             && (keys(v)= Set_cup(Set_sng(k), keys(in))
-                                                             && (len(v) = len(in) + 1)))
-                                                      else ((min(v)  = k)
-                                                         && (keys(v) = Set_sng(k))
-                                                         && (len(v)  = 1))) } */
+/*@ include sorted-list.js */
+
+/*@ insert :: forall A.
+  (x:<l>+null, k:A)/l |-> ls:incList[A]
+      => {v:<k> | (keysp(v,ks) = Set_cup(Set_sng(k),keysp(x,ls))
+                && lenp(v,ks) = 1 + lenp(x,ls))}
+         /k |-> ks:incList[A] */
 
 function insert(x, k){
-  if (typeof(x) == "null"){
-    // x == null
+  if (x == null) {
     var y  = {};
     y.data = k;
     y.next = null;
@@ -33,20 +28,17 @@ function insert(x, k){
   }
 }
 
-/*@ insertion_sort :: forall A. (x:<l>+null)/l |-> ls:list[A]
-                          => {v:<k>+null | ((ttag(v) != "null") <=> (ttag(x) != "null"))}
-                                          /k |-> ks:{sList[A] | (if (ttag(lqreturn) != "null")
-                                                                    then ((len(v) = len(ls)) && (keys(v) = keys(ls)))
-                                                                    else true)}
-*/
+/*@ insertion_sort :: forall A.
+  (x:<l>+null)/l |-> ls:list[A]
+    => {v:<k>+null | (lenp(v,ks) = lenp(x,ls)
+                   && keysp(v,ks) = keysp(x,ls)) }/k |-> ks:incList[A]  */
 function insertion_sort(x){
-  if (typeof(x) == "null"){
+  if (x == null){
       return null;
   } else {
       var xn = x.next;
       var xk = x.data;
       var t  = insertion_sort(xn);
-      var u  = insert(t, xk);
-      return u;
+      return insert(t, xk);
   }
 }

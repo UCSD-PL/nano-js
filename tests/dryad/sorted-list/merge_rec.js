@@ -1,23 +1,16 @@
-/*@ merge :: forall A. (x1:<a>+null, x2:<b>+null)/a |-> x1s:sList[A] * b |-> x2s:sList[A]
-                                => {v:<m>+null | ((ttag(v) = "null") <=> ((ttag(x1) = "null") && (ttag(x2) = "null"))) }
-                                  /m |-> ms:{sList[A] | (if (ttag(x1) != "null") then
-                                                            (if (ttag(x2) != "null") then
-                                                                (keys(v) = Set_cup(keys(x1s), keys(x2s)))
-                                                            else
-                                                                (keys(v) = keys(x1s)))
-                                                        else
-                                                            (if (ttag(x2) != "null") then
-                                                                (keys(v) = keys(x2s))
-                                                            else
-                                                                true)) }
-
+/*@ include sorted-list.js */
+/*@ merge :: forall A.
+  (x1:<a>+null, x2:<b>+null)/a |-> x1s:incList[A]
+                           * b |-> x2s:incList[A]
+    => {v:<m>+null | keysp(v,ms) = Set_cup(keysp(x1,x1s),keysp(x2,x2s))} 
+       /m |-> ms:incList[A]
 */
 function merge(x1, x2){
-  if (typeof(x1) == "null"){
+  if (x1 == null) {
     return x2;
   }
   
- if (typeof(x2) == "null"){
+ if (x2 == null) {
    return x1;
  }
   var x1k = x1.data;
@@ -36,29 +29,21 @@ function merge(x1, x2){
   }
 }
 
-/*@ split :: forall A. (x:<l>+null)/l |-> ls:list[A] =>
-                                <r>/r |-> r:{x:{v:<x>+null | ((ttag(v) = "null") <=> (ttag(x) = "null"))},
-                                             y:{v:<y>+null | ((ttag(v) != "null") <=> ((ttag(x) != "null") && (len(ls) > 1)))}}
-                                  * x |-> xs:{list[A] | ((ttag(field(r, "y")) = "null") => (keys(v) = keys(ls)))}
-                                  * y |-> ys:{list[A] | (if (ttag(field(r, "x")) != "null") then
-                                                          (if (ttag(field(r, "y")) != "null") then
-                                                              (keys(ls) = Set_cup(keys(xs), keys(v)))
-                                                          else
-                                                              (keys(ls) = keys(xs)))
-                                                      else
-                                                          (if (ttag(field(r, "y")) != "null") then
-                                                              (keys(ls) = keys(ys))
-                                                          else
-                                                              true)) }                                                       */
+/*@ split :: forall A.
+      (x:<l>+null)/l |-> ls:list[A]
+        => {v:<r> | keysp(x,ls) = Set_cup(keysp(field(r,"x"),xs),keysp(field(r,"y"),ys))}
+           /r |-> r:{x:<x>+null, y:<y>+null}
+          * x |-> xs:list[A]
+          * y |-> ys:list[A]                                                                */
 function split(x){
-  if (typeof(x) == "null"){
+  if (x == null) {
     r = {x:null, y:null};
     return r;
   } 
   
   var xn = x.next;
 
-  if (typeof(xn) == "null"){
+  if (xn == null) {
     r = {x:x, y:null};
     return r;
   } else {
@@ -72,15 +57,16 @@ function split(x){
     return r;
   }
 }
-
-/*@ sortList :: forall A. (x:<j>+null)/j |-> js:list[A] => {v:<k>+null | ((ttag(v) = "null") <=> (ttag(x) = "null"))}
-                                      /k |-> ks:{sList[A] | ((ttag(x) != "null") => (keys(v) = keys(js)))}            */
+/*@ sortList :: forall A.
+      (x:<j>+null)/j |-> xs:list[A]
+         => {v:<k>+null | keysp(v,ks) = keysp(x,xs)}
+           /k |-> ks:incList[A]                       */
 function sortList(x) {
-  if (typeof(x) == "null"){
+  if (x == null){
     return null;
   }
   var xn = x.next;
-  if (typeof(xn) == "null") {
+  if (xn == null) {
     return x;
   }
   var yz = split(x);
@@ -89,14 +75,14 @@ function sortList(x) {
   var ys = sortList(y);
   var zs = sortList(z);
   var ret = merge(ys,zs);
-  if (typeof(ys) != "null") {
-    if (typeof(zs) != "null") {
+  if (ys != null) {
+    if (zs != null) {
       return ret;
     } else {
       return ret;
     }
   } else {
-    if (typeof(zs) != "null") {
+    if (zs != null) {
       return ret;
     } else {
       return ret;

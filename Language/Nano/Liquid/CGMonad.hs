@@ -318,14 +318,14 @@ envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv -> CGM CG
 envAdds xts' g
   = do xts    <- zip xs  <$> mapM addInvariant ts
        let g' =  g { renv = E.envAdds xts        (renv g) } 
-       xts'   <- mapM (xtwrap $ addMeasuresM g' . tracePP "envAdds") xts
+       xts'   <- mapM (xtwrap $ addMeasuresM g') xts
        is     <- forM xts' $  addFixpointBind 
        _      <- forM xts' $  \(x, t) -> addAnnot (srcPos x) x t
        return $ g' { renv = E.envAdds xts'       (renv g')}
                    { fenv = F.insertsIBindEnv is (fenv g) }
     where 
       (xs,ts)        = unzip xts'
-      xtwrap m (x,t) = m (B (F.symbol x) t) >>= \(B _ t') -> return (x, tracePP "envAdds'" t')
+      xtwrap m (x,t) = m (B (F.symbol x) t) >>= \(B _ t') -> return (x,t')
 
 ---------------------------------------------------------------------------------------
 envAddFreshHeap   :: (IsLocated l) => l -> (Location, RefType) -> CGEnv -> CGM (Id SourceSpan, CGEnv)
@@ -471,9 +471,7 @@ envJoin' l g g1 g2
         zipWithM_ (subTypeContainers l g1') [envFindTy x g1' | x <- xs] ts
         zipWithM_ (subTypeContainers l g2') [envFindTy x g2' | x <- xs] ts
         
-        let t1 = tracePP "IfStmt h1" (rheap g1')
-        let t2 = tracePP "IfStmt h2" (rheap g2')
-        g'  <- t1`seq`t2`seq`joinHeaps l γ g' g1' g2'
+        g'  <- joinHeaps l γ g' g1' g2'
 
         return g'
 
@@ -496,8 +494,8 @@ joinHeaps l γ g g1 g2
        -- Subtype the common heap locations
        zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
-       zipWithM_ (subTypeContainers' "joinHeaps 1" l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
-       zipWithM_ (subTypeContainers' "joinHeaps 2" l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
+       zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
+       zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        xs'             <- mapM (const (freshId (srcPos l))) xs
        g''             <- envAdds (zip xs' (reverse ts')) g'
        return $ g'' { rheap = σj }
@@ -550,7 +548,7 @@ freshTyInst l g αs τs tbody
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
            tbody' = TFun (suBind su <$> bs) (B rs' rt') (heapSu hi') (heapSu ho') F.top
-       return $ tracePP msg $  apply θ tbody'
+       return $ {- tracePP msg $ -}  apply θ tbody'
     where
        suBind su b = F.subst su <$> b
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
@@ -566,9 +564,9 @@ freshTyWind g l θ ty
        let (αs,ls)  = toLists θ
        θ'          <- flip fromLists ls <$> mapM freshSubst αs
        (su,σ')     <- freshHeapEnv l (apply θ' σ)
-       ms          <- (instMeas su <$>) <$> getRMeasures (tracePP "freshTyWind" ty)
+       ms          <- (instMeas su <$>) <$> getRMeasures ty
        -- g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return (tracePP (printf "freshTyWind sig out [%s] [%s]" (show su) (show ms)) σ', (s,F.subst su $ apply θ' t), tracePP "t out" $ mkApp (apply θ' . tVar <$> vs), ms)
+       return (σ', (s,F.subst su $ apply θ' t), mkApp (apply θ' . tVar <$> vs), ms)
     where 
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l
@@ -615,7 +613,7 @@ freshHeapEnv l σ
   = do let xs  = b_sym <$> heapTypes σ
        xs'     <- mapM (refreshId (srcPos l)) xs
        let su  = F.mkSubst $ zip (F.symbol <$> xs) (F.eVar . F.symbol <$> xs')
-       return $ (su, tracePP "freshening to this" . heapBind . zipUp (replace su) xs' $ heapBinds $ tracePP "freshening this" σ)
+       return $ (su, heapBind . zipUp (replace su) xs' $ heapBinds σ)
     where
       heapBind                 = heapFromBinds "freshHeapEnv"
       zipUp                    = safeZipWith "freshHeapEnv"
@@ -706,7 +704,7 @@ subTypeHeaps l g σ1 σ2
       subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
     
 subTypeField l g = withAlignedM doSubType
-  where doSubType t1 t2 = do subTypeContainers' "subTypeField" l g t1 t2 
+  where doSubType t1 t2 = subTypeContainers l g t1 t2 
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -750,8 +748,8 @@ subTypeRecursive l g t1@(TApp d1@(TDef _) _ _) t2@(TApp d2@(TDef _) _ _)
                         su                      = F.catSubst heapSub bsub
                         xts                     = (Id (srcPos l) (F.symbolString x1),t1') : (map (btop . snd) $ heapBinds σ1)
                     g_st                       <- envAdds xts g
-                    subTypeContainers' "rec" l g_st t1' (F.subst su t2')
-                    subTypeHeaps l g_st (b_type <$> σ1) (tracePP "recursive heap" $ replaceC . b_type <$> σ2')
+                    subTypeContainers l g_st t1' (F.subst su t2')
+                    subTypeHeaps l g_st (b_type <$> σ1) (replaceC . b_type <$> σ2')
     where
       replaceC t@(TApp d ts r) | d == d2   = TApp d1 ts r                                     
       replaceC t               | otherwise = t
@@ -762,14 +760,14 @@ subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeContainers l g t1@(TApp d@(TDef _) ts _) t2@(TApp d'@(TDef _) ts' _)
   | d == d'   = do subType l g t1 t2 
-                   mapM_ (uncurry $ subTypeContainers' "def0" l g) $ zip ts ts'
+                   mapM_ (uncurry $ subTypeContainers l g) $ zip ts ts'
   | otherwise = subTypeRecursive l g t1 t2
 
 subTypeContainers l g t1 t2@(TApp (TDef _) _ _ ) = 
-  unfoldSafeCG t2 >>= \t2' -> subTypeContainers' "subc def1" l g t1 t2'
+  unfoldSafeCG t2 >>= \t2' -> subTypeContainers l g t1 t2'
 
 subTypeContainers l g t1@(TApp (TDef _) _ _ ) t2 = 
-  unfoldSafeCG t1 >>= \t1' -> subTypeContainers' "subc def2" l g t1' t2
+  unfoldSafeCG t1 >>= \t1' -> subTypeContainers l g t1' t2
 
 subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) = 
   getTDefs >>= \γ -> sbs $ bkPaddedUnion "subTypeContainers" γ u1 u2
@@ -780,8 +778,8 @@ subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
     fix t b v    | v == b    = rTypeValueVar t
                  | otherwise = v
     rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
-    sb  (t1 ,t2) = subTypeContainers' "subc un" l g (t1 `strengthen` rr t1 r1)
-                                                    (t2 `strengthen` rr t2 r2)
+    sb  (t1 ,t2) = subTypeContainers l g (t1 `strengthen` rr t1 r1)
+                                         (t2 `strengthen` rr t2 r2)
     sbs ts       = mapM_ sb ts
 
 -- TODO: the environment for subtyping each part of the object should have the
@@ -797,7 +795,7 @@ subTypeContainers l g o1@(TObj _ _) o2@(TObj _ _) =
     fix t b v    | v == b    = rTypeValueVar t
                  | otherwise = v
     rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
-    sb (t1 ,t2)  = subTypeContainers' "subc obj" l g t1 t2
+    sb (t1 ,t2)  = subTypeContainers l g t1 t2
 
 subTypeContainers l g t1 t2 = subType l g t1 t2
 
@@ -1075,8 +1073,8 @@ subTypeWUpdate l g tobj tobj'
        t            <- freshTy "weak" (toType tt) 
        (x,g')       <- envAddFresh l t g
        wellFormed l g' t
-       subTypeContainers' "WeakUpdate" l g' tobj  t
-       subTypeContainers' "WeakUpdate" l g' tobj' t
+       subTypeContainers l g' tobj  t
+       subTypeContainers l g' tobj' t
        return (x,g') 
 
     
@@ -1100,7 +1098,8 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeWind = subTypeWind' [] 
 
-subTypeWind' seen l g σ t1 t2 = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
+subTypeWind' seen l g σ t1 t2
+    = {- tracePP msg () `seq`-} withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
@@ -1112,25 +1111,11 @@ subTypeWindTys :: [Location] -> AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefTy
 -------------------------------------------------------------------------------
 subTypeWindTys seen l g σ t1@(TObj _ _) t2@(TObj _ _)
   = do (t1', t2') <- alignTsM t1 t2 
-       subTypeContainers' "Wind" l g (tracePP "subTypeWindTys" t1') (tracePP "subTypeWindTys" t2')
+       subTypeContainers l g t1' t2'
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) $ bkPaddedObject t1 t2
 
 subTypeWindTys seen l g σ t1 t2
-  = do subTypeContainers' "Wind Non-Obj" l g t1 t2
-    
--- renameLocations :: CGEnv -> RefHeap -> RefType -> RefType -> CGM (RSubst F.Reft)
--- renameLocations g σ t1 t2 
---   = do γ              <- getTDefs
---        let envLocs     = concat [ locs t | (Id _ s,t) <- envToList g
---                                          , F.symbol s /= returnSymbol ]
---                          ++ heapLocs (rheap g)
---            ls          = filter (okRename (tracePP "kenvLocs" envLocs) σ) $ tracePP "rename" $ rename γ t1 t2
---        return $ fromLists [] ls
---     where
---       okRename locs σ (l2,l1) = l2 `notElem` locs && l1 `notElem` heapLocs σ
---       rename γ t1 t2          = case unify γ mempty t1 t2 of
---                                   Left msg -> error msg
---                                   Right θ  -> snd $ toLists θ
+  = do subTypeContainers l g t1 t2
     
 -------------------------------------------------------------------------------
 subTypeWindHeaps :: [Location] -> AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
@@ -1144,7 +1129,7 @@ subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
   | not (l2 `heapMem` σ) = return ()
     -- subTypeContainers' "dead" l g tru fls
   | l1 `elem` seen = return ()
-  | otherwise      = do (x,g') <- envAddFresh l (tracePP "subTypeWindHeaps t1" t1) g
+  | otherwise      = do (x,g') <- envAddFresh l t1 g
                         let th2 = snd $ safeRefReadHeap "subTypeWindHeaps(a)" g σ l2
                             th1 = if heapMem l1 (rheap g') then 
                                     snd $ safeRefReadHeap "subTypeWindHeaps(b)" g (rheap g') l1

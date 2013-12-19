@@ -1023,7 +1023,7 @@ patchStmt ws (IfSingleStmt l e s) =
 patchStmt ws s                    = 
   BlockStmt (getAnnotation s) $  ws ++ [s]
 
-patchStmt' ws s = patchStmt ws $ tracePP "patchStmts'" s
+patchStmt' ws s = patchStmt ws s
 
 data HState r = HS { hs_winds   :: !(M.Map SourceSpan [WindCall r])
                    , hs_unwinds :: !(M.Map SourceSpan [(Location, Id SourceSpan)])

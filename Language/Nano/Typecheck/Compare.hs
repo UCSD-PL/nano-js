@@ -369,8 +369,8 @@ padUnion env t1 t2 =
     (t1s, t2s) = unzip $ safeZip "unionParts" t1s' t2s'
 
     -- It is crucial to sort the types so that they are aligned
-    t1s'       = tracePP "t1s'" $ L.sortBy sortFun $ tracePP "commonT1s" (commonT1s ++ d1s ++ (fmap F.bot <$> d2s))
-    t2s'       = tracePP "t2s'" $ L.sortBy sortFun $ tracePP "commonT2s" (commonT2s ++ d2s ++ (fmap F.bot <$> d1s))
+    t1s'       = L.sortBy sortFun $ (commonT1s ++ d1s ++ (fmap F.bot <$> d2s))
+    t2s'       = L.sortBy sortFun $ (commonT2s ++ d2s ++ (fmap F.bot <$> d1s))
 
     sortFun t1 t2 = uncurry compare $ tracePP (printf "(t1[%s],t2[%s])" (show $ toType t1) (show $ toType t2)) (t1,t2)
 

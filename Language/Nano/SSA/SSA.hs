@@ -122,9 +122,9 @@ ssaStmt (IfStmt l e s1 s2)
   = do e'           <- ssaExpr e
        θ            <- getSsaEnv
        (θ1, s1')    <- ssaWith θ ssaStmt s1
-       (θ2, s2')    <- ssaWith θ ssaStmt $ tracePP "ssaStmt s2" s2
+       (θ2, s2')    <- ssaWith θ ssaStmt s2
        (θ', φ1, φ2) <- envJoin l θ1 θ2        
-       let stmt'     = IfStmt l e' (splice s1' φ1) (splice (tracePP "ssaStmt s2'" s2') φ2)
+       let stmt'     = IfStmt l e' (splice s1' φ1) (splice s2' φ2)
        case θ' of
          Just θ''   -> setSsaEnv θ'' >> return (True,  stmt') 
          Nothing    ->                  return (False, stmt')

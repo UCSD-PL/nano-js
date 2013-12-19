@@ -133,7 +133,7 @@ unifEq γ _ t t'                     = equiv γ t t'
 unifys ::  (PP r, F.Reftable r, Ord r) =>  
   Env (RType r) -> RSubst r -> [RType r] -> [RType r] -> Either String (RSubst r)
 -----------------------------------------------------------------------------
-unifys env θ xs ys = tracePP msg $ unifys' env θ xs ys
+unifys env θ xs ys = {- tracePP msg $ -} unifys' env θ xs ys
    where
      msg      = printf "unifys: [xs = %s] [ys = %s] [θ = %s]"  (ppshow $ map toType xs) (ppshow $ map toType ys) (ppshow θ)
 

@@ -562,6 +562,9 @@ instance (PP t) => PP (Heap t) where
   pp h = brackets $ intersperse (text " *") (map ppBind (heapBinds h))
       where ppBind (l, t) = text l <+> text "|->" <+> pp t
 
+instance PP F.Subst where
+  pp = text . show
+
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
   pp (TFun xts t h h' _)        = ppArgs parens comma xts

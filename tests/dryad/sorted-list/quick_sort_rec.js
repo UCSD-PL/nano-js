@@ -1,32 +1,18 @@
-//import "sorted-list.js";
-/*@ qualif MinEq(v:a): (min(v) = min(ll) || v = mm) */
-/*@ qualif AppKeys(v:a): (if (ttag(ls) = "null")
-                             then (if (ttag(gs) = "null")
-                                      then true
-                                      else (keys(v) = keys(mm)))
-                             else (if (ttag(gs) = "null")
-                                      then (keys(v) = keys(ll))
-                                      else (keys(v) = Set_cup(keys(ll),keys(mm))))) */
+/*@ include sorted-list.js */
+/*@ qualif AppKeys(v:a) : keys(v) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
 
-/*@  append :: forall A. (xk:A, ls:<l>+null, gs:<m>+null)/l |-> ll:sList[{A | v <  xk }]
-                                                        * m |-> mm:sList[{A | v >= xk }]
-                                   => {v:<k>+null | ((ttag(v) = "null") <=>
-                                                    ((ttag(ls) = "null") && (ttag(gs) = "null")))}
-                                      /k |-> kk:{sList[A] | (((min(v) = min(ll)) || (v = mm))
-                                                         && (if (ttag(ls) = "null")
-                                                                then (if (ttag(gs) = "null")
-                                                                         then true
-                                                                         else (keys(v) = keys(mm)))
-                                                                else (if (ttag(gs) = "null")
-                                                                         then (keys(v) = keys(ll))
-                                                                         else (keys(v) = Set_cup(keys(ll),keys(mm))))))} */
+/*@ append :: forall A.
+  (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:incList[{A | v <  xk }]
+                                 * g |-> gg:incList[{A | v >= xk }]
+    => {v:<k>+null | keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) }
+       /k |-> kk:incList[A]                                             */
 function append(xk, ls, gs) {
-  if (typeof(ls) == "null") {
+  if (ls == null) {
     return gs;
   }
 
   var n = ls.next;
-  if (typeof(n) == "null") {
+  if (n == null) {
     ls.next = gs;
   } else {
     n = append(xk, n, gs);
@@ -35,28 +21,19 @@ function append(xk, ls, gs) {
   return ls;
 }
 
-/*@ partition :: forall A.
-   (piv:A, x:<x>+null)/x |-> xs:list[A] => <r>/a |-> as:list[{A | v < piv}]
-                                             * b |-> bs:list[{A | v >= piv}]
-                                             * r |-> p:{v:{x:<a>+null, y:<b>+null} |
-                                                        ((((ttag(field(p,"x")) = "null") && (ttag(field(p,"y")) = "null"))
-                                                            <=> (ttag(x) = "null"))
-                                                        &&  (if (ttag(field(p,"x")) = "null")
-                                                                then (if (ttag(field(p,"y")) = "null")
-                                                                         then true
-                                                                         else (keys(xs) = keys(bs)))
-                                                                else (if (ttag(field(p,"y")) = "null")
-                                                                         then (keys(xs) = keys(as))
-                                                                         else (keys(xs) = Set_cup(keys(as),keys(bs)))))) } */
+/*@ nullList :: forall A. (A) => {v:<l>+null | v = null}/l |-> list[A] */
 
-/*@ nullList :: forall A. () => {v:<l>+null | (ttag(v) = "null")}/l |-> list[A] */
+/*@ partition :: forall A.
+   (piv:A, x:<x>+null)/x |-> xs:list[A]
+     => {v:<r> | keysp(x,xs) = Set_cup(keysp(field(p,"x"),as),keysp(field(p,"y"),bs))}
+                 /a |-> as:list[{A | v < piv}]
+                * b |-> bs:list[{A | v >= piv}]
+                * r |-> p:{x:<a>+null, y:<b>+null}                                  */
 function partition(piv, x){
-  if (typeof(x) == "null") {
-      var x = nullList();
-      var y = nullList();
+  if (x == null) {
       var ret = {};
-      ret.x = x;
-      ret.y = y;
+      ret.x = null;
+      ret.y = null;
       return ret;
   }
 
@@ -81,10 +58,11 @@ function partition(piv, x){
 }
 
 /*@ quickSort :: forall A.
-      (x:<m>+null)/m |-> ms:list[A] => {v:<o>+null | ((ttag(v) = "null") <=> (ttag(x) = "null")) }
-                                       /o |-> {sList[A] | ((ttag(lqreturn) != "null") => (keys(v) = keys(ms)))} */
-function quickSort(x){
-  if (typeof(x) == "null"){
+      (x:<x>+null)/x |-> in:list[A]
+        => {v:<o>+null | keysp(v,out) = keysp(x,in) }
+          /o |-> out:incList[A] */
+function quickSort(x) {
+  if (x == null){
     return null;
   }
   var piv = x.data;
