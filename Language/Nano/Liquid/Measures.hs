@@ -29,16 +29,16 @@ import qualified Data.List                      as L
 import           Control.Applicative                ((<$>))
 
 --------------------------------------------------------------------------------
-instMeasures :: Symbolic s => [s] -> [Measure] -> Reft
+instMeasures :: Symbolic s => [s] -> [Measure] -> RReft
 --------------------------------------------------------------------------------
-instMeasures args ms = foldl joinRefts (predReft PTrue) ms
+instMeasures args ms = foldl joinRefts (ureft $ predReft PTrue) ms
     where
       joinRefts r m = r `meet` instMeasure args m
 
 --------------------------------------------------------------------------------
-instMeasure :: Symbolic s => [s] -> Measure -> Reft
+instMeasure :: Symbolic s => [s] -> Measure -> RReft
 --------------------------------------------------------------------------------
-instMeasure args (foo, fargs, expr) = predReft $ PAtom Eq lhs rhs
+instMeasure args (foo, fargs, expr) = ureft . predReft $ PAtom Eq lhs rhs
   where
     eargs = eVar <$> args
     su    = mkSubst $ zip fargs eargs
@@ -46,13 +46,13 @@ instMeasure args (foo, fargs, expr) = predReft $ PAtom Eq lhs rhs
     rhs   = subst su expr
             
 --------------------------------------------------------------------------------
-addMeasures :: REnv -> REnv -> [Measure] -> RHeapEnv Reft -> Bind Reft
-            -> Bind Reft
+addMeasures :: REnv -> REnv -> [Measure] -> RHeapEnv RReft -> Bind RReft
+            -> Bind RReft
 --------------------------------------------------------------------------------
 addMeasures γm γt mdefs σ t = foldl (addMeasure γm γt σ) t mdefs
 
 --------------------------------------------------------------------------------
-addMeasure :: REnv -> REnv -> RHeapEnv Reft -> Bind Reft -> Measure -> Bind Reft
+addMeasure :: REnv -> REnv -> RHeapEnv RReft -> Bind RReft -> Measure -> Bind RReft
 --------------------------------------------------------------------------------
 addMeasure γm γt σ b@(B x t) m@(_,[a],_)
     = maybe b (B x . strengthen t)
@@ -69,13 +69,13 @@ addMeasure γm γt σ b@(B x t) m@(_,[a1,a2],_)
         bv    = B (vv Nothing) t
         app p = B x (t `strengthen` p)
         try h = maybe b app . addMeasure' γm γt [bv,h]
-        nil   = nilBind :: Bind Reft
+        nil   = nilBind :: Bind RReft
 
 addMeasure γm γt σ t _ = t
 
-refLocs (TApp TUn ts _)     = concatMap refLocs ts
-refLocs (TApp (TRef l) _ _) = [l]                         
-refLocs _                   = []                         
+refLocs (TApp TUn ts _ _)     = concatMap refLocs ts
+refLocs (TApp (TRef l) _ _ _) = [l]                         
+refLocs _                     = []                         
 
 addMeasure' γm γt ts m@(foo, fargs, expr)
     | tcMeasure γt (b_type <$> ts) (envFindTy foo γm) = Just p
@@ -109,4 +109,4 @@ tcMeasure' γt ts (αs,bs,h,_,_)
 
 isFalseR (TBd _     ) = False
 isFalseR (TAll _ _  ) = False
-isFalseR t            = isFalse . rTypeR $ t
+isFalseR t            = isFalse . ur_reft . rTypeR $ t

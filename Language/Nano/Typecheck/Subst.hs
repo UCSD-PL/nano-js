@@ -133,17 +133,24 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (RType r) where
   apply θ t = appTy θ t
 --     where 
 --       msg   = printf "apply [θ = %s] [t = %s]" (ppshow θ) (ppshow t)
+instance (PP r, Ord r, F.Reftable r) => Substitutable r (PRef Type r (RType r)) where
+  apply θ (PMono xts r) = PMono ((toType . appTy θ . ofType <$>) <$> xts) r
+  apply θ (PPoly xts t) = PPoly ((toType . appTy θ . ofType <$>) <$> xts) (apply θ t)
 
 instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where 
   apply θ (B z t) = B z $ appTy θ t
 
 instance Free (RType r) where
-  free (TApp _ ts _)          = S.unions   $ free <$> ts
+  free (TApp _ ts ps _)       = S.unions   $ free <$> ts
   free (TVar α _)             = S.singleton α 
   free (TFun xts t h h' _)    = S.unions   $ free <$> funTs (t:xts, h, h')
   free (TAll α t)             = S.delete α $ free t 
   free (TObj bs _)            = S.unions   $ free <$> b_type <$> bs
   free (TBd (TD _ _ α h t _ ))= foldr S.delete (free t) α
+
+instance (Free t, Free m) => Free (PRef t s m) where
+  free (PMono xts _) = S.unions $ map (free . snd) xts
+  free (PPoly xts t) = S.unions $ free t:map (free . snd) xts
 
 funTs (xts, h, h') = ts                               
     where ts = (b_type <$> xts)
@@ -204,9 +211,9 @@ instance Free (Fact_ r) where
 ------------------------------------------------------------------------
 -- appTy :: Subst_ r -> RType r -> RType r
 ------------------------------------------------------------------------
-appTy (Su _ m) (TApp (TRef l) t z)    = TApp (TRef $ M.lookupDefault l l m) t z
-appTy θ (TApp TUn ts z)               = mkUnionR z (nub $ apply θ ts)
-appTy θ (TApp c ts z)                 = TApp c (apply θ ts) z 
+appTy θ@(Su _ m) (TApp (TRef l) t rs z) = TApp (TRef $ M.lookupDefault l l m) t (apply θ rs) z
+appTy θ (TApp TUn ts rs z)            = mkUnionR rs z (nub $ apply θ ts)
+appTy θ (TApp c ts rs z)              = TApp c (apply θ ts) (apply θ rs) z 
 appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b_type = appTy θ $ b_type b } ) bs ) z
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
@@ -228,11 +235,11 @@ unfoldFirst env t = go t
     go (TObj bs r)             = TObj (goB <$> bs) r
     go (TBd  _)                = error "unfoldTDefDeep: there should not be a TBody here"
     go (TAll v t)              = TAll v $ go t
-    go (TApp (TDef id) acts _) = 
+    go (TApp (TDef id) acts _ _) = 
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ _ vs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
         _                              -> error $ errorUnboundId id
-    go (TApp c a r)            = TApp c (go <$> a) r
+    go (TApp c a rs r)         = TApp c (go <$> a) rs r
     go t@(TVar _ _ )           = t
     goB (B s t)                = B s $ go t
 
@@ -248,7 +255,7 @@ unfoldFirst env t = go t
 unfoldMaybeEnv :: (PP r, Ord r, F.Reftable r) =>
   Env (RType r) -> RType r -> Either String (RHeapEnv r, Bind r, RSubst r)
 -------------------------------------------------------------------------------
-unfoldMaybeEnv env t@(TApp (TDef id) acts _) =
+unfoldMaybeEnv env t@(TApp (TDef id) acts _ _) =
       case envFindTy (F.symbol id) env of
         Just (TBd (TD _ s vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
                                                   in (h, B s bd, θ)
@@ -297,7 +304,7 @@ accessNoUnfold t r = [Access { ac_result = r
 dotAccessRef ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
   (Env (RType r), RHeap r) -> s -> RType r -> Maybe [ObjectAccess r]
 -------------------------------------------------------------------------------
-dotAccessRef (γ,σ) f (TApp (TRef l) _ _)
+dotAccessRef (γ,σ) f (TApp (TRef l) _ _ _)
   = dotAccessBase γ f (heapRead "dotAccessRef" l σ)
 
 dotAccessRef (γ,σ) f _ = Nothing
@@ -315,7 +322,7 @@ dotAccessBase _ f t@(TObj bs _) =
                     _       -> Just $ accessNoUnfold t tUndef
   where match s (B f _)  = s == f
 
-dotAccessBase γ f t@(TApp c ts _ ) = go c
+dotAccessBase γ f t@(TApp c ts _ _) = go c
   where  go TUn      = dotAccessUnion γ f ts
          go TInt     = Just $ accessNoUnfold t tUndef
          go TBool    = Just $ accessNoUnfold t tUndef

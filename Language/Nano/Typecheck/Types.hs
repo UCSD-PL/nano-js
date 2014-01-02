@@ -9,6 +9,7 @@
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE NoMonomorphismRestriction   #-}
 {-# LANGUAGE IncoherentInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Language.Nano.Typecheck.Types (
 
@@ -27,6 +28,9 @@ module Language.Nano.Typecheck.Types (
   , RHeap    -- l |-> T
   , RHeapEnv -- l |-> x:T
   , RType (..)
+  , UReft (..)
+  , UReftable (..)
+  , Predicate (..)
   , Bind (..)
   , Measure
   , TDefId
@@ -36,17 +40,27 @@ module Language.Nano.Typecheck.Types (
   , strengthenContainers 
   , updateField
 
+  -- * Manipulating RefType
+  , rTypeReft
+  , rTypeSort
+  , rTypeSortedReft
+  , rTypeValueVar
+
+  -- * Traversing types
+  , efoldReft, foldReft
+  , emapReft
+
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
 
   -- * Constructing Types
-  , mkUnion, mkUnionR
+  , mkUnion, mkUnionR, mkUnionRef
 
   -- * Deconstructing Types
   , bkFun
   , funHeaps
   , bkAll
-  , bkUnion, rUnion, rTypeR, setRTypeR
+  , bkUnion, rUnion, rsUnion, rTypeR, setRTypeR
   , noUnion, unionCheck
 
   -- * Regular Types
@@ -54,6 +68,9 @@ module Language.Nano.Typecheck.Types (
   , BHeap
   , TBody (..)
   , TVar (..)
+  , PVar (..)
+  , PRef (..)
+  , Ref
   , TCon (..)
 
   -- * Primitive Types
@@ -142,15 +159,45 @@ instance F.Symbolic TVar where
 instance PP TVar where 
   pp     = pprint . F.symbol
 
+-- | Abstract Predicate Variables (number<p>)
+data PVar t = PV { pv_sym :: !F.Symbol
+                 , pv_loc :: !SourceSpan
+                 , pv_ty  :: !t
+                 , pv_as  :: ![(t, F.Symbol, F.Expr)]
+                 }
+            deriving (Show, Data, Typeable)
+
+data PRef t s m = PMono [(F.Symbol, t)] s
+                | PPoly [(F.Symbol, t)] m
+                  deriving (Eq, Ord, Show, Functor, Data, Typeable)
+
+type Ref r = PRef Type r (RType r)
+
+instance Eq (PVar a) where
+  a == b = pv_sym a == pv_sym b
+    
+instance Ord (PVar a) where
+  compare (PV n _ _ _) (PV n' _ _ _) = compare n n'
+
+instance Functor PVar where
+  fmap f (PV n l t txys) = PV n l (f t) (mapFst3 f <$> txys)
+
+instance F.Symbolic (PVar a) where
+  symbol = pv_sym
+
+instance PP (PVar a) where
+  pp     = pprint . F.symbol
+
 instance F.Symbolic a => F.Symbolic (Located a) where 
   symbol = F.symbol . val
+    
 
 -- | Constructed Type Bodies
 data TBody r 
    = TD { td_con  :: !TCon          -- TDef name ...
         , td_self :: F.Symbol       -- "Self" binder for body
         , td_args :: ![TVar]        -- Type variables
-        , td_heap :: !(RHeapEnv r)     -- An existentially quantified heap
+        , td_heap :: !(RHeapEnv r)  -- An existentially quantified heap
         , td_body :: !(RType r)     -- int or bool or fun or object ...
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
@@ -181,14 +228,49 @@ nilBind = B nilSymbol tUndef
 
 -- | (Raw) Refined Types 
 data RType r  
-  = TApp  TCon [RType r]                               r
+  = TApp  TCon [RType r] [PRef (RType ()) r (RType r)] r
   | TVar  TVar                                         r 
   | TFun  [Bind r] (Bind r) (RHeapEnv r) (RHeapEnv r)  r
   | TObj  [Bind r]                                     r
   | TBd   (TBody r)
   | TAll  TVar (RType r)
-    deriving (Ord, Show, Functor, Data, Typeable)
+  | TAllP (PVar (RType ())) (RType r)
+    deriving (Ord, Show, Data, Typeable)
 
+instance Functor RType where
+  fmap f = emapReft (\_ -> f) []
+
+-- Lifted from LiquidHaskell             
+type UsedPVar      = PVar ()
+newtype Predicate  = Pr [UsedPVar] deriving (Data, Typeable, Eq, Show, Ord) 
+
+instance Monoid Predicate where
+  mempty       = pdTrue
+  mappend p p' = pdAnd [p, p']
+
+instance (Monoid a) => Monoid (UReft a) where
+  mempty                    = U mempty mempty
+  mappend (U x y) (U x' y') = U (mappend x x') (mappend y y')
+
+pdTrue         = Pr []
+pdAnd ps       = Pr (L.nub $ concatMap pvars ps)
+pvars (Pr pvs) = pvs
+
+data UReft r
+    = U { ur_reft :: !r, ur_pred :: !Predicate }
+      deriving (Show, Ord, Eq, Typeable, Data)
+
+class UReftable a r where
+  ureft :: a -> UReft r
+
+instance F.Reftable r => UReftable r r where
+  ureft r = U r pdTrue
+
+instance F.Reftable r => UReftable Predicate r where
+  ureft p = U F.top p
+
+instance F.Reftable r => UReftable (UReft r) r where
+  ureft = id
 
 data Bind r
   = B { b_sym  :: F.Symbol
@@ -196,6 +278,210 @@ data Bind r
       } 
     deriving (Eq, Ord, Show, Functor, Data, Typeable)
 
+instance F.Reftable Predicate where
+  isTauto (Pr ps)      = null ps
+
+  bot (Pr _)           = errorstar "No BOT instance for Predicate"
+  ppTy r d | F.isTauto r          = d 
+           -- | not (F.ppPs F.ppEnv) = d
+           | otherwise            = d <> (angleBrackets $ pp r)
+  
+  toReft               = errorstar "TODO: instance of toReft for Predicate"
+  params               = errorstar "TODO: instance of params for Predicate"
+
+instance (PP r, F.Reftable r) => F.Reftable (UReft r) where
+  isTauto            = isTauto_ureft 
+  -- ppTy (U r p) d     = ppTy r (ppTy p d) 
+  ppTy               = ppTy_ureft
+  toReft (U r _)     = F.toReft r
+  params (U r _)     = F.params r
+  bot (U r _)        = U (F.bot r) (Pr [])
+
+isTauto_ureft u      = F.isTauto (ur_reft u) && F.isTauto (ur_pred u)
+
+ppTy_ureft u@(U r p) d 
+  | isTauto_ureft u  = d
+  | otherwise        = ppr_reft r (F.ppTy p d)
+
+ppr_reft r d         = braces (F.toFix v <+> colon <+> d <+> text "|" <+> pprint r')
+  where 
+    r'@(F.Reft (v, _)) = F.toReft r
+
+------------------------------------------------------------------------------------------
+-- | Substitutions -----------------------------------------------------------------------
+------------------------------------------------------------------------------------------
+instance F.Subable Predicate where
+  syms (Pr pvs)     = concatMap F.syms pvs 
+  subst s (Pr pvs)  = Pr (F.subst s <$> pvs)
+  substf f (Pr pvs) = Pr (F.substf f <$> pvs)
+  substa f (Pr pvs) = Pr (F.substa f <$> pvs)
+
+instance F.Subable r => F.Subable (UReft r) where
+  syms (U r p)     = F.syms r ++ F.syms p 
+  subst s (U r z)  = U (F.subst s r)  (F.subst s z)
+  substf f (U r z) = U (F.substf f r) (F.substf f z) 
+  substa f (U r z) = U (F.substa f r) (F.substa f z) 
+ 
+instance (F.Reftable r {-, F.RefTypable p c tv r -})
+    => F.Subable (PRef Type r (RType r)) where
+  syms (PMono ss r)     = (fst <$> ss) ++ F.syms r
+  syms (PPoly ss r)     = (fst <$> ss) ++ F.syms r
+  subst su (PMono ss r) = PMono ss (F.subst su r)
+  subst su (PPoly ss t) = PPoly ss (F.subst su <$> t)
+  substf f (PMono ss r) = PMono ss (F.substf f r) 
+  substf f (PPoly ss t) = PPoly ss (F.substf f <$> t)
+  substa f (PMono ss r) = PMono ss (F.substa f r) 
+  substa f (PPoly ss t) = PPoly ss (F.substa f <$> t)
+
+instance F.Subable UsedPVar where 
+  syms pv         = [ y | (_, x, F.EVar y) <- pv_as pv, x /= y ]
+  subst s pv      = pv { pv_as = mapThd3 (F.subst s)  <$> pv_as pv }  
+  substf f pv     = pv { pv_as = mapThd3 (F.substf f) <$> pv_as pv }  
+  substa f pv     = pv { pv_as = mapThd3 (F.substa f) <$> pv_as pv }  
+
+instance (F.Reftable r, F.Subable r) => F.Subable (RType r) where
+  syms        = foldReft (\r acc -> F.syms r ++ acc) [] 
+  substa      = fmap . F.substa 
+  substf f    = emapReft (F.substf . F.substfExcept f) [] 
+  subst su    = emapReft (F.subst  . F.substExcept su) []
+  subst1 t su = emapReft (\xs r -> F.subst1Except xs r su) [] t
+
+instance (F.Reftable r, F.Subable r) => F.Subable (RHeap r) where
+  syms        = concatMap F.syms . heapTypes
+  substa      = fmap . F.substa
+  substf f    = fmap (F.substf f)
+  subst su    = fmap (F.subst su)
+
+------------------------------------------------------------------------------------------
+-- | Traversals over @RType@ -------------------------------------------------------------
+------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------
+emapReft  :: ([F.Symbol] -> a -> b) -> [F.Symbol] -> RType a -> RType b
+------------------------------------------------------------------------------------------
+emapReft f γ (TVar α r)          = TVar α (f γ r)
+emapReft f γ (TApp c ts ps r)    = TApp c (emapReft f γ <$> ts) (emapRef f γ <$> ps) (f γ r)
+emapReft f γ (TAll α t)          = TAll α (emapReft f γ t)
+emapReft f γ (TAllP π t)         = TAllP π (emapReft f γ t)
+emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts)
+                                        (emapReftBind f γ' t) hi' ho' (f γ r) 
+  where 
+    γ'                           = (b_sym <$> xts) ++ γ 
+    hi'                          = fmap (emapReftBind f γ) hi
+    ho'                          = fmap (emapReftBind f γ) ho
+    -- ts                           = b_type <$> xts 
+emapReft f γ (TObj bs r)         = TObj (emapReftBind f γ' <$> bs) (f γ r)
+  where 
+    γ'                           = (b_sym <$> bs) ++ γ 
+emapReft _ _ _                   = error "Not supported in emapReft"
+
+emapRef f γ (PMono xs r)         = PMono xs (f γ r)                                   
+emapRef f γ (PPoly xs t)         = PPoly xs (emapReft f γ t)
+
+emapReftBind f γ (B x t)         = B x $ emapReft f γ t
+
+------------------------------------------------------------------------------------------
+-- | fold over @RType@ -------------------------------------------------------------------
+------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------
+foldReft  :: (F.Reftable r) => (r -> a -> a) -> a -> RType r -> a
+------------------------------------------------------------------------------------------
+foldReft  f = efoldReft (\_ -> ()) (\_ -> f) F.emptySEnv 
+
+------------------------------------------------------------------------------------------
+efoldReft :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> r -> a -> a) -> F.SEnv b -> a -> RType r -> a
+------------------------------------------------------------------------------------------
+efoldReft _ f γ z (TVar _ r)          = f γ r z
+efoldReft g f γ z t@(TApp _ ts ps r)  = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
+    where
+      z'                              = L.foldl' (efoldRef g f γ) z ps
+efoldReft g f γ z (TAll _ t)          = efoldReft g f γ z t
+efoldReft g f γ z (TAllP _ t)         = efoldReft g f γ z t
+efoldReft g f γ z (TFun xts t h h' r) = f γ r $ efoldRefts g f γ' z ts
+  where 
+    γ'                                = foldr (efoldExt g) γ (t:xts)
+    ts                                = (b_type <$> (t:xts))
+                                     ++ heapTypes (b_type <$> h)
+                                     ++ heapTypes (b_type <$> h')
+efoldReft g f γ z (TObj xts r)        = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
+  where 
+    γ'                                = foldr (efoldExt g) γ xts
+efoldReft _ _ _ _ _                   = error "Not supported in efoldReft"
+
+efoldRefts g f γ z ts                 = L.foldl' (efoldReft g f γ) z ts
+
+efoldExt g xt γ                       = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
+
+goPred' g xs γ                  = L.foldl' (\γ (x,t) -> F.insertSEnv x (g $ ofType t) γ) γ  xs
+
+efoldRef  g f γ z (PMono xs r)  = f γ' r z
+    where γ' = L.foldl' (\γ (x,t) -> F.insertSEnv x (g $ ofType t) γ) γ xs
+efoldRef  g f γ z (PPoly xs t)  = efoldReft g f γ' z t
+    where γ' = L.foldl' (\γ (x,t) -> F.insertSEnv x (g $ ofType t) γ) γ xs
+
+------------------------------------------------------------------------------
+-- | Converting RType to Fixpoint --------------------------------------------
+------------------------------------------------------------------------------
+
+rTypeSortedReft   ::  (F.Reftable r) => RType r -> F.SortedReft
+rTypeSortedReft t = F.RR (rTypeSort t) (rTypeReft t)
+
+rTypeReft         :: (F.Reftable r) => RType r -> F.Reft
+rTypeReft         = fromMaybe F.top . fmap F.toReft . stripRTypeBase 
+
+rTypeValueVar     :: (F.Reftable r) => RType r -> F.Symbol
+rTypeValueVar t   = vv where F.Reft (vv,_) =  rTypeReft t 
+
+------------------------------------------------------------------------------------------
+rTypeSort :: (F.Reftable r) => RType r -> F.Sort
+------------------------------------------------------------------------------------------
+
+rTypeSort (TApp TInt [] _ _)   = F.FInt
+rTypeSort (TVar α _)           = F.FObj $ F.symbol α 
+rTypeSort t@(TAll _ _)         = rTypeSortForAll t 
+rTypeSort t@(TAllP _ _)        = rTypeSortForAll t 
+rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> (xts ++ [t]))
+rTypeSort (TApp c ts _ _)      = rTypeSortApp c ts 
+rTypeSort (TObj _ _)           = F.FApp (F.stringFTycon "object") []
+rTypeSort t                    = error ("Type: " ++ ppshow t ++ 
+                                    " is not supported in rTypeSort")
+
+
+rTypeSortApp TInt [] = F.FInt
+rTypeSortApp TUn  _  = F.FApp (tconFTycon TUn) [] -- simplifying union sorts, the checks will have been done earlier
+rTypeSortApp c ts    = F.FApp (tconFTycon c) (rTypeSort <$> ts) 
+
+tconFTycon TInt      = F.intFTyCon
+tconFTycon TBool     = F.stringFTycon "boolean"
+tconFTycon TVoid     = F.stringFTycon "void"
+tconFTycon (TDef s)  = F.stringFTycon $ unId s
+tconFTycon TUn       = F.stringFTycon "union"
+tconFTycon TString   = F.strFTyCon -- F.stringFTycon "string"
+tconFTycon TTop      = F.stringFTycon "top"
+tconFTycon TNull     = F.stringFTycon "null"
+tconFTycon TUndef    = F.stringFTycon "undefined"
+tconFTycon (TRef l)  = F.stringFTycon ("ref("++l++")")
+
+
+rTypeSortForAll t    = genSort n θ $ rTypeSort tbody
+  where 
+    (αs, πs, tbody)  = bkAll t
+    n                = length αs
+    θ                = M.fromList $ zip (F.symbol <$> αs) (F.FVar <$> [0..])
+    
+genSort n θ (F.FFunc _ t)  = F.FFunc n (F.sortSubst θ <$> t)
+genSort n θ t              = F.FFunc n [F.sortSubst θ t]
+
+------------------------------------------------------------------------------------------
+stripRTypeBase :: RType r -> Maybe r 
+------------------------------------------------------------------------------------------
+stripRTypeBase (TApp _ _ _ r)   = Just r
+stripRTypeBase (TVar _ r)       = Just r
+stripRTypeBase (TFun _ _ _ _ r) = Just r
+stripRTypeBase (TObj _ r)       = Just r
+stripRTypeBase _                = Nothing
+ 
 
 -- | Standard Types
 type Type    = RType ()
@@ -203,7 +489,10 @@ type BHeap   = RHeap ()
 
 -- | Stripping out Refinements 
 toType :: RType a -> Type
-toType = fmap (const ())
+toType = stripPreds . fmap (const ())
+
+stripPreds (TApp c ts rs r) = TApp c ts [] r
+stripPreds t                = t
   
 -- | Adding in Refinements
 ofType :: (F.Reftable r) => Type -> RType r
@@ -217,7 +506,7 @@ locsNil = locs' locsNil'
 
 locs' f t             = L.nub (go t)
   where
-    go (TApp c ts _) = f c ++ (concatMap go ts)
+    go (TApp c ts _ _) = f c ++ (concatMap go ts)
     go (TObj bs _)   = concatMap (go . b_type) bs
     go _             = []
 
@@ -242,24 +531,24 @@ deleteLocTy l (TObj bs r) = TObj bs' r
     bs' = map filterLoc bs
     filterLoc (B i t) = B i $ deleteLocTy l t
 
-deleteLocTy l   (TApp TUn ts r) = case ts' of
-                                  [] -> err
-                                  _  -> mkUnionR r ts'
+deleteLocTy l   (TApp TUn ts rs r) = case ts' of
+                                      [] -> err
+                                      _  -> mkUnionR rs r ts'
   where
     ts' = catMaybes $ map (filterLoc l . deleteLocTy l) ts
     err = errorstar "deleteLocTy: Empty type"
 
-deleteLocTy l t@(TApp _ [] _) = t
-deleteLocTy l   (TApp c ts r) = case ts' of
-                                  [] -> err
-                                  _  -> TApp c ts' r
+deleteLocTy l t@(TApp _ [] _ _) = t
+deleteLocTy l   (TApp c ts ps r) = case ts' of
+                                     [] -> err
+                                     _  -> TApp c ts' ps r
   where 
     ts' = catMaybes $ map (filterLoc l . deleteLocTy l) ts
     err = errorstar "deleteLocTy: Empty type"
     
 deleteLocTy _ t               = t      
 
-filterLoc l (TApp (TRef l') _ _) | l == l' = Nothing
+filterLoc l (TApp (TRef l') _ _ _) | l == l' = Nothing
 filterLoc l t                              = Just t
 
 heapEnvToHeap :: RHeapEnv r -> RHeap r
@@ -277,18 +566,19 @@ restrictHeap ls h = heapCombineWith const [h1, h2]
     ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
 bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeapEnv r, RHeapEnv r, Bind r)
-bkFun t = do let (αs, t') = bkAll t
+bkFun t = do let (αs, πs, t') = bkAll t
              (xts, t'', h, h')  <- bkArr t'
              return (αs, xts, h, h', t'')
 
 bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
 bkArr _                   = Nothing
 
-bkAll                :: RType a -> ([TVar], RType a)
-bkAll t              = go [] t
+bkAll                :: RType a -> ([TVar], [PVar Type], RType a)
+bkAll t              = go [] [] t
   where 
-    go αs (TAll α t) = go (α : αs) t
-    go αs t          = (reverse αs, t)
+    go αs πs (TAll α t)  = go (α : αs) πs t
+    go αs πs (TAllP π t) = go αs (π : πs) t
+    go αs πs t           = (reverse αs, reverse πs, t)
 
 funHeaps :: RType r -> Maybe (RHeapEnv r, RHeapEnv r)
 funHeaps = (stripHeaps =<<) . bkFun
@@ -312,35 +602,38 @@ updateField t' f t =
 ---------------------------------------------------------------------------------
 mkUnion :: (Ord r, Eq r, F.Reftable r) => [RType r] -> RType r
 ---------------------------------------------------------------------------------
-mkUnion = mkUnionR F.top
-
+mkUnion = mkUnionRef F.top
 
 ---------------------------------------------------------------------------------
-mkUnionR :: (Ord r, Eq r, F.Reftable r) => r -> [RType r] -> RType r
+mkUnionRef :: (Ord r, Eq r, F.Reftable r) => r -> [RType r] -> RType r
 ---------------------------------------------------------------------------------
-mkUnionR _ [ ] = tErr
-mkUnionR r [t] = strengthen t r
-mkUnionR r ts  | length ts' > 1 = TApp TUn ts' r
+mkUnionRef = mkUnionR []
+
+---------------------------------------------------------------------------------
+mkUnionR :: (Ord r, Eq r, F.Reftable r) => [PRef Type r (RType r)] -> r -> [RType r] -> RType r
+---------------------------------------------------------------------------------
+mkUnionR rs _ [ ] = tErr
+mkUnionR rs r [t] = strengthen t r
+mkUnionR rs r ts  | length ts' > 1 = TApp TUn ts' rs r
                | otherwise      = strengthen (head ts') r
   where ts'  = L.sort $ L.nub ts
 
+               
 ---------------------------------------------------------------------------------
 bkUnion :: RType r -> [RType r]
 ---------------------------------------------------------------------------------
-bkUnion (TApp TUn xs _) = xs
+bkUnion (TApp TUn xs _ _) = xs
 bkUnion t               = [t]
 
-
 -- | Strengthen the top-level refinement
-
 ---------------------------------------------------------------------------------
 strengthen                   :: F.Reftable r => RType r -> r -> RType r
 ---------------------------------------------------------------------------------
 {-strengthen t = setRTypeR t . (rTypeR t `F.meet`)-} 
 -- The above does not handle cases other than TApp and TVar correctly
-strengthen (TApp c ts r) r'  = TApp c ts $ r' `F.meet` r 
-strengthen (TVar α r)    r'  = TVar α    $ r' `F.meet` r 
-strengthen t _               = t                         
+strengthen (TApp c ts ps r) r'  = TApp c ts ps $ r' `F.meet` r 
+strengthen (TVar α r)       r'  = TVar α    $ r' `F.meet` r 
+strengthen t _                   = t                         
 
 -- NOTE: r' is the OLD refinement. 
 --       We want to preserve its VV binder as it "escapes", 
@@ -351,8 +644,12 @@ strengthen t _               = t
 -- refinements of an equivalnet (having the same raw version) 
 -- type @t1@
 -- TODO: Add checks for equivalence in union and objects
-strengthenContainers (TApp TUn ts r) (TApp TUn ts' r') =
-  TApp TUn (zipWith strengthenContainers ts ts') $ r' `F.meet` r
+strengthenContainers (TApp TUn ts ps r) (TApp TUn ts' ps' r') =
+  TApp TUn (zipWith strengthenContainers ts ts') pm rm
+  where
+    rm = r' `F.meet` r
+    pm = ps' `F.meet` ps
+
 strengthenContainers (TObj ts r) (TObj ts' r') = 
   TObj (zipWith doB ts ts') $ r' `F.meet` r
   where 
@@ -367,16 +664,16 @@ strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity 
 
 -- | Top-level Top (any) check
 isTop :: RType r -> Bool
-isTop (TApp TTop _ _)   = True 
-isTop (TApp TUn  ts _ ) = any isTop ts
-isTop _                 = False
+isTop (TApp TTop _ _ _)   = True 
+isTop (TApp TUn  ts _ _)  = any isTop ts
+isTop _                   = False
 
 isUndefined :: RType r -> Bool
-isUndefined (TApp TUndef _ _)   = True 
+isUndefined (TApp TUndef _ _ _) = True 
 isUndefined _                   = False
 
 isNull :: RType r -> Bool
-isNull (TApp TNull _ _)   = True 
+isNull (TApp TNull _ _ _) = True 
 isNull _                  = False
 
 isObj :: RType r -> Bool
@@ -384,44 +681,51 @@ isObj (TObj _ _)        = True
 isObj _                 = False
 
 isUnion :: RType r -> Bool
-isUnion (TApp TUn _ _) = True           -- top-level union
-isUnion _              = False
+isUnion (TApp TUn _ _ _) = True           -- top-level union
+isUnion _                = False
 
 -- Get the top-level refinement for unions - use Top (True) otherwise
 -- TODO: Fill up for other types
 rUnion               :: F.Reftable r => RType r -> r
-rUnion (TApp TUn _ r) = r
-rUnion _              = F.top
+rUnion (TApp TUn _ _ r) = r
+rUnion _                = F.top
+
+rsUnion               :: F.Reftable r => RType r -> [Ref r]
+rsUnion (TApp TUn _ r _) = r
+rsUnion _                = []
  
 -- Get the top-level refinement 
 rTypeR :: RType r -> r
-rTypeR (TApp _ _ r) = r
-rTypeR (TVar _ r)   = r
+rTypeR (TApp _ _ _ r)   = r
+rTypeR (TVar _ r)       = r
 rTypeR (TFun _ _ _ _ r) = r
-rTypeR (TObj _ r)   = r
-rTypeR (TBd  _)     = errorstar "Unimplemented: rTypeR - TBd"
-rTypeR (TAll _ _ )  = errorstar "Unimplemented: rTypeR - TAll"
+rTypeR (TObj _ r)       = r
+rTypeR (TBd  _)         = errorstar "Unimplemented: rTypeR - TBd"
+rTypeR (TAll _ _ )      = errorstar "Unimplemented: rTypeR - TAll"
+rTypeR (TAllP _ _ )     = errorstar "Unimplemented: rTypeR - TAllP"
 
 setRTypeR :: RType r -> r -> RType r
-setRTypeR (TApp c ts _) r'   = TApp c ts r'
+setRTypeR (TApp c ts ps _) r' = TApp c ts ps r'
 setRTypeR (TVar v _)    r'   = TVar v r'
 setRTypeR (TFun xts ot ih oh _) r' = TFun xts ot ih oh r'
 setRTypeR (TObj xts _)  r'   = TObj xts r'
 setRTypeR (TBd  _)     _     = errorstar "Unimplemented: setRTypeR - TBd"
 setRTypeR (TAll _ _ )  _     = errorstar "Unimplemented: setRTypeR - TAll"
+setRTypeR (TAllP _ _ ) _     = errorstar "Unimplemented: rTypeR - TAllP"
 
 
 ---------------------------------------------------------------------------------------
 noUnion :: (F.Reftable r) => RType r -> Bool
 ---------------------------------------------------------------------------------------
-noUnion (TApp TUn _ _)      = False
-noUnion (TApp _  rs _)      = and $ map noUnion rs
+noUnion (TApp TUn _ _ _)    = False
+noUnion (TApp _  rs _ _)    = and $ map noUnion rs
 noUnion (TFun bs rt h h' _) = and $ map noUnion $ ((map b_type (rt:bs))
                                                  ++ heapTypes (b_type <$> h)
                                                  ++ heapTypes (b_type <$> h'))
 noUnion (TObj bs    _)      = and $ map noUnion $ map b_type bs 
 noUnion (TBd  _      )      = error "noUnion: cannot have TBodies here"
 noUnion (TAll _ t    )      = noUnion t
+noUnion (TAllP _ t   )      = noUnion t
 noUnion _                   = True
 
 unionCheck t | noUnion t = t 
@@ -442,14 +746,15 @@ instance Eq TCon where
   _       == _       = False
  
 instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
-  TApp TUn t1 _          == TApp TUn t2 _         = (null $ t1 L.\\ t2) && (null $ t2 L.\\ t1)
+  TApp TUn t1 _ _        == TApp TUn t2 _ _       = (null $ t1 L.\\ t2) && (null $ t2 L.\\ t1)
     {-tracePP (printf "Diff: %s \\ %s" (ppshow $ L.nub t1) (ppshow $ L.nub t2)) $-}
-  TApp c1 t1s r1         == TApp c2 t2s r2        = (c1, t1s, r1)  == (c2, t2s, r2)
+  TApp c1 t1s ps1 r1     == TApp c2 t2s ps2 r2    = (c1, t1s, ps1, r1) == (c2, t2s, ps2, r2)
   TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
   TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
   TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
   TBd (TD c1 v1 a1 h1 b1 _) == TBd (TD c2 v2 a2 h2 b2 _) = (c1, v1, a1, h1, b1)   == (c2, v2, a2, h2, b2)
-  TAll _ _               == TAll _ _              = undefined -- TODO
+  TAll _ _               == TAll  _ _             = undefined -- TODO
+  TAllP _ _              == TAllP _ _             = undefined -- TODO
   _                      == _                     = False
 
 
@@ -565,19 +870,28 @@ instance (PP t) => PP (Heap t) where
 instance PP F.Subst where
   pp = text . show
 
+instance PP Predicate where
+  pp (Pr [])  = text "true"
+  pp (Pr pvs) = hsep $ punctuate (text "&") (map pp pvs)
+
+instance PP r => PP (UReft r) where
+  pp (U r p)  = pp r <+> text "U" <+> pp p
+
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
   pp (TFun xts t h h' _)        = ppArgs parens comma xts
                               <+> text "/" <+> pp h
                               <+> text "=>"
                               <+> pp t <+> text "/" <+> pp h'
-  pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> text "." 
-                                   <+> pp t' where (αs, t') = bkAll t
-  pp (TApp TUn ts r)            = F.ppTy r $ parens (ppArgs id (text "+") ts )
-  pp (TApp d@(TDef _)ts r)      = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
+  pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> ppArgs id space πs <> text "." 
+                                   <+> pp t' where (αs, πs, t') = bkAll t
+  pp t@(TAllP _ _)              = text "forall" <+> ppArgs id space αs <> ppArgs id space πs <> text "." 
+                                   <+> pp t' where (αs, πs, t') = bkAll t
+  pp (TApp TUn ts ps r)         = F.ppTy r $ parens (ppArgs id (text "+") ts )
+  pp (TApp d@(TDef _)ts ps r)   = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
 
-  pp (TApp c [] r)              = F.ppTy r $ ppTC c 
-  pp (TApp c ts r)              = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
+  pp (TApp c [] ps r)           = F.ppTy r $ ppTC c 
+  pp (TApp c ts ps r)           = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs
   pp (TBd (TD (TDef id) s v h r _)) =  pp (F.symbol id)
                                    <+> ppArgs brackets comma v
@@ -725,18 +1039,18 @@ tVar   :: (F.Reftable r) => TVar -> RType r
 tVar   = (`TVar` F.top) 
 
 tInt, tBool, tUndef, tNull, tString, tVoid, tErr :: (F.Reftable r) => RType r
-tInt    = TApp TInt     [] F.top 
-tBool   = TApp TBool    [] F.top
-tString = TApp TString  [] F.top
-tTop    = TApp TTop     [] F.top
-tVoid   = TApp TVoid    [] F.top
-tUndef  = TApp TUndef   [] F.top
-tNull   = TApp TNull    [] F.top
+tInt    = TApp TInt     [] [] F.top 
+tBool   = TApp TBool    [] [] F.top
+tString = TApp TString  [] [] F.top
+tTop    = TApp TTop     [] [] F.top
+tVoid   = TApp TVoid    [] [] F.top
+tUndef  = TApp TUndef   [] [] F.top
+tNull   = TApp TNull    [] [] F.top
 tErr    = tVoid
 tFunErr = ([],[],heapEmpty,heapEmpty,B returnSymbol tErr)
 
 tRef :: (F.Reftable r) => Location -> RType r
-tRef l  = TApp (TRef l) [] F.top
+tRef l  = TApp (TRef l) [] [] F.top
 
 -- tProp :: (F.Reftable r) => RType r
 -- tProp  = TApp tcProp [] F.top 

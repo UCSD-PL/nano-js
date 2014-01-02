@@ -476,8 +476,8 @@ windSpecLocations (γ,σ) l σ_spec
                     , not . isWoundTy $ heapRead "windSpecLocations" l σ ]
        windLocations' (γ,σ) l uwls
 
-isWoundTy (TApp (TDef _) _ _) = True
-isWoundTy _                   = False
+isWoundTy (TApp (TDef _) _ _ _) = True
+isWoundTy _                     = False
 
 deleteRenamedSubs σ θ
   = let lrs     = heapLocs σ
@@ -500,7 +500,7 @@ woundLocations :: (PP r, Ord r, F.Reftable r) =>
 -------------------------------------------------------------------------------
 woundLocations σ_spec = [ p | Just p <- map go $ heapBinds σ_spec ]
   where
-    go (l, (TApp (TDef d) _ _)) = Just (l, d, mempty)                       
+    go (l, (TApp (TDef d) _ _ _)) = Just (l, d, mempty)                       
     go _                        = Nothing
 
 -------------------------------------------------------------------------------

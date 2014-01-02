@@ -90,10 +90,10 @@ renderAnnotations srcFile sol res ann
        annFile  = extFileName Annot srcFile
        ann'     = tidy $ applySolution sol ann
 
-applySolution :: F.FixSolution -> A.AnnInfo RefType -> A.AnnInfo RefType 
+applySolution :: F.FixSolution -> A.AnnInfo RefType -> A.AnnInfo (RType F.Reft)
 applySolution = fmap . fmap . tx
   where
-    tx s (F.Reft (x, zs))   = F.Reft (x, F.squishRefas (appSol s <$> zs))
+    tx s (U (F.Reft (x, zs)) _)   = F.Reft (x, F.squishRefas (appSol s <$> zs))
     appSol _ ra@(F.RConc _) = ra 
     appSol s (F.RKvar k su) = F.RConc $ F.subst su $ M.lookupDefault F.PTop k s  
 
@@ -116,7 +116,7 @@ initCGEnv pgm = CGE defs heapEmpty F.emptyIBindEnv []
     defs    = envUnion (specs pgm) $ tDefs pgm
 
 --------------------------------------------------------------------------------
-consFun :: CGEnv -> Statement (AnnType_ F.Reft) -> CGM CGEnv
+consFun :: CGEnv -> Statement (AnnType_ RReft) -> CGM CGEnv
 --------------------------------------------------------------------------------
 consFun g (FunctionStmt l f xs body) 
   = do ft             <- freshTyFun g l f =<< getDefType f
@@ -295,7 +295,7 @@ consStmt g (RenameLocs l _)
 consStmt _ s 
   = errorstar $ "consStmt: not handled " ++ ppshow s
 
-consReturnHeap :: CGEnv -> Maybe (F.Symbol, Id AnnTypeR) -> Statement AnnTypeR -> CGM (F.Subst, RSubst F.Reft)
+consReturnHeap :: CGEnv -> Maybe (F.Symbol, Id AnnTypeR) -> Statement AnnTypeR -> CGM (F.Subst, RSubst RReft)
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
@@ -308,7 +308,7 @@ consReturnHeap g xro (ReturnStmt l _)
                          (fmap (F.subst su) <$> σ')
        return (rsu `F.catSubst` su, θi)
     where
-      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst F.Reft
+      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
 
 consReturnHeap _ _ _ = undefined           
 
@@ -408,14 +408,14 @@ consAccess :: (F.Symbolic s, F.Symbolic x, F.Expression x, IsLocated x, PP s) =>
 consAccess l x g i = do [(_,t)]          <- dotAccessM l g i $ envFindTy x g
                         envAddFresh l t g
               
-dotAccessM l g f u@(TApp TUn _ _)
+dotAccessM l g f u@(TApp TUn _ _ _)
   = do concat <$> mapM dotAccessStrongEnv ts'
-  where (TApp TUn ts' _)     = strengthenUnion u 
+  where (TApp TUn ts' _ _)     = strengthenUnion u 
         dotAccessStrongEnv t = do (_, g') <- envAddFresh l t g 
                                   dotAccessM l g' f t
 
 
-dotAccessM _ g f t@(TApp (TRef l) _ _)
+dotAccessM _ g f t@(TApp (TRef l) _ _ _)
   = do γ <- getTDefs
        let results = fromJust $ dotAccessRef (γ, flip envFindTy g <$> rheap g) f t
        return $ [(l, foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
@@ -425,7 +425,7 @@ dotAccessM l g _ _ =
   subTypeContainers l g tru fls >> return []
   where 
     tru = tTop
-    fls = tTop `strengthen` F.predReft F.PFalse
+    fls = tTop `strengthen` (ureft $ F.predReft F.PFalse)
 
 ------------------------------------------------------------------------------------------
 consUpCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
@@ -433,7 +433,7 @@ consUpCast :: CGEnv -> Id AnnTypeR -> AnnTypeR -> Expression AnnTypeR -> CGM (Id
 consUpCast g x a e 
   = do  γ     <- getTDefs
         let b' = fst $ alignTs γ b u
-        envAddFresh l (b' `strengthen` rTypeReft b) g
+        envAddFresh l (b' `strengthen` (ureft $ rTypeReft b)) g
   where 
     u          = rType $ head [ t | Assume t <- ann_fact a]
     b          = envFindTy x g 
@@ -456,30 +456,30 @@ consDownCast g x a e =
      l    = getAnnotation e
 
 -- castTo               :: Env RefType -> Locate RType r -> Type -> RType r
-castTo _ γ t τ       = castStrengthen t . zipType2 γ botJoin t <$> bottify τ 
+castTo _ γ t τ       = castStrengthen t . zipType2 γ (++) botJoin t <$> bottify τ 
   where 
     bottify          = fmap (fmap F.bot) . true . rType 
     botJoin r1 r2 
-      | F.isFalse r1 = r2
-      | F.isFalse r2 = r1
+      | F.isFalse (ur_reft r1) = r2
+      | F.isFalse (ur_reft r2) = r1
       | otherwise    = error msg
     msg              = printf "botJoin: t = %s τ = %s" (ppshow (t :: RefType)) (ppshow (τ :: Type))
 
 castStrengthen t1 t2 
-  | isUnion t1 && not (isUnion t2) = t2 `strengthen` (rTypeReft t1)
+  | isUnion t1 && not (isUnion t2) = t2 `strengthen` (ureft $ rTypeReft t1)
   | otherwise                      = t2
 
 ---------------------------------------------------------------------------------------------
 consDeadCast :: CGEnv -> AnnTypeR -> Expression AnnTypeR -> CGM (Id AnnTypeR, CGEnv)
 ---------------------------------------------------------------------------------------------
 consDeadCast g a e =
-  do  subTypeContainers l g tru fls
-      envAddFresh l tC g
+  do subTypeContainers l g tru fls
+     envAddFresh l tC g
   where
     tC  = rType $ head [ t | Assume t <- ann_fact a]      -- the cast type
     l   = getAnnotation e
     tru = tTop
-    fls = tTop `strengthen` F.predReft F.PFalse
+    fls = strengthen tTop . ureft $ F.predReft F.PFalse
 
 
 ---------------------------------------------------------------------------------------------
@@ -529,10 +529,10 @@ instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 
   = freshTyInst l g αs τs $ apply θl tbody
   where 
-    (αs, tbody) = bkAll t
-    τs          = map snd ts
-    θl          = fromLists [] ls :: RSubst F.Reft
-    (ts,ls)     = head [ (ts,ls) | FunInst ts ls <- ann_fact l ]
+    (αs, πs, tbody) = bkAll t
+    τs              = map snd ts
+    θl              = fromLists [] ls :: RSubst RReft
+    (ts,ls)         = head [ (ts,ls) | FunInst ts ls <- ann_fact l ]
 
 ---------------------------------------------------------------------------------
 consScan :: (CGEnv -> a -> CGM (b, CGEnv)) -> CGEnv -> [a] -> CGM ([b], CGEnv)
@@ -560,7 +560,7 @@ consObj l g pe =
     let (ps, es) = unzip pe
     (xes, g1)   <- consScan consExpr g es
     let pxs      = zipWith B (map F.symbol ps) $ map (flip envFindTy g1) xes
-    let tptr     = TApp (TRef loc) [] F.top
+    let tptr     = TApp (TRef loc) [] [] F.top
     (x, g2)     <- envFreshHeapBind l loc g1
     -- pxsm        <- mapM (addMeasuresM g1) pxs
     let tob_pre  = TObj pxs F.top    
@@ -573,7 +573,7 @@ consObj l g pe =
     loc = head [ l | LocInst l <- ann_fact l]
     
 ---------------------------------------------------------------------------------
-consWind :: AnnTypeR -> CGEnv -> (Location, [Location], Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
+consWind :: AnnTypeR -> CGEnv -> (Location, [Location], Id SourceSpan, RSubst RReft) -> CGM (CGEnv)    
 ---------------------------------------------------------------------------------
 consWind l g (m, wls, ty, θ)
   -- What needs to be done here:
@@ -615,7 +615,7 @@ freshConsWind g l θ ty m
 
 
 ---------------------------------------------------------------------------------
-consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst F.Reft) -> CGM (CGEnv)    
+consUnwind :: AnnTypeR -> CGEnv -> (Location, Id SourceSpan, RSubst RReft) -> CGM (CGEnv)    
 ---------------------------------------------------------------------------------
 consUnwind l g (m, ty, θl) =
   do 
@@ -645,8 +645,8 @@ unwindTyApp l g m αs
       -- msg   = "%s BUG: unwound something bad! %s"
       err p = error $ printf (ppshow (srcPos l)) (ppshow p)
       vs    = case safeRefReadHeap "consUnwind" g (rheap g) m of
-                (_,TApp _ vs _)  -> vs
-                p                -> err p
+                (_,TApp _ vs _ _)  -> vs
+                p                  -> err p
 
 unwindInst l θα θl (σ,t)
   = do (su, σ'') <- freshHeapEnv l σ'

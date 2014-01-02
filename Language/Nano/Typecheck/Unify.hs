@@ -49,21 +49,21 @@ import           Language.Nano.Misc (fst4)
 unify :: (PP r, F.Reftable r, Ord r) => 
   Env (RType r) -> RSubst r -> RType r -> RType r -> Either String (RSubst r)
 -----------------------------------------------------------------------------
-unify _ θ (TApp (TRef l1) _ _) (TApp (TRef l2) _ _) =
+unify _ θ (TApp (TRef l1) _ _ _) (TApp (TRef l2) _ _ _) =
   -- Right $ if l1' == l2' then θ else θ'
   unifyLocs θ l1 l2
     -- where l1'      = apply θ l1
     --       l2'      = apply θ l2
     --       θ'       = θ `mappend` Su M.empty (M.singleton l1' l2')
         
-unify _ θ t@(TApp _ _ _) t'@(TApp _ _ _) 
+unify _ θ t@(TApp _ _ _ _) t'@(TApp _ _ _ _) 
   | any isTop [t,t']                    = Right θ
 
 unify env θ (TFun xts t _ _ _) (TFun xts' t' _ _ _) = 
   unifys env θ (b_type <$> (t:xts)) (b_type <$> (t':xts'))
 
 -- TODO: Cycles
-unify env θ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _)
+unify env θ (TApp d@(TDef _) ts _ _) (TApp d'@(TDef _) ts' _ _)
   | d == d'                             = unifys env θ ts ts'
 
 unify _  θ (TVar α _)     (TVar β _)    = varEql θ α β 
@@ -121,10 +121,10 @@ safeHeapSubst = safeHeapSubstWith safeAdd
 {-unify' γ θ t t' = unify γ θ (trace (printf "unify: %s - %s" (show t) (show t')) t) t' -}
 
 -- TODO: cycles
-unifEq _ _ (TApp d@(TDef _) _ _) (TApp d'@(TDef _) _ _) | d == d' = True
+unifEq _ _ (TApp d@(TDef _) _ _ _) (TApp d'@(TDef _) _ _ _) | d == d' = True
 -- unifEq γ t@(TApp (TDef _) _ _) t' = unifEq γ (snd $ unfoldSafe γ t) t'
 -- unifEq γ t t'@(TApp (TDef _) _ _) = unifEq γ t (snd $ unfoldSafe γ t')
-unifEq _ θ (TApp (TRef l) _ _) (TApp (TRef m) _ _)
+unifEq _ θ (TApp (TRef l) _ _ _) (TApp (TRef m) _ _ _)
   | unassignedRef l θ || unassignedRef m θ = True
   | otherwise                              = l == m
 unifEq γ _ t t'                     = equiv γ t t'

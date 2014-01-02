@@ -282,7 +282,7 @@ freshFun l fn ft
        let ibs'           = apply θl <$> ibs
        let ot'            = apply θl ot
        addFreeLocsM ls'
-       addAnn (srcPos l) $ tracePP ("funInst " ++ (ppshow $ ann l)) $ FunInst (zip (fst bkft) τs) (zip ls ls')
+       addAnn (srcPos l) $ FunInst (zip (fst3 bkft) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
     err = logError (ann l) (errorNonFunction fn ft) tFunErr
@@ -310,7 +310,7 @@ freshApp l i@(Id _ d)
          _                          -> err γ
     where
       err     γ    = logError (ann l) (errorUnboundIdEnv d γ) (mempty, tErr)
-      mkApp   i vs = TApp (TDef i) vs F.top
+      mkApp   i vs = TApp (TDef i) vs [] F.top
       freshen i vs = do vs' <- mapM (freshTVar (ann l)) vs
                         extSubst vs'
                         let tVs = tVar <$> vs'
@@ -325,9 +325,10 @@ freshLocation l = do loc <- freshLocation'
                      return loc
        
 -------------------------------------------------------------------------------
-freshTyArgs :: (PP r, Ord r, F.Reftable r) => SourceSpan -> ([TVar], RType r) -> TCM r ([RType r],RType r)
+freshTyArgs :: (PP r, Ord r, F.Reftable r) =>
+               SourceSpan -> ([TVar], [PVar Type], RType r) -> TCM r ([RType r],RType r)
 -------------------------------------------------------------------------------
-freshTyArgs l (αs, t) 
+freshTyArgs l (αs, πs, t) 
   = (`apply` (tVar <$> αs,t)) <$> freshSubst l αs
 
 freshSubst :: (PP r, Ord r, F.Reftable r) => SourceSpan -> [TVar] -> TCM r (RSubst r)
@@ -357,7 +358,7 @@ safeDotAccess :: (Ord r, PP r, F.Reftable r,
                   F.Symbolic s, PP s) =>
   RHeap r -> s -> RType r -> TCM r [(Location, ObjectAccess r)]
 -------------------------------------------------------------------------------
-safeDotAccess σ f t@(TApp TUn ts _)  = 
+safeDotAccess σ f t@(TApp TUn ts _ _)  = 
   do as         <- mapM (safeDotAccess σ f . tRef) $ nub $ concatMap locs ts
      let tsas    = [ (t, l, a) | (t, (l,a)) <- zip ts (concat as) ]
      let (ts',ls,as) = unzip3 tsas
@@ -384,7 +385,7 @@ safeDotAccess' :: (Ord r, PP r, F.Reftable r,
                   F.Symbolic s, PP s) =>
   RHeap r -> s -> RType r -> TCM r (Maybe (Location, ObjectAccess r))
 -------------------------------------------------------------------------------
-safeDotAccess' σ f t@(TApp (TRef l) _ _)
+safeDotAccess' σ f t@(TApp (TRef l) _ _ _)
   = do γ       <- getTDefs
        e       <- fromJust <$> getExpr
        e'      <- freshHeapVar (getAnnotation e) (printf "%s__" (ppshow e))
@@ -700,13 +701,13 @@ unwindTC :: (PP r, Ord r, F.Reftable r) =>
   RType r -> TCM r (RHeap r, RType r, RSubst r)
 -------------------------------------------------------------------------------
 unwindTC = go heapEmpty mempty
-  where go σ θ' t@(TApp (TDef _) _ _) = do
+  where go σ θ' t@(TApp (TDef _) _ _ _) = do
           (σu, tu, θ'') <- unfoldSafeTC t
           (θ''',_,σu')  <- freshHeap σu
           let θ = θ''' `mappend` θ' `mappend` θ''
               σ' = heapCombine "unwindTC" [apply θ σu',σ]
           case tu of
-            t'@(TApp (TDef _) _ _) -> go σ' θ (apply θ t')
+            t'@(TApp (TDef _) _ _ _) -> go σ' θ (apply θ t')
             _                      -> return (σ', apply θ tu, θ)
         go _ _ _ = error "unwind of a non-TDef"
 
@@ -926,7 +927,7 @@ addDownCast :: (Ord r, PP r, F.Reftable r) => Expression (AnnSSA_ r) -> RType r 
 -- Down casts will not be k-vared later - so pass the refinements here!
 addDownCast e base cast = 
   do  γ <- getTDefs
-      let cast' = zipType2 γ F.meet base cast    -- copy the refinements from the base type 
+      let cast' = zipType2 γ (++) F.meet base cast    -- copy the refinements from the base type 
           {-msg   =  printf "DOWN CAST ADDS: %s\ninstead of just:\n%s" (ppshow cast') (ppshow cast)-}
       modify $ \st -> st { tc_casts = M.insert e (DCST $ {- trace msg -} cast') (tc_casts st) }
 

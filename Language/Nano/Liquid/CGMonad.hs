@@ -155,7 +155,7 @@ execute cfg pgm act
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
 initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (consts pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
-    invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
+    invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]  
 
 getDefType f 
   = do m <- cg_defs <$> get
@@ -267,7 +267,7 @@ withFun f m = do fOld <- cg_fun <$> get
 
 
 ---------------------------------------------------------------------------------------
-measureEnv   ::  Nano a (RType F.Reft) -> F.SEnv F.SortedReft
+measureEnv   ::  Nano a (RType RReft) -> F.SEnv F.SortedReft
 ---------------------------------------------------------------------------------------
 measureEnv   = fmap rTypeSortedReft . E.envSEnv . consts 
 
@@ -359,7 +359,7 @@ addInvariant t           = ((`tx` t) . invs) <$> get
     -- HACK!!
     fixRef (TRef _)        = TRef "l"
     fixRef tc              = tc
-    tx i t@(TApp tc _ _)   = maybe t (strengthen t . rTypeReft . val) $ M.lookup (fixRef tc) i
+    tx i t@(TApp tc _ _ _) = maybe t (strengthen t . ureft . rTypeReft . val) $ M.lookup (fixRef tc) i
     tx _ t                 = t 
 
 
@@ -396,7 +396,7 @@ envAddGuard x b g = g { guards = guard b x : guards g }
     --     vEqX x    = F.PAtom F.Eq (F.eVar v) x
                            
 ---------------------------------------------------------------------------------------
-envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv F.Reft, F.Symbol, RefType, [TVar])
+envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv RReft, F.Symbol, RefType, [TVar])
 ---------------------------------------------------------------------------------------
 envFindTyDef ty
   = do γ <- getTDefs
@@ -556,8 +556,8 @@ freshTyInst l g αs τs tbody
 -- | Instantiate Fresh Type (at Wind-site)
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
-               CGEnv -> l -> RSubst F.Reft -> Id SourceSpan
-               -> CGM (RHeapEnv F.Reft, (F.Symbol, RefType), RefType, [Measure])
+               CGEnv -> l -> RSubst RReft -> Id SourceSpan
+               -> CGM (RHeapEnv RReft, (F.Symbol, RefType), RefType, [Measure])
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
   = do (σ,s,t,vs)  <- envFindTyDef ty
@@ -573,7 +573,7 @@ freshTyWind g l θ ty
       toId                 = Id s . F.symbolString . b_sym                      
       toIdTyPair b         = (toId b, b_type b)
       -- instHeapBind θ (m,b) = error "TBD: freshTyWind" >> {- freshBind l b >>= -} \b -> return (apply θ m, b)
-      mkApp vs             = TApp (TDef ty) vs F.top
+      mkApp vs             = TApp (TDef ty) vs [] F.top
       freshSubst (α,τ)     = do τ <- freshTy "freshTyWind" τ
                                 _ <- wellFormed l g τ
                                 return (α,τ)
@@ -607,7 +607,7 @@ freshObjBinds _ g t
   = return (t, g)
 
 ---------------------------------------------------------------------------------------
-freshHeapEnv :: (PP l, IsLocated l) => l -> RHeapEnv F.Reft -> CGM (F.Subst, RHeapEnv F.Reft)
+freshHeapEnv :: (PP l, IsLocated l) => l -> RHeapEnv RReft -> CGM (F.Subst, RHeapEnv RReft)
 ---------------------------------------------------------------------------------------
 freshHeapEnv l σ
   = do let xs  = b_sym <$> heapTypes σ
@@ -709,7 +709,7 @@ subTypeField l g = withAlignedM doSubType
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
 -------------------------------------------------------------------------------
-equivWUnions γ t1@(TApp TUn _ _) t2@(TApp TUn _ _) = 
+equivWUnions γ t1@(TApp TUn _ _ _) t2@(TApp TUn _ _ _) = 
   {-let msg = printf "In equivWUnions:\n%s - \n%s" (ppshow t1) (ppshow t2) in -}
   case unionPartsWithEq (equiv γ) t1 t2 of 
     (ts,[],[])  -> and $ uncurry (safeZipWith "equivWUnions" $ equivWUnions γ) (unzip ts)
@@ -739,7 +739,7 @@ equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 -------------------------------------------------------------------------------
 subTypeRecursive :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeRecursive l g t1@(TApp d1@(TDef _) _ _) t2@(TApp d2@(TDef _) _ _)
+subTypeRecursive l g t1@(TApp d1@(TDef _) _ _ _) t2@(TApp d2@(TDef _) _ _ _)
     | d1 /= d2 = do γ <- getTDefs
                     let ((σ1,b1,θ1),(σ2,b2,θ2)) = mapPair (unfoldSafeEnv γ) (t1,t2)
                         (B x1 t1', B x2 t2')    = (apply θ1 b1, apply θ2 b2)
@@ -751,25 +751,25 @@ subTypeRecursive l g t1@(TApp d1@(TDef _) _ _) t2@(TApp d2@(TDef _) _ _)
                     subTypeContainers l g_st t1' (F.subst su t2')
                     subTypeHeaps l g_st (b_type <$> σ1) (replaceC . b_type <$> σ2')
     where
-      replaceC t@(TApp d ts r) | d == d2   = TApp d1 ts r                                     
-      replaceC t               | otherwise = t
-      btop (B x t)                         = (Id (srcPos l) (F.symbolString x), t)
+      replaceC t@(TApp d ts rs r) | d == d2   = TApp d1 ts rs r
+      replaceC t                  | otherwise = t
+      btop (B x t)                            = (Id (srcPos l) (F.symbolString x), t)
 
 -------------------------------------------------------------------------------
 subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeContainers l g t1@(TApp d@(TDef _) ts _) t2@(TApp d'@(TDef _) ts' _)
+subTypeContainers l g t1@(TApp d@(TDef _) ts _ _) t2@(TApp d'@(TDef _) ts' _ _)
   | d == d'   = do subType l g t1 t2 
                    mapM_ (uncurry $ subTypeContainers l g) $ zip ts ts'
   | otherwise = subTypeRecursive l g t1 t2
 
-subTypeContainers l g t1 t2@(TApp (TDef _) _ _ ) = 
+subTypeContainers l g t1 t2@(TApp (TDef _) _ _ _) = 
   unfoldSafeCG t2 >>= \t2' -> subTypeContainers l g t1 t2'
 
-subTypeContainers l g t1@(TApp (TDef _) _ _ ) t2 = 
+subTypeContainers l g t1@(TApp (TDef _) _ _ _) t2 = 
   unfoldSafeCG t1 >>= \t1' -> subTypeContainers l g t1' t2
 
-subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) = 
+subTypeContainers l g u1@(TApp TUn _ _ _) u2@(TApp TUn _ _ _) = 
   getTDefs >>= \γ -> sbs $ bkPaddedUnion "subTypeContainers" γ u1 u2
   where        
     (r1, r2)     = mapPair rTypeR        (u1, u2)
@@ -777,7 +777,7 @@ subTypeContainers l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
     -- Valuevar of the part
     fix t b v    | v == b    = rTypeValueVar t
                  | otherwise = v
-    rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+    rr t r       = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = ur_reft r
     sb  (t1 ,t2) = subTypeContainers l g (t1 `strengthen` rr t1 r1)
                                          (t2 `strengthen` rr t2 r2)
     sbs ts       = mapM_ sb ts
@@ -804,7 +804,7 @@ subTypeContainers' msg l g t1 t2 =
   subTypeContainers l g (tracePP (printf "subTypeContainers[%s]:\n\t%s\n\t%s" 
                                 msg (ppshow t1) (ppshow t2)) t1) t2
 
-alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
+alignAndStrengthen msg l g u1@(TApp TUn _ _ _) u2@(TApp TUn _ _ _) =
   getTDefs >>= return . (\γ -> bkPaddedUnion msg γ u1' u2')
   -- getTDefs >>= return . (\γ -> map fixup $ bkPaddedUnion msg γ u1 u2)
   where 
@@ -820,7 +820,7 @@ alignAndStrengthen msg l g u1@(TApp TUn _ _) u2@(TApp TUn _ _) =
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
 ------------------------------------------------------------------------------------------
-renameHeapBinds :: RefHeap -> RHeapEnv F.Reft -> (F.Subst, RHeapEnv F.Reft)
+renameHeapBinds :: RefHeap -> RHeapEnv RReft -> (F.Subst, RHeapEnv RReft)
 ------------------------------------------------------------------------------------------
 renameHeapBinds σ1 σ2
   = (su, fmap (F.subst su) <$> σ2)
@@ -837,11 +837,11 @@ renameHeapBinds σ1 σ2
 ------------------------------------------------------------------------------------------
 strengthenUnion :: RefType -> RefType
 ------------------------------------------------------------------------------------------
-strengthenUnion (TApp TUn ts r) = TApp TUn (map fixup ts) r
+strengthenUnion (TApp TUn ts rs r) = TApp TUn (map fixup ts) rs r
   where fix t b v
           | v == b    = rTypeValueVar t
           | otherwise = v
-        rr t r  = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = r
+        rr t r  = F.subst1 r (b, F.eVar $ rTypeValueVar t) where F.Reft (b,_) = ur_reft r
         -- rr t r  = F.substa (fix t b) r where F.Reft (b,_) = r
         fixup t = t `strengthen` rr t r
 
@@ -927,6 +927,11 @@ instance Freshable F.Reft where
   refresh (F.Reft (_,_)) = curry F.Reft <$> ({-tracePP "freshVV" <$> -}freshVV) <*> fresh
     where freshVV        = F.vv . Just  <$> fresh
 
+instance Freshable RReft where
+  fresh                  = errorstar "fresh RReft"
+  true    (U r _)        = ureft   <$> true r
+  refresh (U r p)        = (`U` p) <$> refresh r
+
 instance Freshable F.SortedReft where
   fresh                  = errorstar "fresh Reft"
   true    (F.RR so r)    = F.RR so <$> true r 
@@ -994,38 +999,38 @@ splitC' (Sub g i t1@(TVar α1 _) t2@(TVar α2 _))
 -- Nothing more should be added, the internal subtyping constrains have been
 -- dealt with separately
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TApp TUn _ _) t2@(TApp TUn _ _)) =
+splitC' (Sub g i t1@(TApp TUn _ _ _) t2@(TApp TUn _ _ _)) =
   ifM (equivWUnionsM t1 t2) 
     (return    $ bsplitC g i t1 t2) 
     (errorstar $ printf "Unequal unions in splitC: %s - %s" (ppshow $ toType t1) (ppshow $ toType t2))
 
-splitC' (Sub _ _ t1@(TApp TUn _ _) t2) = 
+splitC' (Sub _ _ t1@(TApp TUn _ _ _) t2) = 
   errorstar $ printf "Unions in splitC: %s - %s" (ppshow t1) (ppshow t2)
-splitC' (Sub _ _ t1 t2@(TApp TUn _ _)) = 
+splitC' (Sub _ _ t1 t2@(TApp TUn _ _ _)) = 
   errorstar $ printf "Unions in splitC: %s - %s" (ppshow t1) (ppshow t2)
 
 ---------------------------------------------------------------------------------------
 -- |Type definitions
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TApp d1@(TDef _) t1s _) t2@(TApp d2@(TDef _) t2s _)) | d1 == d2
+splitC' (Sub g i t1@(TApp d1@(TDef _) t1s _ _) t2@(TApp d2@(TDef _) t2s _ _)) | d1 == d2
   = do  let cs = bsplitC g i t1 t2
         -- constructor parameters are covariant
         cs'   <- concatMapM splitC $ safeZipWith "splitcTDef" (Sub g i) t1s t2s
         return $ cs ++ cs' 
 
-splitC' (Sub _ _ (TApp (TDef _) _ _) (TApp (TDef _) _ _))
+splitC' (Sub _ _ (TApp (TDef _) _ _ _) (TApp (TDef _) _ _ _))
   = errorstar "Unimplemented: Check type definition cycles"
   
-splitC' (Sub g i t1@(TApp (TDef _) _ _ ) t2) = 
+splitC' (Sub g i t1@(TApp (TDef _) _ _ _) t2) = 
   unfoldSafeCG t1 >>= \t1' -> splitC' $ Sub g i t1' t2
 
-splitC' (Sub g i  t1 t2@(TApp (TDef _) _ _)) = 
+splitC' (Sub g i  t1 t2@(TApp (TDef _) _ _ _)) = 
   unfoldSafeCG t2 >>= \t2' -> splitC' $ Sub g i t1 t2'
 
 ---------------------------------------------------------------------------------------
 -- | Rest of TApp
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TApp _ t1s _) t2@(TApp _ t2s _))
+splitC' (Sub g i t1@(TApp _ t1s _ _) t2@(TApp _ t2s _ _))
   = do let cs = bsplitC g i t1 t2
        cs'   <- concatMapM splitC $ safeZipWith 
                                     (printf "splitC4: %s - %s" (ppshow t1) (ppshow t2)) 
@@ -1120,11 +1125,11 @@ subTypeWindTys seen l g σ t1 t2
 -------------------------------------------------------------------------------
 subTypeWindHeaps :: [Location] -> AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeWindHeaps seen l g σ t1@(TApp TUn _ _) t2@(TApp TUn _ _)
+subTypeWindHeaps seen l g σ t1@(TApp TUn _ _ _) t2@(TApp TUn _ _ _)
   = do sts <- alignAndStrengthen "subTypeWindHeaps" l g t1 t2 
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) sts
     
-subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _) t2@(TApp (TRef l2) _ _)
+subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _ _) t2@(TApp (TRef l2) _ _ _)
   | l1 /= l2       = error "BUG: Somehow subtyping different locations"
   | not (l2 `heapMem` σ) = return ()
     -- subTypeContainers' "dead" l g tru fls
@@ -1163,13 +1168,17 @@ splitW (W g i (TFun ts t h h' _))
 splitW (W g i (TAll _ t)) 
   = splitW (W g i t)
 
+splitW (W g i (TAllP _ t)) 
+  = splitW (W g i t)
+
 splitW (W g i t@(TVar _ _))
   = return $ bsplitW g t i 
 
-splitW (W g i t@(TApp _ ts _))
+splitW (W g i t@(TApp _ ts rs _))
   =  do let ws = bsplitW g t i
         ws'   <- concatMapM splitW [W g i ti | ti <- ts]
-        return $ ws ++ ws'
+        ws''  <- return [] -- concatMapM (rsplitW g i) rs
+        return $ ws ++ ws' ++ ws''
 
 splitW (W g i t@(TObj ts _ ))
   = do  g'    <- envTyAdds i ts g -- ABAKST Changed!!?!!?
@@ -1178,6 +1187,11 @@ splitW (W g i t@(TObj ts _ ))
         return $ bs ++ ws
 
 splitW (W _ _ _ ) = error "Not supported in splitW"
+
+rsplitW _ _ (PMono _ _)  = error "PMono in splitW"
+rsplitW g i (PPoly xs t)
+    =  do g' <- envAdds [ (x, ofType t) | (x,t) <- xs ] g
+          splitW $ W g' i t
 
 bsplitW g t i 
   | F.isNonTrivialSortedReft r'

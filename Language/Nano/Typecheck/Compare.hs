@@ -78,13 +78,13 @@ instance (PP r, F.Reftable r) => Equivalent (Env (RType r)) (RType r) where
   equiv _ t t'  | any isUnion [t,t']                  = errorstar (printf "equiv: no unions: %s\n\t\t%s" (ppshow t) (ppshow t'))
   -- No unions beyond this point!
   
-  equiv γ (TApp d@(TDef _) ts _) (TApp d'@(TDef _) ts' _) | d == d' = equiv γ ts ts'
+  equiv γ (TApp d@(TDef _) ts _ _) (TApp d'@(TDef _) ts' _ _) | d == d' = equiv γ ts ts'
 
   -- equiv γ t@(TApp (TDef _) _ _) t' = equiv γ (snd $ unfoldSafe γ t) t'
   -- equiv γ t t'@(TApp (TDef _) _ _) = equiv γ t (snd $ unfoldSafe γ t')
   
-  equiv _ (TApp (TRef l) _ _) (TApp (TRef m) _ _)     =  l == m -- True
-  equiv _ (TApp c _ _)         (TApp c' _ _)          = c == c'
+  equiv _ (TApp (TRef l) _ _ _) (TApp (TRef m) _ _ _) =  l == m -- True
+  equiv _ (TApp c _ _ _)         (TApp c' _ _ _)      = c == c'
 
   equiv _ (TVar v _  )         (TVar v' _  )          = v == v'
 
@@ -276,17 +276,17 @@ compareTs' γ t1@(TObj _ _) t2@(TObj _ _)     =
 -- | Type definitions
 
 -- TODO: only handles this case for now - cyclic type defs will loop infinitely
-compareTs' γ (TApp d1@(TDef _) t1s r1) (TApp d2@(TDef _) t2s r2) | d1 == d2 = 
-  (mk tjs F.top, mk t1s' r1, mk t2s' r2, mconcatP bds)
+compareTs' γ (TApp d1@(TDef _) t1s rs1 r1) (TApp d2@(TDef _) t2s rs2 r2) | d1 == d2 = 
+  (mk tjs [] F.top, mk t1s' rs1 r1, mk t2s' rs2 r2, mconcatP bds)
   where
     (tjs, t1s', t2s', bds)  = unzip4 $ zipWith (compareTs γ) t1s t2s
-    mk xs r                 = TApp d1 xs r 
+    mk xs rs r              = TApp d1 xs rs r
 
 -- compareTs' γ t1@(TApp (TDef _) _ _) t2       = compareTs γ (snd $ unfoldSafe γ t1) t2
 -- compareTs' γ t1 t2@(TApp (TDef _) _ _)       = compareTs γ t1 (snd $ unfoldSafe γ t2)
 
 -- | Everything else in TApp besides unions and defined types
-compareTs' _ t1@(TApp _ _ _) t2@(TApp _ _ _) = padSimple t1 t2 
+compareTs' _ t1@(TApp _ _ _ _) t2@(TApp _ _ _ _) = padSimple t1 t2 
 
 -- | Type Vars
 compareTs' _ t1@(TVar _ _)   t2@(TVar _ _)   = padVar t1 t2
@@ -358,12 +358,15 @@ padUnion ::  (Eq r, Ord r, F.Reftable r, PP r) =>
                 SubDirection)   -- Subtyping relation between LHS and RHS
 --------------------------------------------------------------------------------
 padUnion env t1 t2 = 
-  (joinType, mkUnionR topR1 $ t1s, 
-             mkUnionR topR2 $ t2s, direction)
+  (joinType, mkUnionR topRs1 topR1 $ t1s, 
+             mkUnionR topRs2 topR2 $ t2s, direction)
   where
     -- Extract top-level refinements
     topR1       = rUnion t1
     topR2       = rUnion t2
+
+    topRs1      = rsUnion t1
+    topRs2      = rsUnion t2
     -- No reason to add the kVars here. They will be added in the CGMonad
     joinType   = mkUnion $ ((ofType . toType) <$> ((fst4 <$> commonTs) ++ d1s ++ d2s))
     (t1s, t2s) = unzip $ safeZip "unionParts" t1s' t2s'
@@ -567,7 +570,7 @@ instance (PP a, PP b, PP c, PP d) => PP (a,b,c,d) where
 -- E.g. zipType1 (number + { booliean | p } ) { number | v > 0 } meet = 
 --        { number | v > 0 } + { boolean | p } 
 
-zipType1 γ f t1 t2 = zipType2 γ f t2 t1
+zipType1 γ g f t1 t2 = zipType2 γ g f t2 t1
  
 
 
@@ -575,52 +578,58 @@ zipType1 γ f t1 t2 = zipType2 γ f t2 t1
 -- parts of the two types.
 --------------------------------------------------------------------------------
 zipType2 :: (PP r, Ord r, F.Reftable r)
-  => Env (RType r) -> (r -> r -> r) ->  RType r -> RType r -> RType r
+  => Env (RType r)
+      -> ([Ref r] -> [Ref r] -> [Ref r])
+      -> (r -> r -> r)
+      ->  RType r -> RType r -> RType r
 --------------------------------------------------------------------------------
-zipType2 γ f (TApp TUn ts r) (TApp TUn ts' r')  = 
-  TApp TUn (zipTypes γ f ts <$> ts') $ f r r'
+zipType2 γ g f (TApp TUn ts ps r) (TApp TUn ts' ps' r')  = 
+  TApp TUn (zipTypes γ g f ts <$> ts') ps'' $ f r r'
+    where ps'' = g ps ps' 
 
-zipType2 γ f (TApp TUn ts _) t =  
-  zipTypes γ f ts t
+zipType2 γ g f (TApp TUn ts _ _) t =  
+  zipTypes γ g f ts t
 
-zipType2 γ f t (TApp TUn ts' r') =  
-  TApp TUn (zipTypes γ f [t] <$> ts') r'        -- The top-level refinement for t' should remain
+zipType2 γ g f t (TApp TUn ts' rs' r') =  
+  TApp TUn (zipTypes γ g f [t] <$> ts') rs' r'      -- The top-level refinement for t' should remain
 
-zipType2 γ f (TApp d@(TDef _) ts r) (TApp d'@(TDef _) ts' r') | d == d' =
-  TApp d' (zipWith (zipType2 γ f) ts ts') $ f r r'
+zipType2 γ g f (TApp d@(TDef _) ts ps r) (TApp d'@(TDef _) ts' ps' r')
+    | d == d' = TApp d' (zipWith (zipType2 γ g f) ts ts') ps'' $ f r r'
+    where ps'' = g ps ps' 
 
-zipType2 γ f t@(TApp (TDef _) _ _) t' =
-  zipType2 γ f (snd3 $ unfoldSafe γ t) t'
+zipType2 γ g f t@(TApp (TDef _) _ _ _) t' =
+  zipType2 γ g f (snd3 $ unfoldSafe γ t) t'
 
-zipType2 γ f t t'@(TApp (TDef _) _ _) =
-  zipType2 γ f (snd3 $ unfoldSafe γ t) t'
+zipType2 γ g f t t'@(TApp (TDef _) _ _ _) =
+  zipType2 γ g f (snd3 $ unfoldSafe γ t) t'
 
-zipType2 _ f (TApp c [] r) (TApp c' [] r')    | c == c' = 
-  TApp c [] $ f r r'
+zipType2 _ g f (TApp c [] ps r) (TApp c' [] ps' r')
+    | c == c' = TApp c [] ps'' $ f r r'
+    where ps'' = g ps ps' 
 
-zipType2 _ f (TVar v r) (TVar v' r') | v == v' = TVar v $ f r r'
+zipType2 _ g f (TVar v r) (TVar v' r')
+    | v == v' = TVar v $ f r r'
 
-zipType2 γ f (TFun xts t ih oh r) (TFun xts' t' ih' oh' r') = 
-  TFun (safeZipWith "zipType2:TFun" (zipBind2 γ f) xts xts') (zipBind2 γ f t t') zih zoh $ f r r'
-  where zipHeaps h1 h2 = heapCombineWith (zipBind2 γ f) [h1,h2]
+zipType2 γ g f (TFun xts t ih oh r) (TFun xts' t' ih' oh' r') = 
+  TFun (safeZipWith "zipType2:TFun" (zipBind2 γ g f) xts xts') (zipBind2 γ g f t t') zih zoh $ f r r'
+  where zipHeaps h1 h2 = heapCombineWith (zipBind2 γ g f) [h1,h2]
         zih            = zipHeaps ih ih'
         zoh            = zipHeaps oh oh'
 
-zipType2 γ f (TObj bs r) (TObj bs' r') = TObj mbs $ f r r'
+zipType2 γ g f (TObj bs r) (TObj bs' r') = TObj mbs $ f r r'
   where
-    mbs = safeZipWith "zipType2:TObj" (zipBind2 γ f) (L.sortBy compB bs) (L.sortBy compB bs')
+    mbs = safeZipWith "zipType2:TObj" (zipBind2 γ g f) (L.sortBy compB bs) (L.sortBy compB bs')
     compB (B s _) (B s' _) = compare s s'
 
-zipType2 _ _ t t' = 
+zipType2 _ _ _ t t' = 
   errorstar $ printf "BUG[zipType2]: mis-aligned types:\n%s\nwith\n%s" (ppshow t) (ppshow t')
 
-zipTypes γ f ts t = 
+zipTypes γ g f ts t = 
   case filter (equiv γ t) ts of
     [  ] -> t
-    [t'] -> zipType2 γ f t' t
+    [t'] -> zipType2 γ g f t' t
     _    -> errorstar "BUG[zipType]: mulitple equivalent types" 
   
 
-zipBind2 γ f (B s t) (B s' t') | s == s' = B s $ zipType2 γ f t t' 
-zipBind2 _ _ _       _                   = errorstar "BUG[zipBind2]: mis-matching binders"
-
+zipBind2 γ g f (B s t) (B s' t') | s == s' = B s $ zipType2 γ g f t t' 
+zipBind2 _ _ _ _       _                   = errorstar "BUG[zipBind2]: mis-matching binders"

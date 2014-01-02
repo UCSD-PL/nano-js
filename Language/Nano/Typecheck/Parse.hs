@@ -20,7 +20,7 @@ import           Text.Parsec
 import qualified Text.Parsec.Token as Token
 import           Control.Applicative ((<$>), (<*), (<*>))
 import           Data.Char (toLower, isLower, isSpace) 
-import           Data.Monoid (mconcat, mappend)
+import           Data.Monoid (mempty, mconcat, mappend)
 
 import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Misc (errorstar)
@@ -44,7 +44,7 @@ dot        = Token.dot        lexer
 braces     = Token.braces     lexer
 plus       = Token.symbol     lexer "+"
 star       = Token.symbol     lexer "*"
--- angles     = Token.angles     lexer
+angles     = Token.angles     lexer
 
 ----------------------------------------------------------------------------------
 -- | Type Binders ----------------------------------------------------------------
@@ -56,7 +56,7 @@ idBindP = xyP identifierP dcolon bareTypeP
 identifierP :: Parser (Id SourceSpan)
 identifierP = withSpan Id lowerIdP -- <$> getPosition <*> lowerIdP -- Lexer.identifier
 
-tBodyP :: Parser (Id SourceSpan, RType Reft, [Measure])
+tBodyP :: Parser (Id SourceSpan, RefType, [Measure])
 tBodyP = do  id <- identifierP 
              tv <- option [] tParP
              th <- option heapEmpty extHeapP
@@ -64,8 +64,8 @@ tBodyP = do  id <- identifierP
              tb <- bareTypeP
              ms <- option [] (reserved "with" >> spaces >> typeMeasuresP)
              return $ (id, TBd $ TD (TDef id) ts tv th tb (idLoc id), ms)
---     foo (x) := e
--- and bar (x) := e
+--     foo (x) = e
+-- and bar (x) = e
 typeMeasuresP = do
   m  <- typeMeasureP
   spaces
@@ -111,13 +111,13 @@ bareTypeP
               case ts of
                 [ ] -> error "impossible"
                 [t] -> return t
-                _   -> return $ TApp TUn (sort ts) tr)
+                _   -> return $ TApp TUn (sort ts) [] tr)
          
  <|> try (bRefP ( do  ts <- bareTypeNoUnionP `sepBy1` plus
                       case ts of
                         [ ] -> error "impossible"
                         [_] -> error "bareTypeP parser BUG"
-                        _   -> return $ TApp TUn (sort ts) 
+                        _   -> return $ TApp TUn (sort ts) [] 
                 ))
 
 
@@ -175,12 +175,20 @@ bareAtomP p
 --  <|> try (bindP p)   -- This case is taken separately at Function parser
  <|>     (dummyP (p <* spaces))
 
-bbaseP :: Parser (Reft -> RefType)
+bbaseP :: Parser (RReft -> RefType)
 bbaseP 
-  =  try (TVar <$> tvarP)
+  =  try propP -- UGH
+ <|> try (TVar <$> tvarP)
  <|> try (TObj <$> (braces $ bindsP) )
- <|> try (TApp <$> tDefP <*> (brackets $ sepBy bareTypeP comma))  -- This is what allows: list [A], tree [A,B] etc...
- <|>     ((`TApp` []) <$> tconP)
+     -- This is what allows: list [A], tree [A,B] etc...
+ <|> try (TApp <$> tDefP <*> (brackets $ sepBy bareTypeP comma)) <*> predicatesP
+ <|>     ((`TApp` []) <$> tconP <*> predicatesP)
+
+propP = withSpan buildApp $ upperIdP >>= checkProp
+    where
+      checkProp i | i == propConName = (i,) <$> predicatesP
+      checkProp _                    = parserFail "Prop"
+      buildApp s (i,ps) = (TApp (TDef (Id s i)) []) ps
 
 tvarP :: Parser TVar
 -- tvarP = TV <$> (stringSymbol <$> upperWordP) <*> getPosition
@@ -219,10 +227,11 @@ tDefP
 
 bareAllP 
   = do reserved "forall"
-       as <- many1 tvarP
+       as <- tracePP "vars" <$> many tvarP
+       ps <- tracePP "foo" <$> predVarDefsP
        dot
        t  <- bareTypeP
-       return $ foldr TAll t as
+       return $ foldr TAll (foldr TAllP t ps) as
 
 bindsP 
   =  try (sepBy1 bareBindP comma)
@@ -236,12 +245,69 @@ bareBindP
         t <- bareTypeP
         return $ B s t 
 
+predVarDefsP
+  =  try (angles $ sepBy1 predVarDefP comma)
+ <|> return []
+
+predVarDefP
+  = withSpan mkPVar $ do
+      id <- tracePP "ID" <$> predVarIdP
+      dcolon
+      ts <- predVarTypeP
+      return $ (id, ts)
+
+predVarIdP = stringSymbol <$> lowerIdP             
+
+predVarTypeP
+  = do t <- bareTypeP
+       let (bs, rb) = maybe err (\(_,bs,_,_,rb) -> (bs,rb)) $ bkFun t
+       if isPropBareType (b_type $ tracePP "rb" rb)
+          then return $ map toPairs bs
+          else error $ "Predicate Variable with non-Prop output type"
+    where
+      toPairs (B x t) = (x, tracePP "toPairs" $ toType t)
+      err             = error "Expected a function (for now)"
+      isPropBareType (TApp (TDef c) [] _ _) = tracePP "unId" (unId c) == propConName
+      isPropBareType t                      = tracePP "???" (show t) `seq` False
+
+mkPVar l (id, xts) = PV id l τ xts'
+    where
+      (_,τ) = last xts
+      xts'  = [ (τ, x, EVar x) | (x, τ) <- init xts ]
+
+predicatesP
+  =   try (angles $ sepBy1 predicate1P comma)
+  <|> return []
+
+predicate1P
+  =  liftM (PMono [] . predUReft) monoPredicate1P 
+
+monoPredicate1P     
+  =  try (reserved "True" >> return mempty)
+ <|> try (liftM pdVar (parens predVarUseP))
+ <|> liftM pdVar predVarUseP
+  where
+    pdVar v = Pr [fmap (const ()) v]
+
+predVarUseP :: Parser (PVar RefType)              
+predVarUseP
+  = withSpan bPredUse $ do
+      p  <- predVarIdP
+      xs <- sepBy exprP spaces
+      return (p, xs)
+    where
+      bPredUse l (p, xs) = PV p l tUndef [ (tUndef, dummySymbol, x) | x <- xs ]
+
+-- This and more lifted from LiquidHaskell
+reftUReft     = (`U` mempty)
+predUReft     = U dummyReft
+dummyReft     = top
  
-dummyP ::  Parser (Reft -> b) -> Parser b
+dummyP ::  Parser (RReft -> b) -> Parser b
 dummyP fm = fm `ap` topP 
 
-topP   :: Parser Reft
-topP   = (Reft . (, []) . vv . Just) <$> freshIntP
+topP   :: Parser RReft
+topP   = (ureft . Reft . (, []) . vv . Just) <$> freshIntP
 
 {--- | Parses bindings of the form: `x : kind`-}
 {-bindP :: Parser (Reft -> a) -> Parser a-}
@@ -252,7 +318,7 @@ topP   = (Reft . (, []) . vv . Just) <$> freshIntP
 {-       return $ t (Reft (v, []))-}
 
 -- | Parses refined types of the form: `{ x : kind | refinement }`
-bRefP :: Parser (Reft -> a) -> Parser a
+bRefP :: Parser (RReft -> a) -> Parser a
 bRefP kindP
   = braces $ do
       v   <- symbolP
@@ -262,16 +328,16 @@ bRefP kindP
       reserved "|"
       spaces
       ras <- refasP 
-      return $ t (Reft (v, ras))
+      return $ t (ureft $ Reft (v, ras))
 
 -- | Parses refined types of the form: `{ kind | refinement }`
-refP :: Parser (Reft -> a) -> Parser a
+refP :: Parser (RReft -> a) -> Parser a
 refP kindP
   = braces $ do
       t   <- kindP
       reserved "|"
       ras <- refasP 
-      return $ t (Reft (stringSymbol "v", ras))
+      return $ t (ureft $ Reft (stringSymbol "v", ras))
 
 refasP :: Parser [Refa]
 refasP  =  (try (brackets $ sepBy (RConc <$> predP) semi)) 
