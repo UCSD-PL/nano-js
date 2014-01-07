@@ -251,7 +251,7 @@ predVarDefsP
 
 predVarDefP
   = withSpan mkPVar $ do
-      id <- tracePP "ID" <$> predVarIdP
+      id <- predVarIdP
       dcolon
       ts <- predVarTypeP
       return $ (id, ts)
@@ -260,15 +260,15 @@ predVarIdP = stringSymbol <$> lowerIdP
 
 predVarTypeP
   = do t <- bareTypeP
-       let (bs, rb) = maybe err (\(_,bs,_,_,rb) -> (bs,rb)) $ bkFun t
-       if isPropBareType (b_type $ tracePP "rb" rb)
+       let (bs, rb) = maybe err (\(_,_,bs,_,_,rb) -> (bs,rb)) $ bkFun t
+       if isPropBareType (b_type rb)
           then return $ map toPairs bs
-          else error $ "Predicate Variable with non-Prop output type"
+          else parserFail $ "Predicate Variable with non-Prop output type"
     where
       toPairs (B x t) = (x, tracePP "toPairs" $ toType t)
       err             = error "Expected a function (for now)"
-      isPropBareType (TApp (TDef c) [] _ _) = tracePP "unId" (unId c) == propConName
-      isPropBareType t                      = tracePP "???" (show t) `seq` False
+      isPropBareType (TApp (TDef c) [] _ _) = unId c == propConName
+      isPropBareType _                      = False
 
 mkPVar l (id, xts) = PV id l τ xts'
     where

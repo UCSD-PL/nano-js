@@ -35,4 +35,5 @@ siteperms:
 	sudo chmod    g+rwx $(SERVERHOME)/
 	sudo chmod -R g+rwx $(SERVERHOME)/saved/
 
-
+etags:
+	hasktags -e Language

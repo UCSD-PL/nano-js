@@ -103,6 +103,7 @@ import           Language.Nano.Typecheck.Unify
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.Measures
+import           Language.Nano.Liquid.Predicates
 
 
 import qualified Language.Fixpoint.Types as F
@@ -142,9 +143,9 @@ getCGInfo :: Config -> Nano AnnTypeR RefType -> CGM a -> CGInfo
 -------------------------------------------------------------------------------
 getCGInfo cfg pgm = clear . cgStateCInfo pgm . execute cfg pgm . (>> fixCWs)
   where 
-    fixCWs       = (,) <$> fixCs <*> fixWs
-    fixCs        = get >>= concatMapM splitC . cs
-    fixWs        = get >>= concatMapM splitW . ws
+    fixCWs          = (,) <$> fixCs <*> fixWs
+    fixCs           = get >>= concatMapM splitC . cs
+    fixWs           = get >>= concatMapM splitW . ws
 
 execute :: Config -> Nano AnnTypeR RefType -> CGM a -> (a, CGState)
 execute cfg pgm act
@@ -155,7 +156,7 @@ execute cfg pgm act
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
 initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (consts pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
-    invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]  
+    invs            = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]  
 
 getDefType f 
   = do m <- cg_defs <$> get
@@ -170,7 +171,7 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fi) (cg_ann cg)
     fi   = F.FI { F.cm    = M.fromList $ F.addIds fcs  
                 , F.ws    = fws
                 , F.bs    = binds cg
-                , F.gs    = measureEnv pgm 
+                , F.gs    = consFPBinds pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
                 , F.quals = quals pgm 
@@ -267,10 +268,14 @@ withFun f m = do fOld <- cg_fun <$> get
 
 
 ---------------------------------------------------------------------------------------
-measureEnv   ::  Nano a (RType RReft) -> F.SEnv F.SortedReft
+-- measureBinds   ::  Nano a (RType RReft) -> F.SEnv F.SortedReft
 ---------------------------------------------------------------------------------------
-measureEnv   = fmap rTypeSortedReft . E.envSEnv . consts 
+measureBinds   = map tx . E.envToList . consts 
+  where tx (id, t) = (F.symbol id, rTypeSortedReft t)
+predicateBinds = pappSymSorts               
 
+consFPBinds pgm = F.fromListSEnv (measureBinds pgm ++ predicateBinds)
+                 
 ---------------------------------------------------------------------------------------
 -- | Constraint Generation Monad ------------------------------------------------------
 ---------------------------------------------------------------------------------------
@@ -532,12 +537,10 @@ freshTyFun' g l _ t b
 -- freshTyInst :: AnnTypeR -> CGEnv -> [TVar] -> [Type] -> RefType -> CGM RefType 
 ---------------------------------------------------------------------------------------
 freshTyInst l g αs τs tbody
-  = do let (vs,bs,hi,ho,ro) = maybe (error "freshTyInst: not a function") id $ bkFun tbody
+  = do let (vs,πs,bs,hi,ho,ro) = maybe (error "freshTyInst: not a function") id $ bkFun tbody
        xr                  <- freshId l
        let retsu            = F.mkSubst [(rs, F.eVar xr)]
            B rs rt          = ro
-       -- (hisu, hi')         <- freshHeapEnv l (fmap (F.subst retsu) <$> hi)
-       -- (hosu, ho')         <- freshHeapEnv l (fmap (F.subst (hisu <> retsu)) <$> ho)
        (hisu, hi')         <- freshHeapEnv l hi
        (hosu, ho')         <- freshHeapEnv l ho
        let su               = retsu `F.catSubst` hisu `F.catSubst` hosu
@@ -552,6 +555,14 @@ freshTyInst l g αs τs tbody
     where
        suBind su b = F.subst su <$> b
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
+
+freshPredInst l g πs tbody
+  = do πs' <- mapM (freshPredRef l g) πs
+       error $ "freshPredInst: TBD"
+
+freshPredRef l g (PV _ _ t as)
+  = do t <- freshTy "freshPredRef" t 
+       error "freshPredRef: TBD"
 
 -- | Instantiate Fresh Type (at Wind-site)
 --------------------------------------------------------------------------------------
@@ -1142,9 +1153,9 @@ subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _ _) t2@(TApp (TRef l2) _ _ _)
                                     rType th2
                         subTypeWind' (l1:seen) l g' σ th1 th2
                         return ()
-  where 
-    tru = tTop
-    fls = tTop `strengthen` F.predReft F.PFalse
+  -- where 
+  --   tru = tTop
+  --   fls = tTop `strengthen` F.predReft F.PFalse
 
 subTypeWindHeaps _ _ _ _ _ _ = return ()
 
@@ -1177,7 +1188,7 @@ splitW (W g i t@(TVar _ _))
 splitW (W g i t@(TApp _ ts rs _))
   =  do let ws = bsplitW g t i
         ws'   <- concatMapM splitW [W g i ti | ti <- ts]
-        ws''  <- return [] -- concatMapM (rsplitW g i) rs
+        ws''  <- concatMapM (rsplitW g i) rs
         return $ ws ++ ws' ++ ws''
 
 splitW (W g i t@(TObj ts _ ))
@@ -1237,12 +1248,14 @@ instance ClearSorts F.Sort where
   clear F.FInt        = F.FInt
   clear F.FNum        = F.FInt
   clear (F.FObj _)    = F.FInt
-  clear (F.FVar _)    = F.FInt
+  clear v@(F.FVar _)  = v -- F.FInt
   clear (F.FFunc i s) = F.FFunc i $ clear <$> s
   -- clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
-  clear (F.FApp c ss) 
+  clear s@(F.FApp c ss) 
       | F.fTyconString c == "set" = F.FApp (F.stringFTycon "Set_Set") (clear <$> ss)
-      | otherwise           = F.FInt -- F.FApp  c $ clear s
+      | c == F.propFTyCon         = s
+      | c == F.boolFTyCon         = s
+      | otherwise                 = F.FInt -- F.FApp  c $ clear s
 
                              
 

@@ -220,7 +220,7 @@ type TCEnv r = Maybe (Env (RType r), RHeap r)
 -------------------------------------------------------------------------------
 
 tcFun (γ,_) (FunctionStmt l f xs body) 
-  = do (ft, (αs, ts, σ, σ', t)) <- funTy l f xs
+  = do (ft, (αs, _, ts, σ, σ', t)) <- funTy l f xs
        checkSigWellFormed l ts (b_type t) (b_type <$> σ) (b_type <$> σ')
        let γ'  = envAdds [(f, ft)] γ
        let γ'' = envAddFun l f αs xs ts (b_type t) γ'
@@ -263,9 +263,9 @@ checkLocSubs σ =
 funTy l f xs 
   = do ft <- getDefType f 
        case bkFun ft of
-         Nothing        -> logError (ann l) (errorUnboundId f) (tErr, tFunErr)
-         Just (αs,ts,σ,σ',t) -> do when (length xs /= length ts) $ logError (ann l) errorArgMismatch ()
-                                   return (ft, (αs, b_type <$> ts, σ, σ', t))
+         Nothing               -> logError (ann l) (errorUnboundId f) (tErr, tFunErr)
+         Just (αs,πs,ts,σ,σ',t) -> do when (length xs /= length ts) $ logError (ann l) errorArgMismatch ()
+                                      return (ft, (αs, πs, b_type <$> ts, σ, σ', t))
 
 envAddFun _ f αs xs ts t = envAdds tyBinds . envAdds (varBinds xs ts) . envAddReturn f t 
   where  

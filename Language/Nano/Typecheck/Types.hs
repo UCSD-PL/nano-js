@@ -49,6 +49,7 @@ module Language.Nano.Typecheck.Types (
   -- * Traversing types
   , efoldReft, foldReft
   , emapReft
+  , mapTys
 
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
@@ -239,6 +240,15 @@ data RType r
 
 instance Functor RType where
   fmap f = emapReft (\_ -> f) []
+
+mapTys f (TAll v t)            = TAll v  $ mapTys f t           
+mapTys f (TAllP v t)           = TAllP v $ mapTys f t
+mapTys f (TApp c ts rs r)      = f $ TApp c (mapTys f <$> ts) rs r
+mapTys f (TFun xts xt hi ho r) = TFun (g <$> xts) (g $ xt) (g <$> hi) (g <$> ho) r
+  where g = mapBind f
+mapTys f (TObj xts r)          = TObj (mapBind f <$> xts) r
+mapTys f t                     = f t
+mapBind f (B x t) = B x $ f t
 
 -- Lifted from LiquidHaskell             
 type UsedPVar      = PVar ()
@@ -565,10 +575,10 @@ restrictHeap ls h = heapCombineWith const [h1, h2]
     (bs,nbs) = L.partition ((`elem` ls) . fst) $ heapBinds h
     ls'      = concatMap (filter (not . (`elem` ls)) . locs . snd) bs
 
-bkFun :: RType r -> Maybe ([TVar], [Bind r], RHeapEnv r, RHeapEnv r, Bind r)
-bkFun t = do let (αs, πs, t') = bkAll t
+bkFun :: RType r -> Maybe ([TVar], [PVar Type], [Bind r], RHeapEnv r, RHeapEnv r, Bind r)
+bkFun t = do let (αs, πs, t')   = bkAll t
              (xts, t'', h, h')  <- bkArr t'
-             return (αs, xts, h, h', t'')
+             return (αs, πs, xts, h, h', t'')
 
 bkArr (TFun xts t h h' _) = Just (xts, t, h, h')
 bkArr _                   = Nothing
@@ -583,7 +593,7 @@ bkAll t              = go [] [] t
 funHeaps :: RType r -> Maybe (RHeapEnv r, RHeapEnv r)
 funHeaps = (stripHeaps =<<) . bkFun
   where
-    stripHeaps (_,_,σ,σ',_) = return (σ,σ')
+    stripHeaps (_,_,_,σ,σ',_) = return (σ,σ')
 ---------------------------------------------------------------------------------
 updateField :: (Ord r, Eq r, F.Reftable r) =>
   RType r -> F.Symbol -> RType r -> RType r
@@ -764,15 +774,15 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
 ---------------------------------------------------------------------------------
 
 data Nano a t =
-    Nano { code   :: !(Source a)               -- ^ Code to check
-         , specs  :: !(Env t)                  -- ^ Imported Specifications
-         , defs   :: !(Env t)                  -- ^ Signatures for Code
-         , consts :: !(Env t)                  -- ^ Measure Signatures 
-         , tDefs  :: !(Env t)                  -- ^ Type definitions
-         , tMeas  :: !(M.HashMap F.Symbol Measure) -- ^ Measure implementations
+    Nano { code   :: !(Source a)                     -- ^ Code to check
+         , specs  :: !(Env t)                        -- ^ Imported Specifications
+         , defs   :: !(Env t)                        -- ^ Signatures for Code
+         , consts :: !(Env t)                        -- ^ Measure Signatures 
+         , tDefs  :: !(Env t)                        -- ^ Type definitions
+         , tMeas  :: !(M.HashMap F.Symbol Measure)   -- ^ Measure implementations
          , tRMeas :: !(M.HashMap F.Symbol [Measure]) -- ^ Type (recursive) measure definitions
-         , quals  :: ![F.Qualifier]            -- ^ Qualifiers
-         , invts  :: ![Located t]              -- ^ Type Invariants
+         , quals  :: ![F.Qualifier]                  -- ^ Qualifiers
+         , invts  :: ![Located t]                    -- ^ Type Invariants
          } deriving (Functor, Data, Typeable)
 
 type NanoBareR r   = Nano (AnnBare_ r) (RType r)
@@ -883,10 +893,8 @@ instance F.Reftable r => PP (RType r) where
                               <+> text "/" <+> pp h
                               <+> text "=>"
                               <+> pp t <+> text "/" <+> pp h'
-  pp t@(TAll _ _)               = text "forall" <+> ppArgs id space αs <> ppArgs id space πs <> text "." 
-                                   <+> pp t' where (αs, πs, t') = bkAll t
-  pp t@(TAllP _ _)              = text "forall" <+> ppArgs id space αs <> ppArgs id space πs <> text "." 
-                                   <+> pp t' where (αs, πs, t') = bkAll t
+  pp t@(TAll _ _)               = ppAll $ bkAll t
+  pp t@(TAllP _ _)              = ppAll $ bkAll t
   pp (TApp TUn ts ps r)         = F.ppTy r $ parens (ppArgs id (text "+") ts )
   pp (TApp d@(TDef _)ts ps r)   = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
 
@@ -898,6 +906,10 @@ instance F.Reftable r => PP (RType r) where
                                    <+> text "∃!" <+> pp h <+> text "."
                                    <+> pp s <+> text ":" <+> pp r
   pp (TBd _)                    = error "This is not an acceptable form for TBody" 
+
+ppAll (αs, πs, t)  = text "forall" <+> ppArgs id space αs <> text " "
+                                   <> ppArgs id space πs <> text "."
+                                   <+> pp t
 instance PP TCon where
   pp TInt             = text "Int"
   pp TBool            = text "Boolean"
@@ -1047,7 +1059,7 @@ tVoid   = TApp TVoid    [] [] F.top
 tUndef  = TApp TUndef   [] [] F.top
 tNull   = TApp TNull    [] [] F.top
 tErr    = tVoid
-tFunErr = ([],[],heapEmpty,heapEmpty,B returnSymbol tErr)
+tFunErr = ([],[],[],heapEmpty,heapEmpty,B returnSymbol tErr)
 
 tRef :: (F.Reftable r) => Location -> RType r
 tRef l  = TApp (TRef l) [] [] F.top

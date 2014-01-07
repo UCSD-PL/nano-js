@@ -91,7 +91,7 @@ tcMeasure γt ts Nothing
 tcMeasure γt ts (Just f)
     = maybe False (tcMeasure' γt ts) $ bkFun f
 
-tcMeasure' γt ts (αs,bs,h,_,_) 
+tcMeasure' γt ts (αs,_,bs,h,_,_) 
     | length ts /= length bs =
         False
     | otherwise =

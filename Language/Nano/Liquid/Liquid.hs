@@ -43,6 +43,7 @@ import           Language.Nano.SSA.SSA
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.CGMonad
 import           Language.Nano.Liquid.Measures
+import           Language.Nano.Liquid.Predicates
 import           Language.Nano.Misc
 
 import           System.Console.CmdArgs.Default
@@ -102,7 +103,38 @@ tidy = id
 --------------------------------------------------------------------------------
 generateConstraints     :: Config -> NanoRefType -> CGInfo 
 --------------------------------------------------------------------------------
-generateConstraints cfg pgm = getCGInfo cfg pgm $ consNano pgm
+generateConstraints cfg pgm = getCGInfo cfg p . consNano $ p
+  where
+    p = pgm { defs  = envMap (mapTys $ addRefSorts γ) $ defs pgm
+            , specs = envMap (mapTys $ addRefSorts γ) $ specs pgm
+            }
+    γ = tDefs pgm
+
+addRefSorts :: REnv -> RefType -> RefType
+addRefSorts γ t@(TApp c ts rs r)
+  = TApp c ts rs' r'
+  where
+    rs'               = addRefSortsRef <$> zip ps trs
+    ps                = lookupTyPs γ c
+    (trs, rest)       = splitAt (length ps) rs
+    r'                = foldl go r rest
+    go r (PMono _ r') = r' `F.meet` r
+
+addRefSorts _ t
+  = t
+
+lookupTyPs γ (TDef i) = []
+lookupTyPs _ _        = []
+
+-- addRefSortsRef :: (PVar t, PRef t s m) -> PRef t s m  
+-- honestly not sure what's going on here, but lifted
+-- from liquid haskell. will figure it out :)
+addRefSortsRef (p, PPoly s t)
+  = PPoly (safeZip "addRefSortsRefPoly" (fst <$> s) (fst3 <$> pv_as p)) t
+addRefSortsRef (p, PMono s r@(U _ (Pr [up])))
+  = PMono (safeZip "addRefSortsRefMono" (snd3 <$> pv_as up) (fst3 <$> pv_as p)) r
+addRefSortsRef (_, m)
+  = m
 
 --------------------------------------------------------------------------------
 consNano     :: NanoRefType -> CGM ()
@@ -120,7 +152,7 @@ consFun :: CGEnv -> Statement (AnnType_ RReft) -> CGM CGEnv
 --------------------------------------------------------------------------------
 consFun g (FunctionStmt l f xs body) 
   = do ft             <- freshTyFun g l f =<< getDefType f
-       g'             <- envAdds [(f, ft)] g 
+       g'             <- envAdds [(f, ft)] g
        g''            <- envAddFun l g' f xs ft >>= envAddNil l
        withFun (F.symbol f) $
          do gm <- consStmts g'' body
@@ -136,16 +168,25 @@ envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft
     = do (su', g') <- envAddHeap l g h 
-         let g''   =  envAddReturn f (F.subst su' $ b_type t') g'
+         let g''   =  envAddReturn f (F.subst su' . replacePreds πs $ b_type t') g'
          g'''      <- envAdds (envBinds su' xs ts') g''
-         envAdds tyBinds g'''
+         gαs       <- envAdds tyBinds g'''
+         envAdds pBinds gαs
   where  
-    (αs, yts, h, _, t)  = mfromJust "envAddFun" $ bkFun ft
-    tyBinds             = [(Loc (srcPos l) α, tVar α) | α <- αs]
-    varBinds            = safeZip "envAddFun"
-    envBinds su xs ts   = varBinds xs (F.subst su <$> ts)
-    (su, ts')           = renameBinds yts xs
-    t'                  = F.subst su <$> t
+    (αs, πs, yts, h, _, t)  = mfromJust "envAddFun" $ bkFun ft
+    pBinds                  = [(pv_sym π, toPredType π) | π <- πs]
+    tyBinds                 = [(Loc (srcPos l) α, tVar α) | α <- αs]
+    varBinds                = safeZip "envAddFun"
+    envBinds su xs ts       = varBinds xs (replacePreds πs . F.subst su <$> ts)
+    (su, ts')               = renameBinds yts xs
+    t'                      = F.subst su <$> t
+
+replacePreds :: [PVar Type] -> RefType -> RefType
+replacePreds πs t
+    = foldl replacePred t πs
+    where
+      mkSub p         = (fmap (const ()) p, pVartoRConc p)
+      replacePred t p = replacePredsWithRefs (mkSub p) <$>  t
 
 envAddNil l g = snd <$> envAddHeap l g nilHeap
     where
@@ -318,7 +359,7 @@ getFunHeaps g _
 getFunRetBinder g _
   = (retBind . fromJust . bkFun . flip envFindTy g) <$> getFun
   where
-    retBind (_,_,_,_,b) = b_sym $ b
+    retBind (_,_,_,_,_,b) = b_sym $ b
 
 
 ------------------------------------------------------------------------------------
@@ -495,8 +536,8 @@ consCall :: (PP a)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
 consCall g l _ es ft 
-  = do (_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
-       (xes, g')          <- consScan consExpr g es
+  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+       (xes, g')            <- consScan consExpr g es
        let (argSu, ts')   = renameBinds its xes
            (heapSu, hi'') = fmap b_type <$> renameHeapBinds (rheap g') hi'
            su             = heapSu `F.catSubst` argSu
@@ -527,8 +568,9 @@ topMissingBinds g σ σenv
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 
-  = freshTyInst l g αs τs $ apply θl tbody
+  = freshTyInst l g αs τs tbody' {- >>= freshPredInst l g πs -}
   where 
+    tbody'          = apply θl tbody
     (αs, πs, tbody) = bkAll t
     τs              = map snd ts
     θl              = fromLists [] ls :: RSubst RReft

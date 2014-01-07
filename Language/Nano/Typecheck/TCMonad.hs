@@ -274,7 +274,7 @@ freshFun :: (PP r, PP fn, Ord r, F.Reftable r) =>
 freshFun l fn ft
   = do let bkft           = bkAll ft
        (τs,t')           <- freshTyArgs (srcPos l) bkft
-       (ts,ibs,σi,σo :: RHeapEnv r,ot) <- maybe err return $ bkFun t'
+       (ts,_,ibs,σi,σo :: RHeapEnv r,ot) <- maybe err return $ bkFun t'
        let ls             = nub $ heapLocs σi ++ heapLocs σo
        ls'               <- mapM (const freshLocation') ls
        let θl             = fromLists [] (zip ls ls') :: RSubst r
