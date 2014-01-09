@@ -34,6 +34,7 @@ module Language.Nano.Liquid.CGMonad (
   -- * Fresh Templates for Unknown Refinement Types 
   , freshTyFun
   , freshTyInst
+  , freshPredInst 
   , freshTyPhis
   , freshTyWind
   , freshObjBinds
@@ -551,19 +552,23 @@ freshTyInst l g αs τs tbody
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
            tbody' = TFun (suBind su <$> bs) (B rs' rt') (heapSu hi') (heapSu ho') F.top
-       return $ {- tracePP msg $ -}  apply θ tbody'
+       return $ {- tracePP msg $ -} apply θ tbody'
     where
        suBind su b = F.subst su <$> b
        msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)
 
 freshPredInst l g πs tbody
-  = do πs' <- mapM (freshPredRef l g) πs
-       error $ "freshPredInst: TBD"
+  = do πs'   <- mapM (freshPredRef l g) πs
+       return $ replacePreds tbody (zip πs πs')
 
+freshPredRef :: (IsLocated l) => l -> CGEnv -> PVar Type -> CGM (PRef Type RReft RefType)
 freshPredRef l g (PV _ _ t as)
-  = do t <- freshTy "freshPredRef" t 
-       error "freshPredRef: TBD"
-
+  = do t    <- freshTy "freshPredRef" t 
+       args <- mapM (const fresh) as
+       let targs = [(x,s) | (x, (s, y, z)) <- zip args as, (F.EVar y) == z]
+       g' <- envAdds [(x, ofType t) | (x, t) <- targs] g
+       wellFormed l g' t
+       return $ PPoly targs t
 -- | Instantiate Fresh Type (at Wind-site)
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 

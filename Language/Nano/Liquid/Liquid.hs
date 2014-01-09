@@ -168,7 +168,7 @@ envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft
     = do (su', g') <- envAddHeap l g h 
-         let g''   =  envAddReturn f (F.subst su' . replacePreds πs $ b_type t') g'
+         let g''   =  envAddReturn f (F.subst su' . applyPreds πs $ b_type t') g'
          g'''      <- envAdds (envBinds su' xs ts') g''
          gαs       <- envAdds tyBinds g'''
          envAdds pBinds gαs
@@ -177,12 +177,12 @@ envAddFun l g f xs ft
     pBinds                  = [(pv_sym π, toPredType π) | π <- πs]
     tyBinds                 = [(Loc (srcPos l) α, tVar α) | α <- αs]
     varBinds                = safeZip "envAddFun"
-    envBinds su xs ts       = varBinds xs (replacePreds πs . F.subst su <$> ts)
+    envBinds su xs ts       = varBinds xs (applyPreds πs . F.subst su <$> ts)
     (su, ts')               = renameBinds yts xs
     t'                      = F.subst su <$> t
 
-replacePreds :: [PVar Type] -> RefType -> RefType
-replacePreds πs t
+applyPreds :: [PVar Type] -> RefType -> RefType
+applyPreds πs t
     = foldl replacePred t πs
     where
       mkSub p         = (fmap (const ()) p, pVartoRConc p)
@@ -568,7 +568,7 @@ topMissingBinds g σ σenv
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 
-  = freshTyInst l g αs τs tbody' {- >>= freshPredInst l g πs -}
+  = freshTyInst l g αs τs tbody' >>= freshPredInst l g πs
   where 
     tbody'          = apply θl tbody
     (αs, πs, tbody) = bkAll t

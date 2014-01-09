@@ -178,25 +178,33 @@ bareAtomP p
 bbaseP :: Parser (RReft -> RefType)
 bbaseP 
   =  try propP -- UGH
- <|> try (TVar <$> tvarP)
+ <|> try tvarTyP
  <|> try (TObj <$> (braces $ bindsP) )
      -- This is what allows: list [A], tree [A,B] etc...
  <|> try (TApp <$> tDefP <*> (brackets $ sepBy bareTypeP comma)) <*> predicatesP
  <|>     ((`TApp` []) <$> tconP <*> predicatesP)
 
-propP = withSpan buildApp $ upperIdP >>= checkProp
+propP = withSpan buildApp $ lowerWordP >>= checkProp
     where
-      checkProp i | i == propConName = (i,) <$> predicatesP
+      checkProp i | i == map toLower propConName = (i,) <$> predicatesP
       checkProp _                    = parserFail "Prop"
-      buildApp s (i,ps) = (TApp (TDef (Id s i)) []) ps
+      buildApp s (i,ps) = (TApp (TDef (Id s propConName)) []) ps
 
-tvarP :: Parser TVar
--- tvarP = TV <$> (stringSymbol <$> upperWordP) <*> getPosition
 tvarP = withSpan (\l x -> TV x l) (stringSymbol <$> upperWordP)
+
+tvarTyP :: Parser (RReft -> RefType)
+tvarTyP = do v <- tvarP
+             p <- monoPredicateP
+             return $ \r -> TVar v (r `meet` ureft p)
 
 
 upperWordP :: Parser String
 upperWordP = condIdP nice (not . isLower . head)
+  where 
+    nice   = ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0'..'9']
+
+lowerWordP :: Parser String
+lowerWordP = condIdP nice (isLower . head)
   where 
     nice   = ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0'..'9']
 
@@ -227,8 +235,8 @@ tDefP
 
 bareAllP 
   = do reserved "forall"
-       as <- tracePP "vars" <$> many tvarP
-       ps <- tracePP "foo" <$> predVarDefsP
+       as <- many tvarP
+       ps <- predVarDefsP
        dot
        t  <- bareTypeP
        return $ foldr TAll (foldr TAllP t ps) as
@@ -246,7 +254,7 @@ bareBindP
         return $ B s t 
 
 predVarDefsP
-  =  try (angles $ sepBy1 predVarDefP comma)
+  =  (angles $ sepBy1 predVarDefP comma)
  <|> return []
 
 predVarDefP
@@ -278,6 +286,10 @@ mkPVar l (id, xts) = PV id l τ xts'
 predicatesP
   =   try (angles $ sepBy1 predicate1P comma)
   <|> return []
+
+monoPredicateP
+  =   try (angles monoPredicate1P)
+  <|> return mempty
 
 predicate1P
   =  liftM (PMono [] . predUReft) monoPredicate1P 

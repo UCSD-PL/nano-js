@@ -658,7 +658,7 @@ strengthenContainers (TApp TUn ts ps r) (TApp TUn ts' ps' r') =
   TApp TUn (zipWith strengthenContainers ts ts') pm rm
   where
     rm = r' `F.meet` r
-    pm = ps' `F.meet` ps
+    pm = ps' ++ ps
 
 strengthenContainers (TObj ts r) (TObj ts' r') = 
   TObj (zipWith doB ts ts') $ r' `F.meet` r
@@ -667,6 +667,45 @@ strengthenContainers (TObj ts r) (TObj ts' r') =
     doB _       _                   = errorstar "strengthenContainers: sanity check - 1"
 strengthenContainers t t' | toType t == toType t' = strengthen t' $ rTypeR t
 strengthenContainers _ _  | otherwise = errorstar "strengthenContainers: sanity check - 2"
+
+instance (F.Reftable r) => Monoid (RType r) where
+  mempty  = error "mempty RType"
+  mappend = strengthenContainers
+
+instance (F.Reftable r) => F.Reftable (RType r) where
+  isTauto = isTrivial
+  ppTy    = error "ppTy RPoly Reftable" 
+  toReft  = error "toReft on RType"
+  params  = error "params on RType"
+  bot     = error "bot on RType"
+
+instance (PP r, F.Reftable r)
+   => Monoid (PRef Type r (RType (UReft r))) where
+  mempty = PMono [] mempty
+  mappend (PMono s1 r1) (PMono s2 r2) = PMono (s1 ++ s2) $ r1 `F.meet` r2
+  mappend (PMono s1 r) (PPoly s2 t)   = PPoly (s1 ++ s2) $ t `strengthen` (U r pdTrue)
+  mappend (PPoly s1 t) (PMono s2 r)   = PPoly (s1 ++ s2) $ t  `strengthen` (U r pdTrue)
+  mappend (PPoly s1 t1) (PPoly s2 t2) = PPoly (s1 ++ s2) $ t1 `strengthenContainers` t2
+
+instance (PP r, F.Reftable r)
+   => Monoid (PRef Type r (RType r)) where
+  mempty = PMono [] mempty
+  mappend (PMono s1 r1) (PMono s2 r2) = PMono (s1 ++ s2) $ mappend r1 r2
+  mappend (PMono s1 r) (PPoly s2 t)   = PPoly (s1 ++ s2) $ t `strengthen` r
+  mappend (PPoly s1 t) (PMono s2 r)   = PPoly (s1 ++ s2) $ t  `strengthen` r
+  mappend (PPoly s1 t1) (PPoly s2 t2) = PPoly (s1 ++ s2) $ t1 `strengthenContainers` t2
+
+instance (PP r, F.Reftable r) => F.Reftable (Ref r) where
+  isTauto (PMono _ r) = F.isTauto r
+  isTauto (PPoly _ t) = isTrivial t
+  ppTy (PMono _ r) d  = F.ppTy r d
+  ppTy (PPoly _ _) _  = errorstar "RefType: Reftable ppTy in RPoly"
+  toReft              = errorstar "RefType: Reftable toReft"
+  params              = errorstar "RefType: Reftable params for Ref"
+  bot                 = errorstar "RefType: Reftable bot    for Ref"
+  
+  
+isTrivial t = foldReft (\r b -> F.isTauto r && b) True t
 
 ---------------------------------------------------------------------------------
 -- | Helpful type checks
