@@ -12,7 +12,7 @@ module Language.Nano.Typecheck.Parse (
 
 import           Data.List (sort)
 import qualified Data.Foldable                      as F
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (isJust, fromMaybe)
 import           Data.Generics.Aliases
 import           Data.Generics.Schemes
 import qualified Data.HashMap.Strict                as M 
@@ -175,7 +175,7 @@ bareAtomP p
 bbaseP :: Parser (Reft -> RefType)
 bbaseP 
   =  try (TVar <$> tvarP)                  -- A
- <|> try (TObj <$> (braces $ bindsP) )     -- { f1: T1, ... , fn: Tn} 
+ <|> try (TObj <$> (braces $ optBindsP) )     -- { f1: T1, ... , fn: Tn} 
  <|> try (TObj <$> arrayBindsP)            -- { i1: T1, ... , in: Tn}
  <|> try (TArr <$> arrayP)                 -- [T]
  <|> try (TApp <$> tDefP <*> bareTyArgsP)  -- list[A], tree[A,B] etc...
@@ -222,9 +222,9 @@ arrayBindsP
   = do reserved "[|"
        ts    <- sepBy bareTypeP comma
        reserved "|]"
-       return $ zipWith B (symbol . show <$> [0..]) ts ++ [len ts]
+       return $ zipWith3 OB (symbol . show <$> [0..]) ts (repeat True) ++ [len ts]
     where
-      len ts = B (symbol "length") (eSingleton tInt $ length ts)
+      len ts = OB (symbol "length") (eSingleton tInt $ length ts) True
 
 
 bindsP 
@@ -238,6 +238,21 @@ bareBindP
         spaces
         t <- bareTypeP
         return $ B s t 
+
+optBindsP 
+  =  try (sepBy1 optBareBindP comma)
+ <|> (spaces >> return [])
+
+optBareBindP 
+  = do  s   <- binderP
+        spaces
+        opt <- optionMaybe $ char '?'
+        spaces
+        colon
+        spaces
+        t   <- bareTypeP
+        return $ OB s t (isJust opt)
+
 
  
 dummyP ::  Parser (Reft -> b) -> Parser b

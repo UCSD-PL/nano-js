@@ -120,7 +120,7 @@ instance Free (RType r) where
   free (TVar α _)           = S.singleton α 
   free (TFun xts t _)       = S.unions   $ free <$> t:ts where ts = b_type <$> xts
   free (TAll α t)           = S.delete α $ free t 
-  free (TObj bs _)          = S.unions   $ free <$> b_type <$> bs
+  free (TObj bs _)          = S.unions   $ free <$> ob_type <$> bs
   free (TBd (TD _ α t _ ))  = foldr S.delete (free t) α
   free (TAnd ts)            = S.unions   $ free <$> ts 
 
@@ -152,7 +152,7 @@ appTy :: (PP r, F.Reftable r) => RSubst r -> RType r -> RType r
 ------------------------------------------------------------------------
 appTy θ (TApp c ts z)            = TApp c (apply θ ts) z 
 appTy θ (TAnd ts)                = TAnd (apply θ ts) 
-appTy θ (TObj bs z)              = TObj ((\b -> b { b_type = appTy θ $ b_type b}) <$> bs) z
+appTy θ (TObj bs z)              = TObj ((\b -> b { ob_type = appTy θ $ ob_type b}) <$> bs) z
 appTy (Su m) t@(TVar α r)        = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t r)            = TFun  (apply θ ts) (apply θ t) r
 appTy (Su m) (TAll α t)          = TAll α $ apply (Su $ M.delete α m) t             -- oh, god! DO NOT DROP TAll here.  
@@ -172,7 +172,7 @@ unfoldFirst :: (PP r, F.Reftable r) => Env (RType r) -> RType r -> RType r
 unfoldFirst env t = go t
   where 
     go (TFun its ot r)         = TFun (appTBi go <$> its) (go ot) r
-    go (TObj bs r)             = TObj (appTBi go <$> bs) r
+    go (TObj bs r)             = TObj (appTOBi go <$> bs) r
     go (TBd  _)                = errorstar "BUG: unfoldTDefDeep: there should not be a TBody here"
     go (TAnd _)                = errorstar "BUG: unfoldFirst: cannot unfold intersection"
     go (TAll v t)              = TAll v $ go t
@@ -184,6 +184,7 @@ unfoldFirst env t = go t
     go (TArr t r)              = TArr (go t) r
     go t@(TVar _ _ )           = t
     appTBi f (B s t)           = B s $ f t
+    appTOBi f (OB s t o)       = OB s (f t) o
 
 
 -- | Unfold a top-level type definition once. 
@@ -225,11 +226,11 @@ getProp ::  (IsLocated l, Ord r, PP r, F.Reftable r) =>
 -------------------------------------------------------------------------------
 getProp _ _ s t@(TObj bs _) = 
   do  case find (match $ F.symbol s) bs of
-        Just b -> Just (t, b_type b)
+        Just b -> Just (t, ob_type b)
         _      -> case find (match $ F.stringSymbol "*") bs of
-                    Just b' -> Just (t, b_type b')
+                    Just b' -> Just (t, ob_type b')
                     _       -> Just (t, tUndef)
-  where match s (B f _)  = s == f
+  where match s (OB f _ _ )  = s == f
 
 getProp l γ s t@(TApp _ _ _)  = getPropApp l γ s t 
 getProp _ _ _ t@(TFun _ _ _ ) = Just (t, tUndef)

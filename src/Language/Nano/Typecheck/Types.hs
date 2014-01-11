@@ -24,6 +24,7 @@ module Language.Nano.Typecheck.Types (
   -- * (Refinement) Types
   , RType (..)
   , Bind (..)
+  , OBind (..)
   , toType
   , ofType
   , strengthen 
@@ -194,7 +195,7 @@ data RType r
   = TApp TCon [RType r]     r   -- ^ C T1,...,Tn
   | TVar TVar               r   -- ^ A
   | TFun [Bind r] (RType r) r   -- ^ (x1:T1,...,xn:Tn) => T
-  | TObj [Bind r]           r   -- ^ {f1:T1,...,fn:Tn} 
+  | TObj [OBind r]          r   -- ^ {f1:T1,...,fn:Tn} 
   | TArr (RType r)          r   -- ^ [T] 
   | TBd  (TBody r)              -- ^ ???
   | TAll TVar (RType r)         -- ^ forall A. T
@@ -207,6 +208,14 @@ data Bind r
       , b_type :: !(RType r)
       } 
     deriving (Eq, Ord, Show, Functor, Data, Typeable)
+
+data OBind r
+  = OB { ob_sym  :: F.Symbol
+       , ob_type :: !(RType r)
+       , ob_opt  :: Bool
+      } 
+    deriving (Eq, Ord, Show, Functor, Data, Typeable)
+
 
 -- | "pure" top-refinement
 fTop :: (F.Reftable r) => r
@@ -387,7 +396,7 @@ noUnion :: (F.Reftable r) => RType r -> Bool
 noUnion (TApp TUn _ _)  = False
 noUnion (TApp _  rs _)  = and $ map noUnion rs
 noUnion (TFun bs rt _)  = and $ map noUnion $ rt : (map b_type bs)
-noUnion (TObj bs    _)  = and $ map noUnion $ map b_type bs
+noUnion (TObj bs    _)  = and $ map noUnion $ map ob_type bs
 noUnion (TArr t     _)  = noUnion t
 noUnion (TBd  _      )  = error "noUnion: cannot have TBodies here"
 noUnion (TAll _ t    )  = noUnion t
@@ -595,6 +604,12 @@ instance Hashable TCon where
 
 instance F.Reftable r => PP (Bind r) where 
   pp (B x t)        = pp x <> colon <> pp t 
+
+instance F.Reftable r => PP (OBind r) where 
+  pp (OB x t o)     = pp x <> (text $ s o) <> colon <> pp t 
+    where
+      s True        = "?"
+      s False       = ""
 
 ppArgs p sep          = p . intersperse sep . map pp
 ppTC TInt             = text "Int"

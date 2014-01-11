@@ -472,35 +472,43 @@ padObject :: (Eq r, Ord r, F.Reftable r, PP r) =>
 
 padObject γ (TObj bs1 r1) (TObj bs2 r2) = (TObj jbs' fTop, TObj b1s' r1, TObj b2s' r2, direction)
   where
-    direction                           = cmnDir &*& distDir d1s d2s
-    cmnDir                              = mconcatP [ d | (_, (_ ,_  ,_  ,d)) <- cmnTs] 
-    jbs'                                = [B x t0      | (x, (t0,_  ,_  ,_)) <- cmnTs] 
-    b1s'                                = [B x t1'     | (x, (_ ,t1',_  ,_)) <- cmnTs] 
-    b2s'                                = [B x t2'     | (x, (_ ,_  ,t2',_)) <- cmnTs] 
-    (d1s, d2s)                          = distinctBs bs1 bs2
-    cmnTs                               = [(x, compareTs γ t1 t2) | (x, (t1, t2)) <- cmn]
+    direction                           = (tracePP "cmnDir" cmnDir) &*& (tracePP "disDir direction" $ distDir d1s d2s)
+    cmnDir                              = mconcatP [ d | (_, (_ ,_  ,_  ,d), _ ) <- cmnTs]
+    jbs'                                = [OB x t0  o0 | (x, (t0,_  ,_  ,_), o0) <- cmnTs]
+    b1s'                                = [OB x t1' o1 | (x, (_ ,t1',_  ,_), o1) <- cmnTs]
+    b2s'                                = [OB x t2' o2 | (x, (_ ,_  ,t2',_), o2) <- cmnTs]
+    (d1s, d2s)                          = tracePP ("distinct bindings from: " ++ ppshow bs1 ++ " and " ++ ppshow bs2) $ distinctBs bs1 bs2
+    cmnTs                               = [(x, compareTs γ t1 t2, o1 `mergeOptBinding` o2) | (x, ((t1, o1), (t2, o2))) <- cmn]
     cmn                                 = meetBinds bs1 bs2 
 
 padObject _ _ _                         = error "padObject: Cannot pad non-objects"
 
-distinctBs b1 [] = (b_sym <$> b1, []          )
-distinctBs [] b2 = ([]          , b_sym <$> b2)
-distinctBs b1 b2 = (diff m1 m2  , diff m2 m1  )
+mergeOptBinding = (||)
+
+distinctBs b1 [] = (so <$> b1 , []        )
+distinctBs [] b2 = ([]        , so <$> b2 )
+distinctBs b1 b2 = (diff m1 m2, diff m2 m1)
   where
-    m1           = bindsMap b1
-    m2           = bindsMap b2
-    diff m m'    = M.keys $ M.difference m m'
+    m1           = M.fromList $ so <$> b1
+    m2           = M.fromList $ so <$> b2
+    diff m m'    = M.toList $ M.difference m m'
 
-bindsMap bs      = M.fromList [(s, t) | B s t <- bs]
+so (OB s t o) = (s, o)
 
--- Direction from distinct keys
+bindsMap bs      = M.fromList [(s, (t, o)) | OB s t o <- bs]
+
+-- Direction from distinct keys, based on the difference of the bindings 
+-- in xs that are not in xys, ignoring the ones that are optional.
+distDir :: [(F.Symbol, Bool)] -> [(F.Symbol, Bool)] -> SubDirection
 distDir xs ys 
-  | null (xs ++ ys) = EqT
-  | null xs         = SupT
-  | null ys         = SubT
-  | otherwise       = Nth
+  | null (xs' ++ ys') = EqT
+  | null xs'          = SupT
+  | null ys'          = SubT
+  | otherwise         = Nth
+  where 
+    (xs', ys')      = mapPair (filter (not . snd)) (xs, ys)
 
-meetBinds b1s b2s = M.toList $ M.intersectionWith (,) (bindsMap b1s) (bindsMap b2s)
+meetBinds b1s b2s = tracePP "meetBinds" $ M.toList $ M.intersectionWith (,) (bindsMap b1s) (bindsMap b2s)
 
 
 -- | Break one level of padded objects
@@ -602,8 +610,8 @@ zipType2 γ f (TFun xts t r) (TFun xts' t' r') =
 
 zipType2 γ f (TObj bs r) (TObj bs' r') = TObj mbs $ f r r'
   where
-    mbs = safeZipWith "zipType2:TObj" (zipBind2 γ f) (L.sortBy compB bs) (L.sortBy compB bs')
-    compB (B s _) (B s' _) = compare s s'
+    mbs = safeZipWith "zipType2:TObj" (zipOBind2 γ f) (L.sortBy compB bs) (L.sortBy compB bs')
+    compB (OB s _ _) (OB s' _ _) = compare s s'
 
 zipType2 γ f (TArr t r) (TArr t' r') = TArr (zipType2 γ f t t') $ f r r'
 
@@ -619,4 +627,7 @@ zipTypes γ f ts t =
 
 zipBind2 γ f (B s t) (B s' t') | s == s' = B s $ zipType2 γ f t t' 
 zipBind2 _ _ _       _                   = errorstar "BUG[zipBind2]: mis-matching binders"
+
+zipOBind2 γ f (OB s t o) (OB s' t' o') | s == s'  = OB s (zipType2 γ f t t') (o `mergeOptBinding` o') 
+zipOBind2 _ _ _       _                           = errorstar "BUG[zipOBind2]: mis-matching binders"
 

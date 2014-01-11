@@ -455,7 +455,7 @@ checkAnnotation msg e t ta = do
     sub EqT  = return ta
     sub _    = tcError $ catMessage err msg' 
     err      = errorAnnotation (srcPos $ getAnnotation e) e t ta
-    msg'     = "[" ++ msg ++ "]"
+    msg'     = "[" ++ msg ++ "] "
 
 --------------------------------------------------------------------------------
 --  Cast Helpers ---------------------------------------------------------------

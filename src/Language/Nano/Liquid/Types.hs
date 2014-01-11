@@ -271,13 +271,14 @@ emapReft f γ (TFun xts t r) = TFun (emapReftBind f γ' <$> xts) (emapReft f γ'
   where 
     γ'                      = (b_sym <$> xts) ++ γ 
     -- ts                      = b_type <$> xts 
-emapReft f γ (TObj bs r)    = TObj (emapReftBind f γ' <$> bs) (f γ r)
+emapReft f γ (TObj bs r)    = TObj (emapReftOBind f γ' <$> bs) (f γ r)
   where 
-    γ'                      = (b_sym <$> bs) ++ γ 
+    γ'                      = (ob_sym <$> bs) ++ γ 
 emapReft f γ (TArr t r)     = TArr (emapReft f γ t) (f γ r)
 emapReft _ _ _              = error "Not supported in emapReft"
 
-emapReftBind f γ (B x t)    = B x $ emapReft f γ t
+emapReftBind f γ (B x t)     = B x (emapReft f γ t)
+emapReftOBind f γ (OB x t o) = OB x (emapReft f γ t) o
 
 ------------------------------------------------------------------------------------------
 -- mapReftM :: (PP a, F.Reftable b, Monad m, Applicative m) => (a -> m b) -> RType a -> m (RType b)
@@ -286,12 +287,14 @@ mapReftM f (TVar α r)      = TVar α <$> f r
 mapReftM f (TApp c ts r)   = TApp c <$> mapM (mapReftM f) ts <*> f r
 mapReftM f (TFun xts t r)  = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t <*> (return $ F.top r) --f r 
 mapReftM f (TAll α t)      = TAll α <$> mapReftM f t
-mapReftM f (TObj bs r)     = TObj   <$> mapM (mapReftBindM f) bs <*> f r
+mapReftM f (TObj bs r)     = TObj   <$> mapM (mapReftOBindM f) bs <*> f r
 mapReftM f (TArr t r)      = TArr   <$> (mapReftM f t) <*> f r
 mapReftM f (TAnd ts)       = TAnd   <$> mapM (mapReftM f) ts
 mapReftM _ t               = error   $ render $ text "Not supported in mapReftM: " <+> pp t 
 
-mapReftBindM f (B x t)     = B x <$> mapReftM f t
+mapReftBindM f (B x t)     = B  x <$> mapReftM f t
+mapReftOBindM f (OB x t o) = do t' <- mapReftM f t 
+                                return $ OB x t' o
 
 ------------------------------------------------------------------------------------------
 -- | fold over @RType@ -------------------------------------------------------------------
@@ -311,7 +314,7 @@ efoldReft g f = go
     go γ z t@(TApp _ ts r)  = f γ r $ gos (efoldExt g (B (rTypeValueVar t) t) γ) z ts
     go γ z (TAll _ t)       = go γ z t
     go γ z (TFun xts t r)   = f γ r $ go γ' (gos γ' z (b_type <$> xts)) t  where γ' = foldr (efoldExt g) γ xts
-    go γ z (TObj xts r)     = f γ r $ (gos γ' z (b_type <$> xts))      where γ' = foldr (efoldExt g) γ xts
+    go γ z (TObj xts r)     = f γ r $ (gos γ' z (ob_type <$> xts))      where γ' = foldr (efoldOExt g) γ xts
     go γ z (TArr t r)       = f γ r $ go γ z t    
     go γ z (TAnd ts)        = gos γ z ts 
     go _ _ t                = error $ "Not supported in efoldReft: " ++ ppshow t
@@ -319,6 +322,7 @@ efoldReft g f = go
     gos γ z ts              = L.foldl' (go γ) z ts
 
 efoldExt g xt γ             = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
+efoldOExt g xt γ            = F.insertSEnv (ob_sym xt) (g $ ob_type xt) γ
 
 ------------------------------------------------------------------------------------------
 efoldRType :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> RType r -> a -> a) -> F.SEnv b -> a -> RType r -> a
@@ -329,7 +333,7 @@ efoldRType g f               = go
     go γ z t@(TApp _ ts _)   = f γ t $ gos (efoldExt g (B (rTypeValueVar t) t) γ) z ts
     go γ z t@(TAll _ t1)     = f γ t $ go γ z t1
     go γ z t@(TFun xts t1 _) = f γ t $ go γ' (gos γ' z (b_type <$> xts)) t1  where γ' = foldr (efoldExt g) γ xts
-    go γ z t@(TObj xts _)    = f γ t $ (gos γ' z (b_type <$> xts))           where γ' = foldr (efoldExt g) γ xts
+    go γ z t@(TObj xts _)    = f γ t $ (gos γ' z (ob_type <$> xts))          where γ' = foldr (efoldOExt g) γ xts
     go γ z t@(TArr t1 _)     = f γ t $ go γ z t1    
     go γ z   (TAnd ts)       = gos γ z ts 
     go _ _ t                 = error $ "Not supported in efoldRType: " ++ ppshow t

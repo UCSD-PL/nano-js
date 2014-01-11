@@ -483,7 +483,7 @@ tcExpr γ (ObjectLit l bs)
   = do let (ps, es)  = unzip bs
        ets          <- mapM (tcExpr γ) es
        let (es', ts) = unzip ets
-       let bts       = zipWith B (F.symbol <$> ps) ts
+       let bts       = zipWith3 OB (F.symbol <$> ps) ts (repeat False)
        return (ObjectLit l (zip ps es'), TObj bts fTop)
 
 tcExpr γ (Cast l@(Ann loc fs) e)

@@ -87,13 +87,13 @@ unify l _ _ _                            (TBd _                 )
 
 unify l γ θ   (TObj bs1 _           )    (TObj bs2 _            )       
   | s1s == s2s        
-  = unifys l γ θ (b_type <$> L.sortBy ord bs1) (b_type <$> L.sortBy ord bs2)
+  = unifys l γ θ (ob_type <$> L.sortBy ord bs1) (ob_type <$> L.sortBy ord bs2)
   | otherwise         
   = return θ
     where
-      s1s = L.sort $ b_sym <$> bs1 
-      s2s = L.sort $ b_sym <$> bs2
-      ord b b' = compare (b_sym b) (b_sym b')
+      s1s = L.sort $ ob_sym <$> bs1 
+      s2s = L.sort $ ob_sym <$> bs2
+      ord b b' = compare (ob_sym b) (ob_sym b')
 
 unify l γ θ   (TArr t _             )    (TArr t' _                )    
   = unify l γ θ t t'
