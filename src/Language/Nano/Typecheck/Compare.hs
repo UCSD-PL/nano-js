@@ -472,12 +472,12 @@ padObject :: (Eq r, Ord r, F.Reftable r, PP r) =>
 
 padObject γ (TObj bs1 r1) (TObj bs2 r2) = (TObj jbs' fTop, TObj b1s' r1, TObj b2s' r2, direction)
   where
-    direction                           = (tracePP "cmnDir" cmnDir) &*& (tracePP "disDir direction" $ distDir d1s d2s)
+    direction                           = cmnDir &*& distDir d1s d2s
     cmnDir                              = mconcatP [ d | (_, (_ ,_  ,_  ,d), _ ) <- cmnTs]
     jbs'                                = [OB x t0  o0 | (x, (t0,_  ,_  ,_), o0) <- cmnTs]
     b1s'                                = [OB x t1' o1 | (x, (_ ,t1',_  ,_), o1) <- cmnTs]
     b2s'                                = [OB x t2' o2 | (x, (_ ,_  ,t2',_), o2) <- cmnTs]
-    (d1s, d2s)                          = tracePP ("distinct bindings from: " ++ ppshow bs1 ++ " and " ++ ppshow bs2) $ distinctBs bs1 bs2
+    (d1s, d2s)                          = distinctBs bs1 bs2
     cmnTs                               = [(x, compareTs γ t1 t2, o1 `mergeOptBinding` o2) | (x, ((t1, o1), (t2, o2))) <- cmn]
     cmn                                 = meetBinds bs1 bs2 
 
@@ -517,13 +517,13 @@ meetBinds b1s b2s = tracePP "meetBinds" $ M.toList $ M.intersectionWith (,) (bin
 -- bkPaddedObject :: (F.Reftable r, PP r) => SourceSpan -> RType r -> RType r -> [(RType r, RType r)]
 --------------------------------------------------------------------------------
 bkPaddedObject l t1@(TObj xt1s _) t2@(TObj xt2s _) 
-  | n == n1 && n == n2 = snd <$> cmn
+  | n1 == 0 && n2 == 0 = snd <$> cmn
   | otherwise          = die $ bugMalignedFields l t1 t2
     where
       cmn              = meetBinds xt1s xt2s
-      n                = length cmn
-      n1               = length xt1s
-      n2               = length xt2s
+      -- The lengths of the lists of the distinct fields in each 
+      -- object that are not optional.
+      (n1, n2)         = mapPair (length . filter (not . snd)) $ distinctBs xt1s xt2s
 
 bkPaddedObject l _ _   = die $ bug l $ "bkPaddedObject: can only break objects"
 
