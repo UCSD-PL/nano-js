@@ -137,16 +137,21 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (PRef Type r (RType r)) 
   apply θ (PMono xts r) = PMono ((toType . appTy θ . ofType <$>) <$> xts) r
   apply θ (PPoly xts t) = PPoly ((toType . appTy θ . ofType <$>) <$> xts) (apply θ t)
 
+instance (PP r, Ord r, F.Reftable r) => Substitutable r (PVar Type) where
+  apply θ (PV s l t as) = PV s l (apply θ' t) (mapFst3 (apply θ') <$> as)
+    where θ'       = fromLists (fmap toType <$> vs) ls
+          (vs, ls) = toLists θ
+
 instance (PP r, Ord r, F.Reftable r) => Substitutable r (Bind r) where 
   apply θ (B z t) = B z $ appTy θ t
 
 instance Free (RType r) where
-  free (TApp _ ts ps _)       = S.unions   $ free <$> ts
-  free (TVar α _)             = S.singleton α 
-  free (TFun xts t h h' _)    = S.unions   $ free <$> funTs (t:xts, h, h')
-  free (TAll α t)             = S.delete α $ free t 
-  free (TObj bs _)            = S.unions   $ free <$> b_type <$> bs
-  free (TBd (TD _ _ α h t _ ))= foldr S.delete (free t) α
+  free (TApp _ ts ps _)          = S.unions   $ free <$> ts
+  free (TVar α _)                = S.singleton α 
+  free (TFun xts t h h' _)       = S.unions   $ free <$> funTs (t:xts, h, h')
+  free (TAll α t)                = S.delete α $ free t 
+  free (TObj bs _)               = S.unions   $ free <$> b_type <$> bs
+  free (TBd (TD _ _ α _ h t _ )) = foldr S.delete (free t) α
 
 instance (Free t, Free m) => Free (PRef t s m) where
   free (PMono xts _) = S.unions $ map (free . snd) xts
@@ -218,7 +223,7 @@ appTy θ (TObj bs z)                   = TObj (map (\b -> B { b_sym = b_sym b, b
 appTy (Su m _) t@(TVar α r)           = (M.lookupDefault t α m) `strengthen` r
 appTy θ (TFun ts t h h' r)            = appTyFun θ ts t h h' r
 appTy (Su ts ls) (TAll α t)           = apply (Su (M.delete α ts) M.empty) t  -- Assuming all locations are always quantified
-appTy θ@(Su ts ls) (TBd (TD c v α h t s)) = TBd $ TD c v α (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
+appTy θ@(Su ts ls) (TBd (TD c v α π h t s)) = TBd $ TD c v α (apply θ π) (apply θ h) (apply (Su (foldr M.delete ts α) ls) t) s
 
 -- Avoid capturing all locs in subs on funs for now
 appTyFun θ ts t h h' r =
@@ -237,8 +242,8 @@ unfoldFirst env t = go t
     go (TAll v t)              = TAll v $ go t
     go (TApp (TDef id) acts _ _) = 
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ _ vs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
-        _                              -> error $ errorUnboundId id
+        Just (TBd (TD _ _ vs πs _ bd _ )) -> apply (fromLists (zip vs acts) []) bd
+        _                                 -> error $ errorUnboundId id
     go (TApp c a rs r)         = TApp c (go <$> a) rs r
     go t@(TVar _ _ )           = t
     goB (B s t)                = B s $ go t
@@ -257,9 +262,11 @@ unfoldMaybeEnv :: (PP r, Ord r, F.Reftable r) =>
 -------------------------------------------------------------------------------
 unfoldMaybeEnv env t@(TApp (TDef id) acts _ _) =
       case envFindTy (F.symbol id) env of
-        Just (TBd (TD _ s vs h bd _ )) -> Right $ let θ = fromLists (zip vs acts) []
-                                                  in (h, B s bd, θ)
-        _                            -> Left  $ (printf "Failed unfolding: %s" $ ppshow t)
+        Just (TBd (TD _ s vs πs h bd _ )) ->
+          Right $ (h, B s bd, θ) where θ = fromLists (zip vs acts) []
+        _                                 ->
+          Left  $ (printf "Failed unfolding: %s" $ ppshow t)
+
 -- The only thing that is unfoldable is a TDef.
 -- The rest are just returned as they are.
 unfoldMaybeEnv _ t                           = Left $ (printf "Attempt to unfold: %s" $ ppshow t)
@@ -312,7 +319,6 @@ dotAccessRef (γ,σ) f _ = Nothing
 -------------------------------------------------------------------------------
 dotAccessBase ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) => 
   Env (RType r) -> s -> RType r -> Maybe [ObjectAccess r]
-  -- (RType r, RType r)
 -------------------------------------------------------------------------------
 dotAccessBase _ f t@(TObj bs _) = 
   do  case find (match $ F.symbol f) bs of
@@ -341,11 +347,13 @@ dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccessBase γ f t_unfold
     (σ_unfold, t_unfold, θ_unfold) = unfoldSafe γ $ tracePP "dotAccessDef unfolding" t
     addUnfolded access             = 
       case (ac_heap access, ac_unfold access) of
-        (Just x, Just y) -> error $ (printf "BUG: already unfolded and got %s %s" (ppshow x) (ppshow (fst3 y, thd3 y)))
+        (Just x, Just y) -> err x y
         _                -> access { ac_heap   = Just σ_unfold
                                    , ac_unfold = Just (i, θ_unfold, t_unfold)
                                    , ac_cast   = t
                                    }
+    err x y = error $ printf "BUG: already unfolded %s and got %s %s"
+                             (ppshow x) (ppshow (fst3 y)) (ppshow (thd3 y))
 
 -- Accessing the @x@ field of the union type with @ts@ as its parts, returns
 -- "Nothing" if accessing all parts return error, or "Just (ts, tfs)" if

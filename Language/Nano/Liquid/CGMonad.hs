@@ -1028,11 +1028,12 @@ splitC' (Sub _ _ t1 t2@(TApp TUn _ _ _)) =
 ---------------------------------------------------------------------------------------
 -- |Type definitions
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i t1@(TApp d1@(TDef _) t1s _ _) t2@(TApp d2@(TDef _) t2s _ _)) | d1 == d2
+splitC' (Sub g i t1@(TApp d1@(TDef _) t1s r1s _) t2@(TApp d2@(TDef _) t2s r2s _)) | d1 == d2
   = do  let cs = bsplitC g i t1 t2
         -- constructor parameters are covariant
         cs'   <- concatMapM splitC $ safeZipWith "splitcTDef" (Sub g i) t1s t2s
-        return $ cs ++ cs' 
+        cs''  <- concatMapM (rsplitC g i) $ safeZip "splitcTDef rs"  r1s r2s
+        return $ cs ++ cs' ++ cs''
 
 splitC' (Sub _ _ (TApp (TDef _) _ _ _) (TApp (TDef _) _ _ _))
   = errorstar "Unimplemented: Check type definition cycles"
@@ -1072,6 +1073,14 @@ splitC' (Sub _ _ t1@(TObj _ _ ) t2)
 splitC' x 
   = cgError (srcPos x) $ bugBadSubtypes x 
 
+rsplitC γ i (PMono _ _, PMono _ _)
+  = cgError (srcPos i) "rsplitC on PMono"
+
+rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
+  = do γ' <- envAdds ((ofType <$>) <$> s2) γ
+       splitC $ Sub γ' i (F.subst su r1) r2
+  where
+    su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
 ---------------------------------------------------------------------------------------
 bsplitC :: (F.Reftable r) => CGEnv -> a -> RType r -> RType r -> [F.SubC a]

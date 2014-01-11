@@ -94,6 +94,9 @@ module Language.Nano.Typecheck.Types (
   -- * Operator Types
   , infixOpTy
   , prefixOpTy 
+
+  -- * Handy TDef funs
+  , typeRefArgs
   
   -- * Annotations
   , Annot (..)
@@ -186,9 +189,6 @@ instance Functor PVar where
 instance F.Symbolic (PVar a) where
   symbol = pv_sym
 
-instance PP (PVar a) where
-  pp     = pprint . F.symbol
-
 instance F.Symbolic a => F.Symbolic (Located a) where 
   symbol = F.symbol . val
     
@@ -198,12 +198,19 @@ data TBody r
    = TD { td_con  :: !TCon          -- TDef name ...
         , td_self :: F.Symbol       -- "Self" binder for body
         , td_args :: ![TVar]        -- Type variables
+        , td_refs :: ![PVar Type]   -- Predicate Refinements
         , td_heap :: !(RHeapEnv r)  -- An existentially quantified heap
         , td_body :: !(RType r)     -- int or bool or fun or object ...
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
 
-type Measure = (F.Symbol, [F.Symbol], F.Expr) -- (name, v in keys(v) := ..., e)
+type Measure = (F.Symbol, [F.Symbol], F.Expr) -- (name, v in keys(v) = ..., e)
+
+typeRefArgs γ t@(TDef i) =
+  case envFindTy i γ of
+    Just (TBd body) -> td_refs body
+    _               -> error $ "BUG: typeRefArgs of " ++ ppshow t
+typeRefArgs _ _        = []
 
 -- | Type Constructors
 data TCon 
@@ -801,11 +808,13 @@ instance (Eq r, Ord r, F.Reftable r) => Eq (RType r) where
   TVar v1 r1             == TVar v2 r2            = (v1, r1)       == (v2, r2)
   TFun b1 t1 hi1 ho1 r1  == TFun b2 t2 hi2 ho2 r2 = (b1, t1, hi1, ho1, r1) == (b2, t2, hi2, ho2, r2)
   TObj b1 r1             == TObj b2 r2            = (null $ b1 L.\\ b2) && (null $ b2 L.\\ b1) && r1 == r2
-  TBd (TD c1 v1 a1 h1 b1 _) == TBd (TD c2 v2 a2 h2 b2 _) = (c1, v1, a1, h1, b1)   == (c2, v2, a2, h2, b2)
+  TBd b1                 == TBd b2                = b1 `eqTBd` b2
   TAll _ _               == TAll  _ _             = undefined -- TODO
   TAllP _ _              == TAllP _ _             = undefined -- TODO
   _                      == _                     = False
 
+eqTBd (TD c1 v1 a1 r1 h1 b1 _) (TD c2 v2 a2 r2 h2 b2 _)
+  = (c1, v1, a1, r1, h1, b1) == (c2, v2, a2, r2, h2, b2)
 
 
 ---------------------------------------------------------------------------------
@@ -926,6 +935,9 @@ instance PP Predicate where
 instance PP r => PP (UReft r) where
   pp (U r p)  = pp r <+> text "U" <+> pp p
 
+instance PP a => PP (PVar a) where
+  pp (PV v _ _ _)   = pprint v
+
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
   pp (TFun xts t h h' _)        = ppArgs parens comma xts
@@ -940,8 +952,9 @@ instance F.Reftable r => PP (RType r) where
   pp (TApp c [] ps r)           = F.ppTy r $ ppTC c 
   pp (TApp c ts ps r)           = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs
-  pp (TBd (TD (TDef id) s v h r _)) =  pp (F.symbol id)
+  pp (TBd (TD (TDef id) s v πs h r _)) =  pp (F.symbol id)
                                    <+> ppArgs brackets comma v
+                                   <+> ppArgs angleBrackets comma πs 
                                    <+> text "∃!" <+> pp h <+> text "."
                                    <+> pp s <+> text ":" <+> pp r
   pp (TBd _)                    = error "This is not an acceptable form for TBody" 

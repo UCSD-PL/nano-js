@@ -22,7 +22,7 @@ import           Control.Applicative ((<$>), (<*), (<*>))
 import           Data.Char (toLower, isLower, isSpace) 
 import           Data.Monoid (mempty, mconcat, mappend)
 
-import           Language.Fixpoint.Names (propConName)
+import           Language.Fixpoint.Names (dummyName, propConName)
 import           Language.Fixpoint.Misc (errorstar)
 import           Language.Fixpoint.Types hiding (quals)
 import           Language.Fixpoint.Parse 
@@ -57,13 +57,14 @@ identifierP :: Parser (Id SourceSpan)
 identifierP = withSpan Id lowerIdP -- <$> getPosition <*> lowerIdP -- Lexer.identifier
 
 tBodyP :: Parser (Id SourceSpan, RefType, [Measure])
-tBodyP = do  id <- identifierP 
-             tv <- option [] tParP
-             th <- option heapEmpty extHeapP
-             ts <- option (stringSymbol "vt") (try (symbolP >>= \b -> colon >> return b ))
-             tb <- bareTypeP
-             ms <- option [] (reserved "with" >> spaces >> typeMeasuresP)
-             return $ (id, TBd $ TD (TDef id) ts tv th tb (idLoc id), ms)
+tBodyP = do  id  <- identifierP 
+             tv  <- option [] tParP
+             trs <- option [] predVarDefsP
+             th  <- option heapEmpty extHeapP
+             ts  <- option (stringSymbol "vt") (try (symbolP >>= \b -> colon >> return b ))
+             tb  <- bareTypeP
+             ms  <- option [] (reserved "with" >> spaces >> typeMeasuresP)
+             return $ (id, TBd $ TD (TDef id) ts tv trs th tb (idLoc id), ms)
 --     foo (x) = e
 -- and bar (x) = e
 typeMeasuresP = do
@@ -273,7 +274,7 @@ predVarTypeP
           then return $ map toPairs bs
           else parserFail $ "Predicate Variable with non-Prop output type"
     where
-      toPairs (B x t) = (x, tracePP "toPairs" $ toType t)
+      toPairs (B x t) = (x, toType t)
       err             = error "Expected a function (for now)"
       isPropBareType (TApp (TDef c) [] _ _) = unId c == propConName
       isPropBareType _                      = False
@@ -293,6 +294,28 @@ monoPredicateP
 
 predicate1P
   =  liftM (PMono [] . predUReft) monoPredicate1P 
+     <|> (braces $ liftM2 bPPoly symsP' refasP)
+  where
+    symsP' = do ss <- symsP
+                fs <- mapM refreshSym (fst <$> ss)
+                return $ zip ss fs
+    refreshSym s = liftM (intSymbol (symbolString s)) freshIntP
+
+symsP
+  = do reserved "\\"
+       ss <- sepBy symbolP spaces
+       reserved "->"
+       return $ (, TApp TUndef [] [] top) <$> ss
+ <|> return []
+
+bPPoly []   _    = error "Empty poly list"
+bPPoly syms expr = PPoly ss var
+  where
+    (ss, (v,_)) = (init syms', last syms')
+    syms' = [(y, s) | ((_, s), y) <- syms]
+    su    = mkSubst [(x, EVar y) | ((x, _), y) <- syms]
+    var   = TVar (TV dummySymbol dummySpan) (U r mempty)
+    r     = su `subst` Reft (v, expr)
 
 monoPredicate1P     
   =  try (reserved "True" >> return mempty)

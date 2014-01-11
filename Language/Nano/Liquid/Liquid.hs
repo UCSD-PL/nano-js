@@ -112,25 +112,23 @@ generateConstraints cfg pgm = getCGInfo cfg p . consNano $ p
 
 addRefSorts :: REnv -> RefType -> RefType
 addRefSorts γ t@(TApp c ts rs r)
-  = TApp c ts rs' r'
+  = rs'`seq`TApp c ts rs' r'
   where
-    rs'               = addRefSortsRef <$> zip ps trs
-    ps                = lookupTyPs γ c
-    (trs, rest)       = splitAt (length ps) rs
+    rs'               = addRefSortsRef <$> zip ps (traceShow "trs" trs)
+    ps                = typeRefArgs γ c
+    (trs, rest)       = splitAt (length ps) $ traceShow "old rs" rs
     r'                = foldl go r rest
     go r (PMono _ r') = r' `F.meet` r
+    go r _            = r
 
 addRefSorts _ t
   = t
-
-lookupTyPs γ (TDef i) = []
-lookupTyPs _ _        = []
 
 -- addRefSortsRef :: (PVar t, PRef t s m) -> PRef t s m  
 -- honestly not sure what's going on here, but lifted
 -- from liquid haskell. will figure it out :)
 addRefSortsRef (p, PPoly s t)
-  = PPoly (safeZip "addRefSortsRefPoly" (fst <$> s) (fst3 <$> pv_as p)) t
+  = PPoly (safeZip "addRefSortsRefPoly" (fst <$> s) $ (fst3 <$> pv_as p)) t
 addRefSortsRef (p, PMono s r@(U _ (Pr [up])))
   = PMono (safeZip "addRefSortsRefMono" (snd3 <$> pv_as up) (fst3 <$> pv_as p)) r
 addRefSortsRef (_, m)
