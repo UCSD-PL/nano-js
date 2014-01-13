@@ -63,6 +63,8 @@ module Language.Nano.Typecheck.Types (
   , bkAll
   , bkUnion, rUnion, rsUnion, rTypeR, setRTypeR
   , noUnion, unionCheck
+  , typeVarArgs
+  , typeRefArgs
 
   -- * Regular Types
   , Type
@@ -94,9 +96,6 @@ module Language.Nano.Typecheck.Types (
   -- * Operator Types
   , infixOpTy
   , prefixOpTy 
-
-  -- * Handy TDef funs
-  , typeRefArgs
   
   -- * Annotations
   , Annot (..)
@@ -211,6 +210,13 @@ typeRefArgs γ t@(TDef i) =
     Just (TBd body) -> td_refs body
     _               -> error $ "BUG: typeRefArgs of " ++ ppshow t
 typeRefArgs _ _        = []
+
+typeVarArgs γ t@(TDef i) =                          
+  case envFindTy i γ of
+    Just (TBd body) -> td_args body
+    _               -> error $ "BUG: typeVarArgs of " ++ ppshow t
+
+typeVarArgs _ _        = []
 
 -- | Type Constructors
 data TCon 
@@ -390,12 +396,18 @@ emapReft f γ (TFun xts t hi ho r)= TFun (emapReftBind f γ' <$> xts)
 emapReft f γ (TObj bs r)         = TObj (emapReftBind f γ' <$> bs) (f γ r)
   where 
     γ'                           = (b_sym <$> bs) ++ γ 
-emapReft _ _ _                   = error "Not supported in emapReft"
+emapReft f γ t@(TBd bd)          = TBd $ emapReftBody f γ bd
+emapReft _ _ t                   = error "Not supported in emapReft"
 
 emapRef f γ (PMono xs r)         = PMono xs (f γ r)                                   
 emapRef f γ (PPoly xs t)         = PPoly xs (emapReft f γ t)
 
 emapReftBind f γ (B x t)         = B x $ emapReft f γ t
+
+emapReftBody f γ bd
+  = bd { td_heap = fmap (emapReftBind f γ) $ td_heap bd
+       , td_body = emapReft f γ            $ td_body bd
+       } 
 
 ------------------------------------------------------------------------------------------
 -- | fold over @RType@ -------------------------------------------------------------------
@@ -936,7 +948,17 @@ instance PP r => PP (UReft r) where
   pp (U r p)  = pp r <+> text "U" <+> pp p
 
 instance PP a => PP (PVar a) where
-  pp (PV v _ _ _)   = pprint v
+  pp (PV v _ _ as)   = pprint v
+
+instance (F.Reftable a) => PP (PRef Type a (RType a)) where
+  pp (PMono [] s) = F.ppTy s $ pprint (F.FVar 0)
+  pp (PMono ss s) = text "\\" <+> ppArgs id (text "->") ss <+> text "->" <+> F.ppTy s (pprint (F.FVar 0))
+
+  pp (PPoly [] s) = pp s
+  pp (PPoly ss s) = text "\\" <+> ppArgs id (text "->") ss <+> text "->" <+> pp s
+
+-- data PRef t s m = PMono [(F.Symbol, t)] s
+--                 | PPoly [(F.Symbol, t)] m
 
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
@@ -947,8 +969,8 @@ instance F.Reftable r => PP (RType r) where
   pp t@(TAll _ _)               = ppAll $ bkAll t
   pp t@(TAllP _ _)              = ppAll $ bkAll t
   pp (TApp TUn ts ps r)         = F.ppTy r $ parens (ppArgs id (text "+") ts )
-  pp (TApp d@(TDef _)ts ps r)   = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts 
-
+  pp (TApp d@(TDef _)ts ps r)   = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts
+                                                    <+> ppArgs angleBrackets comma ps
   pp (TApp c [] ps r)           = F.ppTy r $ ppTC c 
   pp (TApp c ts ps r)           = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs

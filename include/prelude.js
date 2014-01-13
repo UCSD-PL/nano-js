@@ -147,7 +147,7 @@ function unwind(x) {
 
 
 /*@ measure prop        :: (boolean) => bool                              */
-/*@ measure field       :: forall A B. (A, string) => B                   */
+/*@ measure field       :: forall A. (A, string) => number              */
 
 /*************************************************************************/
 /************** Run-Time Tags ********************************************/

@@ -44,6 +44,7 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
+  , expandTApp
 
   -- * RefHeaps
   , safeRefReadHeap
@@ -63,8 +64,10 @@ import           Language.Nano.Types
 import           Language.Nano.Env
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
+import           Language.Nano.Typecheck.Subst
 import qualified Language.Fixpoint.Types as F
 import           Language.Fixpoint.PrettyPrint
+import           Language.Fixpoint.Misc
 import           Text.PrettyPrint.HughesPJ
 import           Control.Applicative 
   
@@ -237,3 +240,25 @@ safeRefReadHeap :: String -> CGEnv -> RefHeap -> Location -> (Id SourceSpan, Ref
 safeRefReadHeap m g σ l = (x, t)
   where x = heapRead m l σ
         t = maybe (error m) id (envFindTy x $ renv g)
+
+expandTApp :: REnv -> RefType -> RefType            
+expandTApp γ (TApp c@(TDef _) ts rs r)
+  = TApp c ts (apply θ $ appRefts ps rs) r
+  where
+    ps  = typeRefArgs γ c
+    θ = fromLists (safeZip "appTVarArgs" (typeVarArgs γ c) ts) []
+
+expandTApp _ t
+  = t
+
+appRefts ps [] = PPoly [] . ofType . pv_ty <$> ps
+appRefts ps rs = safeZipWith "appRefts" toPoly rs ps
+
+toPoly (PPoly ss t) p
+  | length (pv_as p) == length ss
+  = PPoly ss t
+  | otherwise
+  = PPoly ([(s, t) | (t, s, _) <- pv_as p]) t
+toPoly (PMono ss r) t
+  = PPoly ss $ (ofType $ pv_ty t) `strengthen` r
+    

@@ -22,7 +22,7 @@ import           Control.Applicative ((<$>), (<*), (<*>))
 import           Data.Char (toLower, isLower, isSpace) 
 import           Data.Monoid (mempty, mconcat, mappend)
 
-import           Language.Fixpoint.Names (dummyName, propConName)
+import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Misc (errorstar)
 import           Language.Fixpoint.Types hiding (quals)
 import           Language.Fixpoint.Parse 

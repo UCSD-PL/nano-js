@@ -25,7 +25,9 @@
 /* ---------------- -------------- ---------------- */
 
 /*@
-type list[A] exists! l |-> tl:list[A] . r:{ data : A, next : <l> + null }
+type list[A]<p :: (A, A) => prop>
+        exists! l |-> tl:list[A<p (field me "data")>]<p>. 
+          r:{ data : A, next : <l> + null }
 
      with len(x) = 1 + lenp(field(r, "next"), tl)
      and keys(x) = Set_cup(Set_sng(field(r, "data")), keysp(field(r, "next"), tl))

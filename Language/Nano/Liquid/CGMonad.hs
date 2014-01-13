@@ -402,13 +402,17 @@ envAddGuard x b g = g { guards = guard b x : guards g }
     --     vEqX x    = F.PAtom F.Eq (F.eVar v) x
                            
 ---------------------------------------------------------------------------------------
-envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv RReft, F.Symbol, RefType, [TVar])
+envFindTyDef  :: Id SourceSpan -> CGM (RHeapEnv RReft, F.Symbol, RefType, [TVar], [PVar Type])
 ---------------------------------------------------------------------------------------
 envFindTyDef ty
   = do γ <- getTDefs
        case E.envFindTy ty γ of
          Just (TBd t) -> 
-           return (td_heap t, td_self t, td_body t, td_args t)
+           return (td_heap t,
+                   td_self t,
+                   td_body t,
+                   td_args t,
+                   td_refs t)
          Nothing -> error "BARF!!!"
 ---------------------------------------------------------------------------------------
 envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
@@ -576,23 +580,31 @@ freshTyWind :: (PP l, IsLocated l) =>
                -> CGM (RHeapEnv RReft, (F.Symbol, RefType), RefType, [Measure])
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
-  = do (σ,s,t,vs)  <- envFindTyDef ty
-       let (αs,ls)  = toLists θ
-       θ'          <- flip fromLists ls <$> mapM freshSubst αs
-       (su,σ')     <- freshHeapEnv l (apply θ' σ)
-       ms          <- (instMeas su <$>) <$> getRMeasures ty
-       -- g'          <- envAdds (toIdTyPair <$> heapTypes σ') g
-       return (σ', (s,F.subst su $ apply θ' t), mkApp (apply θ' . tVar <$> vs), ms)
+  = do (σ,s,t,vs,πs) <- envFindTyDef ty
+       γ             <- getTDefs
+       let (αs,ls)    = toLists θ
+       θ'            <- flip fromLists ls <$> mapM freshSubst αs
+       (su,σ')       <- freshHeapEnv l (apply θ' σ)
+       ms            <- (instMeas su <$>) <$> getRMeasures ty
+       πs'           <- mapM (freshPredRef l g) πs
+       let tApp       = mkApp (apply θ' . tVar <$> vs) πs'
+           psu        = zip πs (apply θ' πs')
+       return (tracePP "freshTyWind heap" $ expBi γ θ' psu <$> σ',
+               tracePP "freshTyWind bind" (s, exp γ θ' psu $ F.subst su t),
+               tracePP "freshTyWind tApp" $ exp γ θ' [] tApp,
+               ms)
     where 
+      exp γ θ su           = subPvs su . apply θ . expandTApp γ 
+      expBi γ θ su (B x t) = B x $ exp γ θ su t
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
       s                    = srcPos l
       toId                 = Id s . F.symbolString . b_sym                      
       toIdTyPair b         = (toId b, b_type b)
-      -- instHeapBind θ (m,b) = error "TBD: freshTyWind" >> {- freshBind l b >>= -} \b -> return (apply θ m, b)
-      mkApp vs             = TApp (TDef ty) vs [] F.top
+      mkApp vs πs          = TApp (TDef ty) vs πs F.top
       freshSubst (α,τ)     = do τ <- freshTy "freshTyWind" τ
                                 _ <- wellFormed l g τ
                                 return (α,τ)
+      subPvs su t          = foldl' (flip substPred) t su 
 
 -- | Instantiate Fresh Type (at Phi-site) 
 ---------------------------------------------------------------------------------------
@@ -1032,7 +1044,7 @@ splitC' (Sub g i t1@(TApp d1@(TDef _) t1s r1s _) t2@(TApp d2@(TDef _) t2s r2s _)
   = do  let cs = bsplitC g i t1 t2
         -- constructor parameters are covariant
         cs'   <- concatMapM splitC $ safeZipWith "splitcTDef" (Sub g i) t1s t2s
-        cs''  <- concatMapM (rsplitC g i) $ safeZip "splitcTDef rs"  r1s r2s
+        cs''  <- concatMapM (rsplitC g i) $ safeZip "splitC'" r1s r2s
         return $ cs ++ cs' ++ cs''
 
 splitC' (Sub _ _ (TApp (TDef _) _ _ _) (TApp (TDef _) _ _ _))
@@ -1082,6 +1094,9 @@ rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   where
     su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
+rsplitC _ i (ref1, ref2)
+  = cgError (srcPos i) $ printf "Can't split:\n%s\n%s" (ppshow ref1) (ppshow ref2)
+
 ---------------------------------------------------------------------------------------
 bsplitC :: (F.Reftable r) => CGEnv -> a -> RType r -> RType r -> [F.SubC a]
 ---------------------------------------------------------------------------------------
@@ -1129,7 +1144,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = {- tracePP msg () `seq`-} withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
@@ -1160,11 +1175,12 @@ subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _ _) t2@(TApp (TRef l2) _ _ _)
     -- subTypeContainers' "dead" l g tru fls
   | l1 `elem` seen = return ()
   | otherwise      = do (x,g') <- envAddFresh l t1 g
+                        γ      <- getTDefs
                         let th2 = snd $ safeRefReadHeap "subTypeWindHeaps(a)" g σ l2
                             th1 = if heapMem l1 (rheap g') then 
                                     snd $ safeRefReadHeap "subTypeWindHeaps(b)" g (rheap g') l1
                                   else
-                                    rType th2
+                                    expandTApp γ $ rType th2
                         subTypeWind' (l1:seen) l g' σ th1 th2
                         return ()
   -- where 

@@ -1,10 +1,16 @@
 /*@ include sorted-list.js */
 
-/*@ insert :: forall A.
+/* insert :: forall A.
   (x:<l>+null, k:A)/l |-> ls:incList[A]
       => {v:<k> | ((keysp(v,ks) = Set_cup(Set_sng(k),keysp(x,ls)))
                 && (lenp(v,ks) = 1 + lenp(x,ls)))}
          /k |-> ks:incList[A] */
+
+/*@ insert :: forall A.
+  (x:<l>+null, k:A)/l |-> ls:list[A]<{\h v -> h <= v}>
+      => {v:<k> | ((keysp(v,ks) = Set_cup(Set_sng(k),keysp(x,ls)))
+                && (lenp(v,ks) = 1 + lenp(x,ls)))}
+         /k |-> ks:list[A]<{\h v -> h <= v}> */
 function insert(x, k){
   if (x == null){
     var y  = {};
