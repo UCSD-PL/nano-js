@@ -11,17 +11,21 @@ var currentBandIndex = 0;
 
 var numberOfColorBands = 4;
 
+/*@ bandNumberValues :: [{ number | (0 <= v && v < 16) }] */
+var bandNumberValues =  [1, 0, 2, 10, 15]; // Brown, Black, Red, Empty, Blank.
 
-var bandNumberValues = /*: [{ number | (0 <= v && v < 16) }] */ [1, 0, 2, 10, 15]; // Brown, Black, Red, Empty, Blank.
-var buttonStrs = /*: [ string ]*/ ["0black", "1brown", "2red", "3orange", "4yellow", "5green", "6blue", "7violet", "8gray", "9white", "Empty", "Tbrown", "Tred", "Tgold", "Tsilver", "Blank"];
+/*@ buttonStrs :: [string] */ 
+var buttonStrs = ["0black", "1brown", "2red", "3orange", "4yellow", "5green", "6blue", "7violet", "8gray", "9white", "Empty", "Tbrown", "Tred", "Tgold", "Tsilver", "Blank"];
 
-//PV begin
-var firstBand  = {};
-var secondBand = {};
-var thirdBand  = {};
-var fourthBand = {};
-var fifthBand  = {};
-//PV end
+/*@ type band = { downImage : string
+                , image     : string
+                , overImage : string } */
+
+//var firstBand  = {};
+//var secondBand = {};
+//var thirdBand  = {};
+//var fourthBand = {};
+//var fifthBand  = {};
 
 /*@ add3Str :: (string, string, string) => string */
 function add3Str(a,b,c) { return "" }
@@ -29,15 +33,9 @@ function add3Str(a,b,c) { return "" }
 
 /*@ view_onOpen :: () => void */
 function view_onOpen() {
-  //XXX: The only reason this does not work yet is because of string addition...
-  //You can use function wrapper above and have this: 
-  //Removed the Add Sub qualifiers to make faster!
-  //
-  //
-  
-    firstBand.downImage = add3Str ("stock_images\\Button", buttonStrs[bandNumberValues[0]], "Down.PNG");
-    firstBand.image = add3Str( "stock_images\\Button" ,  buttonStrs[bandNumberValues[0]] ,  "Normal.PNG");
-    firstBand.overImage = add3Str( "stock_images\\Button" ,  buttonStrs[bandNumberValues[0]] ,  "Over.PNG");
+    firstBand.downImage = "stock_images\\Button" + buttonStrs[bandNumberValues[0]] + "Down.PNG";
+    firstBand.image     = "stock_images\\Button" + buttonStrs[bandNumberValues[0]] + "Normal.PNG";
+    firstBand.overImage = "stock_images\\Button" + buttonStrs[bandNumberValues[0]] + "Over.PNG";
 
     secondBand.downImage = add3Str( "stock_images\\Button" ,  buttonStrs[bandNumberValues[1]] ,  "Down.PNG");
     secondBand.image = add3Str( "stock_images\\Button" ,  buttonStrs[bandNumberValues[1]] ,  "Normal.PNG");

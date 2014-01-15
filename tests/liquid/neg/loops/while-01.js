@@ -1,4 +1,4 @@
-/*@ loop :: () => { number | v = 8 } */
+/*@ loop :: () => { number | v = 800 } */
 function loop(){
   var x = 1;
   while (x <= 5) {

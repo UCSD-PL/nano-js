@@ -76,3 +76,4 @@ tsVerifyFile f
        putStrLn $ render $ javaScript pgm
        putStrLn $ "***************************************************************"
        return (NoAnn, F.Safe)
+

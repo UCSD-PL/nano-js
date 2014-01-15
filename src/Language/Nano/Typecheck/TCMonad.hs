@@ -40,6 +40,9 @@ module Language.Nano.Typecheck.TCMonad (
   , getSubst
   , setSubst
 
+  -- * Function Types
+  , tcFunTys
+
   -- * Annotations
   , accumAnn
   , getAllAnns
@@ -103,7 +106,7 @@ import           Data.Generics                  (Data(..))
 import           Data.Maybe                     (fromJust)
 import           Data.Generics.Aliases
 import           Data.Typeable                  (Typeable (..))
-import           Language.ECMAScript3.Parser    (SourceSpan (..))
+import           Language.ECMAScript3.Parser.Type    (SourceSpan (..))
 -- import           Language.ECMAScript3.PrettyPrint
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
@@ -208,19 +211,16 @@ freshTyArgs l ξ αs t
 
 freshSubst :: (PP r, F.Reftable r) => SourceSpan -> IContext -> [TVar] -> TCM r (RSubst r)
 freshSubst l ξ αs
-  = do
-      fUnique αs
-      βs        <- mapM (freshTVar l) αs
-      setTyArgs l ξ βs
-      extSubst βs 
-      return     $ fromList $ zip αs (tVar <$> βs)
-    where
-      fUnique xs = when (not $ unique xs) $ logError (errorUniqueTypeParams l) ()
+  = do when (not $ unique αs) $ logError (errorUniqueTypeParams l) ()
+       βs        <- mapM (freshTVar l) αs
+       setTyArgs l ξ βs
+       extSubst βs 
+       return    $ fromList $ zip αs (tVar <$> βs)
 
 setTyArgs l ξ βs
   = do m <- tc_anns <$> get
        when (HM.member l m) $ tcError $ errorMultipleTypeArgs l
-       addAnn l $ {- tracePP msg $ -} TypInst ξ (tVar <$> βs)
+       addAnn l $ TypInst ξ (tVar <$> βs)
     where 
        msg = printf "setTyArgs: l = %s ξ = %s" (ppshow l) (ppshow ξ) 
 
@@ -246,14 +246,14 @@ setTyArgs l ξ βs
 -- So we're not gonna cast for those types
 -- the accessed type here. Instead
 -------------------------------------------------------------------------------
-safeGetIdx :: (Ord r, PP r, F.Reftable r) => IContext -> Int -> RType r -> TCM r (RType r)
--------------------------------------------------------------------------------
-safeGetIdx ξ f t = do  
-    γ <- getTDefs
-    e <- fromJust <$> getExpr
-    case getIdx γ f t of
-      Just (t',tf) -> castM ξ e t t' >> return tf
-      Nothing      -> error "safeGetIdx" --TODO: deadcode
+-- safeGetIdx :: (Ord r, PP r, F.Reftable r) => IContext -> Int -> RType r -> TCM r (RType r)
+-- -------------------------------------------------------------------------------
+-- safeGetIdx ξ f t = do  
+--     γ <- getTDefs
+--     e <- fromJust <$> getExpr
+--     case getIdx γ f t of
+--       Just (t',tf) -> castM ξ e t t' >> return tf
+--       Nothing      -> error "safeGetIdx" --TODO: deadcode
 
 -- Only support indexing in arrays atm. Discharging array bounds checks makes
 -- sense only for array types. 
@@ -330,8 +330,8 @@ initState verb pgm = TCS tc_errss tc_subst tc_cnt tc_anns tc_annss
     tc_cnt   = 0
     tc_anns  = HM.empty
     tc_annss = []
-    tc_defs  = defs pgm
-    tc_tdefs = tDefs pgm
+    tc_defs  = sigs pgm
+    tc_tdefs = defs pgm
     tc_expr  = Nothing
     tc_verb  = verb
 
@@ -432,7 +432,7 @@ subTypeM :: (Ord r, PP r, F.Reftable r) => RType r -> RType r -> TCM r SubDirect
 subTypeM t t' 
   = do  θ            <- getTDefs 
         let (_,_,_,d) = compareTs θ t t'
-        return $  {- trace (printf "subTypeM: %s %s %s" (ppshow t) (ppshow d) (ppshow t')) -}  d
+        return d
 
 ----------------------------------------------------------------------------------
 subTypeM' :: (IsLocated l, Ord r, PP r, F.Reftable r) => l -> RType r -> RType r -> TCM r ()
@@ -446,13 +446,13 @@ subTypesM ts ts' = zipWithM subTypeM ts ts'
 
 ----------------------------------------------------------------------------------
 checkAnnotation :: (F.Reftable r, PP r, Ord r) => 
-  String -> RType r -> Expression (AnnSSA r) -> RType r -> TCM r () 
+  String -> Expression (AnnSSA r) -> RType r -> RType r ->  TCM r (RType r) 
 ----------------------------------------------------------------------------------
-checkAnnotation msg ta e t = do
+checkAnnotation msg e t ta = do
     subTypeM t ta >>= sub
   where
-    sub SubT = return () 
-    sub EqT  = return () 
+    sub SubT = return ta 
+    sub EqT  = return ta
     sub _    = tcError $ catMessage err msg' 
     err      = errorAnnotation (srcPos $ getAnnotation e) e t ta
     msg'     = "[" ++ msg ++ "]"
@@ -498,3 +498,10 @@ addCast     ξ e c = addAnn loc fact >> return (wrapCast loc fact e)
 
 wrapCast _ f (Cast (Ann l fs) e) = Cast (Ann l (f:fs)) e
 wrapCast l f e                   = Cast (Ann l [f])    e
+
+
+tcFunTys l f xs ft = 
+  case funTys l f xs ft of 
+    Left e  -> tcError e 
+    Right a -> return a
+

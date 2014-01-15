@@ -29,7 +29,7 @@ module Language.Nano.Liquid.CGMonad (
   , freshTyInst
   , freshTyPhis
   , freshTyPhisWhile
-  , freshTyArr
+  , freshTyObj
 
   -- * Freshable
   , Freshable (..)
@@ -40,16 +40,16 @@ module Language.Nano.Liquid.CGMonad (
   , envAddReturn
   , envAddGuard
   , envFindTy
+  , envFindSpec
+  , envFindAnnot
   , envToList
   , envFindReturn
-  , envJoin
+  -- , envJoin
   , envPushContext
   , envGetContextCast
   , envGetContextTypArgs
 
   -- * Add Subtyping Constraints
-  , subTypes
-  , subType
   , subTypeContainers
 
   -- RJ: all alignment should already be done in TC why again?
@@ -63,12 +63,16 @@ module Language.Nano.Liquid.CGMonad (
   , addAnnot
 
   -- * Access container types
-  , safeGetIdx, safeGetProp
-  , indexType
+  -- , safeGetIdx
+  -- , safeGetProp
+  -- , indexType
 
 
   -- * Unfolding
   , unfoldSafeCG, unfoldFirstCG
+
+  -- * Function Types
+  , cgFunTys
 
   ) where
 
@@ -88,6 +92,7 @@ import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
+import           Language.Nano.Liquid.Qualifiers
 
 
 import qualified Language.Fixpoint.Types as F
@@ -102,7 +107,7 @@ import           Control.Monad.Error hiding (Error)
 import           Text.Printf 
 
 import           Language.ECMAScript3.Syntax
-import           Language.ECMAScript3.Parser        (SourceSpan (..))
+import           Language.ECMAScript3.Parser.Type   (SourceSpan (..))
 import           Language.ECMAScript3.PrettyPrint
 
 import           Debug.Trace                        (trace)
@@ -125,7 +130,7 @@ instance PP (F.SubC c) where
 
 
 -------------------------------------------------------------------------------
-getCGInfo :: Config -> Nano AnnTypeR RefType -> CGM a -> CGInfo
+getCGInfo :: Config -> NanoRefType -> CGM a -> CGInfo
 -------------------------------------------------------------------------------
 getCGInfo cfg pgm = clear . cgStateCInfo pgm . execute cfg pgm . (>> fixCWs)
   where 
@@ -133,14 +138,14 @@ getCGInfo cfg pgm = clear . cgStateCInfo pgm . execute cfg pgm . (>> fixCWs)
     fixCs        = get >>= concatMapM splitC . cs
     fixWs        = get >>= concatMapM splitW . ws
 
-execute :: Config -> Nano AnnTypeR RefType -> CGM a -> (a, CGState)
+execute :: Config -> NanoRefType -> CGM a -> (a, CGState)
 execute cfg pgm act
   = case runState (runErrorT act) $ initState cfg pgm of 
       (Left err, _) -> throw err
       (Right x, st) -> (x, st)  
 
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
-initState c pgm = CGS F.emptyBindEnv (defs pgm) (tDefs pgm) [] [] 0 mempty invs c 
+initState c pgm = CGS F.emptyBindEnv (sigs pgm) (defs pgm) [] [] 0 mempty invs c 
   where 
     invs        = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _)) <- invts pgm]  
 
@@ -160,7 +165,7 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fi) (cg_ann cg)
                 , F.gs    = measureEnv pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
-                , F.quals = quals pgm 
+                , F.quals = nanoQualifiers pgm 
                 }
 
 patchSymLits fi = fi { F.lits = F.symConstLits fi ++ F.lits fi }
@@ -175,25 +180,25 @@ getTDefs  = cg_tdefs <$> get
 -- | Get binding from object type
 
 -- Access field @f@ of type @t@, adding a cast if needed to avoid errors.
--------------------------------------------------------------------------------
-safeGetProp :: String -> RefType -> CGM RefType
--------------------------------------------------------------------------------
-safeGetProp f t
-  = do  γ <- getTDefs
-        case getProp γ f t of
-          Just (_,tf) -> return tf
-          Nothing      -> error "safeGetProp" --TODO: deadcode
+-- -------------------------------------------------------------------------------
+-- safeGetProp :: String -> RefType -> CGM RefType
+-- -------------------------------------------------------------------------------
+-- safeGetProp f t
+--   = do  γ <- getTDefs
+--         case getProp γ f t of
+--           Just (_,tf) -> return tf
+--           Nothing      -> error "safeGetProp" --TODO: deadcode
  
 -- DEPRECATE
 -- Access index @i@ of type @t@, adding a cast if needed to avoid errors.
--------------------------------------------------------------------------------
-safeGetIdx :: Int -> RefType -> CGM RefType
--------------------------------------------------------------------------------
-safeGetIdx i t
-  = do  γ <- getTDefs
-        case getIdx γ i t of
-          Just (_,tf) -> return tf
-          Nothing     -> error "CGM:safeGetIdx" --TODO: deadcode
+-- -------------------------------------------------------------------------------
+-- safeGetIdx :: Int -> RefType -> CGM RefType
+-- -------------------------------------------------------------------------------
+-- safeGetIdx i t
+--   = do  γ <- getTDefs
+--         case getIdx γ i t of
+--           Just (_,tf) -> return tf
+--           Nothing     -> error "CGM:safeGetIdx" --TODO: deadcode
 
 -- Only support indexing in arrays atm. Discharging array bounds checks makes
 -- sense only for array types. 
@@ -203,7 +208,7 @@ indexType :: RefType -> CGM RefType
 indexType (TArr t _) = return t
 indexType t@(TApp TUn ts r) = do
     ts' <- mapM indexType ts
-    return $ TApp TUn ts' F.top
+    return $ TApp TUn ts' fTop
 indexType _          = errorstar "Unimplemented: indexing type other than array."
 
 
@@ -340,14 +345,33 @@ envFindTy     :: (IsLocated x, F.Symbolic x, F.Expression x) => x -> CGEnv -> Re
 envFindTy x g = (`eSingleton` x) $ fromMaybe err $ E.envFindTy x $ renv g
   where 
     err       = throw $ bugUnboundVariable (srcPos x) (F.symbol x)
-                    
--- ---------------------------------------------------------------------------------------
--- envFindTy'     :: (F.Symbolic x, F.Expression x) => x -> CGEnv -> RefType 
--- ---------------------------------------------------------------------------------------
--- envFindTy' x g = (`eSingleton` x) $ fromMaybe err $ E.envFindTy x $ renv g
---   where 
---     err       = throw $ bugUnboundVariable dummySpan (F.symbol x)
 
+
+---------------------------------------------------------------------------------------
+envFindSpec     :: (IsLocated x, F.Symbolic x) => x -> CGEnv -> Maybe RefType 
+---------------------------------------------------------------------------------------
+envFindSpec x g = E.envFindTy x $ cge_spec g
+
+---------------------------------------------------------------------------------------
+--envFindAnnot     :: (IsLocated x, F.Symbolic x) => x -> CGEnv -> Maybe RefType 
+---------------------------------------------------------------------------------------
+-- envFindAnnot x g = tracePP ("envFindAnnot: " ++ ppshow x ++ " in " ++  ppshow xs) 
+--                  $ E.envFindTy x $ cge_anns g
+--   where 
+--     xs           = fst <$> envToList g
+
+envFindAnnot x g = msum [tAnn, tEnv] 
+  where
+    tAnn         = E.envFindTy x $ cge_anns g
+    tEnv         = E.envFindTy x $ renv     g
+
+
+-- envFindAnnot x g 
+--   | x `E.envMem` gAnns = E.envFindTy x gAnns 
+--   | otherwise          = E.envFindTy x gEnv
+--   where
+--     gAnns              = cge_anns g
+--     gEnv               = renv     g
 
 ---------------------------------------------------------------------------------------
 envToList     ::  CGEnv -> [(Id SourceSpan, RefType)]
@@ -359,45 +383,6 @@ envToList g = E.envToList $ renv g
 envFindReturn :: CGEnv -> RefType 
 ---------------------------------------------------------------------------------------
 envFindReturn = E.envFindReturn . renv
-
-
-----------------------------------------------------------------------------------
-envJoin :: AnnTypeR -> CGEnv -> Maybe CGEnv -> Maybe CGEnv -> CGM (Maybe CGEnv)
-----------------------------------------------------------------------------------
-envJoin _ _ Nothing x           = return x
-envJoin _ _ x Nothing           = return x
-envJoin l g (Just g1) (Just g2) = Just <$> envJoin' l g g1 g2 
-
-----------------------------------------------------------------------------------
-envJoin' :: AnnTypeR -> CGEnv -> CGEnv -> CGEnv -> CGM CGEnv
-----------------------------------------------------------------------------------
-
--- HINT: 1. use @envFindTy@ to get types for the phi-var x in environments g1 AND g2
---       2. use @freshTyPhis@ to generate fresh types (and an extended environment with 
---          the fresh-type bindings) for all the phi-vars using the unrefined types 
---          from step 1.
---       3. generate subtyping constraints between the types from step 1 and the fresh types
---       4. return the extended environment.
-
-envJoin' l g g1 g2
-  = do  {- td      <- E.envMap toType <$> cg_tdefs <$> get -}
-        let xs   = [x | PhiVar [x] <- ann_fact l] 
-            t1s  = (`envFindTy` g1) <$> xs 
-            t2s  = (`envFindTy` g2) <$> xs
-        when (length t1s /= length t2s) $ cgError l (bugBadPhi (srcPos l) t1s t2s)
-        γ       <- getTDefs
-        let t4   = zipWith (compareTs γ) t1s t2s
-        (g',ts) <- freshTyPhis (srcPos l) g xs $ toType <$> fst4 <$> t4
-        -- To facilitate the sort check t1s and t2s need to change to their
-        -- equivalents that have the same sort with the joined types (ts) (with
-        -- the added False's to make the types equivalent
-        g1' <- envAdds (zip xs $ snd4 <$> t4) g1 
-        g2' <- envAdds (zip xs $ thd4 <$> t4) g2
-
-        zipWithM_ (subTypeContainers "envJoin" l g1') [envFindTy x g1' | x <- xs] ts
-        zipWithM_ (subTypeContainers "envJoin" l g2') [envFindTy x g2' | x <- xs] ts
-
-        return g'
 
 
 ---------------------------------------------------------------------------------------
@@ -420,16 +405,14 @@ freshTyInst l g αs τs tbody
   = do ts    <- mapM (freshTy "freshTyInst") τs
        _     <- mapM (wellFormed l g) ts
        let θ  = fromList $ zip αs ts
-       return $  {- tracePP msg $ -} apply θ tbody
-    {-where-}
-    {-   msg = printf "freshTyInst αs=%s τs=%s: " (ppshow αs) (ppshow τs)-}
+       return $ apply θ tbody
 
 -- | Instantiate Fresh Type (at Phi-site) 
 ---------------------------------------------------------------------------------------
 freshTyPhis :: (PP l, IsLocated l) => l -> CGEnv -> [Id l] -> [Type] -> CGM (CGEnv, [RefType])  
 ---------------------------------------------------------------------------------------
 freshTyPhis l g xs τs 
-  = do ts <- mapM    (freshTy "freshTyPhis")  ({-tracePP "From" -} τs)
+  = do ts <- mapM    (freshTy "freshTyPhis")  τs
        g' <- envAdds (safeZip "freshTyPhis" xs ts) g
        _  <- mapM    (wellFormed l g') ts
        return (g', ts)
@@ -438,23 +421,16 @@ freshTyPhis l g xs τs
 freshTyPhisWhile :: (PP l, IsLocated l) => l -> CGEnv -> [Id l] -> [Type] -> CGM (CGEnv, [RefType])  
 ---------------------------------------------------------------------------------------
 freshTyPhisWhile l g xs τs 
-  = do ts <- mapM    (freshTy "freshTyPhis")  ({-tracePP "From" -} τs)
+  = do ts <- mapM    (freshTy "freshTyPhis")  τs
        g' <- envAdds (safeZip "freshTyPhis" xs ts) g
        _  <- mapM    (wellFormed l g) ts
        return (g', ts)
 
-
--- | Fresh Array Type
+-- | Fresh Object Type
 ---------------------------------------------------------------------------------------
-freshTyArr :: (PP l, IsLocated l) => l -> CGEnv -> RefType -> CGM (Id AnnTypeR, CGEnv)
----------------------------------------------------------------------------------------
-freshTyArr l g t 
-  = do t'     <- freshTy "freshTyPhis" {-tracePP "From" -} t
-       (x,g') <- envAddFresh "consArr:empty" l (TArr t' F.top) g
-       wellFormed l g' t'
-       return  $ (x, g')
-
-
+freshTyObj :: (IsLocated l) => l -> CGEnv -> RefType -> CGM RefType 
+-- ---------------------------------------------------------------------------------------
+freshTyObj l g t = freshTy "freshTyArr" t >>= wellFormed l g 
 
 ---------------------------------------------------------------------------------------
 -- | Adding Subtyping Constraints -----------------------------------------------------
@@ -470,11 +446,6 @@ subTypes l g xs ts      = zipWithM_ (subType l g)      [envFindTy x g | x <- xs]
 subTypes' msg l g xs ts = zipWithM_ (subType' msg l g) [envFindTy x g | x <- xs] ts
 
 -- | Subtyping
-
--- Also adds invariants
--- XXX: Are the invariants added for types nested in containers (i.e. unions and
--- objects)? Probably not, so this process should be done after the splitC.
-
 ---------------------------------------------------------------------------------------
 subType :: (IsLocated l) => l -> CGEnv -> RefType -> RefType -> CGM ()
 ---------------------------------------------------------------------------------------
@@ -482,12 +453,14 @@ subType l g t1 t2 =
   do tt1   <- addInvariant t1
      tt2   <- addInvariant t2
      tdefs <- getTDefs
-     let s  = checkTypes tdefs tt1 tt2
+     s     <- checkTypes tdefs tt1 tt2
      modify $ \st -> st {cs = c s : (cs st)}
   where
     c      = uncurry $ Sub g (ci l)
-    checkTypes tdefs t1 t2 | equivWUnions tdefs t1 t2 = (t1,t2)
-    checkTypes  _ t1 t2    | otherwise                = die $ bugMalignedSubtype (srcPos l) t1 t2
+    checkTypes tdefs t1 t2 
+      | equivWUnions tdefs t1 t2 = return    $ (t1,t2)
+    checkTypes  _ t1 t2    
+      | otherwise                = cgError l $ bugMalignedSubtype (srcPos l) t1 t2
     
  -- A more verbose version
 subType' msg l g t1 t2 = 
@@ -523,7 +496,7 @@ equivWUnionsM t t' = getTDefs >>= \γ -> return $ equivWUnions γ t t'
 -------------------------------------------------------------------------------
 subTypeContainers :: (IsLocated l) => String -> l -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
-subTypeContainers msg l g t1 t2 = {- subTypeContainers' msg -} subType l g t1 t2
+subTypeContainers msg l g t1 t2 = subType l g t1 t2
     where 
       msg'                      = render $ text "subTypeContainers:" 
                                            $+$ text "  t1 =" <+> pp t1
@@ -570,9 +543,8 @@ subTypeContainers msg l g t1 t2 = {- subTypeContainers' msg -} subType l g t1 t2
 -- RJ: ALL THIS SHOULD BE IN `splitC` -- TODO: the environment for subtyping each part of the object should have the
 -- RJ: ALL THIS SHOULD BE IN `splitC` -- tyopes for the rest of the bindings
 -- RJ: ALL THIS SHOULD BE IN `splitC` subTypeContainers' msg l g o1@(TObj _ r1) o2@(TObj _ r2) = 
--- RJ: ALL THIS SHOULD BE IN `splitC`     sbs $ bkPaddedObject o1 o2
+-- RJ: ALL THIS SHOULD BE IN `splitC`     mapM_ sb $ bkPaddedObject o1 o2
 -- RJ: ALL THIS SHOULD BE IN `splitC`   where
--- RJ: ALL THIS SHOULD BE IN `splitC`     sbs          = mapM_ sb
 -- RJ: ALL THIS SHOULD BE IN `splitC`     -- Fix the ValueVar of the top-level refinement 
 -- RJ: ALL THIS SHOULD BE IN `splitC`     -- to be the same as the Valuevar of the part
 -- RJ: ALL THIS SHOULD BE IN `splitC`     fix t b v    | v == b    = rTypeValueVar t
@@ -648,7 +620,7 @@ freshTy :: RefTypable a => s -> a -> CGM RefType
 freshTy _ τ = refresh $ rType τ
 
 instance Freshable F.Refa where
-  fresh = (`F.RKvar` F.emptySubst) <$> (F.intKvar <$> fresh)
+  fresh = (`F.RKvar` mempty) <$> (F.intKvar <$> fresh)
 
 instance Freshable [F.Refa] where
   fresh = single <$> fresh
@@ -772,11 +744,12 @@ splitC' (Sub g i t1@(TApp _ t1s _) t2@(TApp _ t2s _))
 
 ---------------------------------------------------------------------------------------
 -- | Objects
--- Just the top-level constraint will be included here
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i t1@(TObj _ _) t2@(TObj _ _ ))
-  = do errorstar "TODO: splitC' TObj" 
-       bsplitC g i t1 t2
+  = do cs    <- bsplitC g i t1 t2
+       -- RJ: not strengthening with top-level reft because not sure we need it...
+       cs'   <- concatMapM splitC [Sub g i t1' t2' | (t1',t2') <- bkPaddedObject (srcPos i) t1 t2]
+       return $ cs ++ cs' 
 
 splitC' (Sub _ _ t1 t2@(TObj _ _ ))
   = error $ printf "splitC - should have been broken down earlier:\n%s <: %s" 
@@ -792,9 +765,9 @@ splitC' (Sub _ _ t1@(TObj _ _ ) t2)
 ---------------------------------------------------------------------------------------
 splitC' (Sub g i t1@(TArr t1v _ ) t2@(TArr t2v _ ))
   = do cs    <- bsplitC g i t1 t2
-       cs'   <- splitC' (Sub g i t1v t2v) -- whither CONTRAVARIANCE?
-       errorstar "TODO: splitC' TArr"
-       return $ cs ++ cs'
+       cs'   <- splitC' (Sub g i t1v t2v) -- CO-VARIANCE 
+       cs''  <- splitC' (Sub g i t2v t1v) -- CONTRA-VARIANCE 
+       return $ cs ++ cs' ++ cs''
 
 splitC' x 
   = cgError l $ bugBadSubtypes l x where l = srcPos x
@@ -810,7 +783,7 @@ bsplitC g ci t1 t2
 
 bsplitC' g ci t1 t2
   | F.isFunctionSortedReft r1 && F.isNonTrivialSortedReft r2
-  = [F.subC (fenv g) F.PTrue (r1 {F.sr_reft = F.top}) r2 Nothing [] ci]
+  = [F.subC (fenv g) F.PTrue (r1 {F.sr_reft = fTop}) r2 Nothing [] ci]
   | F.isNonTrivialSortedReft r2
   = [F.subC (fenv g) p r1 r2 Nothing [] ci]
   | otherwise
@@ -935,4 +908,9 @@ clearProp (sy, F.RR so re)
   = (sy, F.RR (F.FFunc 2 [F.FInt, F.FApp F.boolFTyCon []]) re)
   | otherwise                   
   = (clear sy, clear $ F.RR so re)
+
+cgFunTys l f xs ft = 
+  case funTys l f xs ft of 
+    Left e  -> cgError l e 
+    Right a -> return a
 

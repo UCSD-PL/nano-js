@@ -1,5 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleInstances         #-} 
+{-# LANGUAGE DeriveDataTypeable        #-} 
 {-# LANGUAGE UndecidableInstances      #-} 
 {-# LANGUAGE TypeSynonymInstances      #-} 
 {-# LANGUAGE TupleSections             #-}
@@ -15,20 +16,24 @@ import           Data.Maybe (fromMaybe)
 import           Data.Generics.Aliases
 import           Data.Generics.Schemes
 import qualified Data.HashMap.Strict                as M 
+import           Data.Data
+import           Data.Typeable
 import           Control.Monad
 import           Control.Exception (throw)
 import           Text.Parsec
--- import           Text.Parsec.String hiding (Parser, parseFromFile)
+import           Text.PrettyPrint.HughesPJ          (text, (<+>))
 import qualified Text.Parsec.Token as Token
 import           Control.Applicative ((<$>), (<*), (<*>))
 import           Control.Monad.Identity
 import           Data.Char (toLower, isLower, isSpace) 
-import           Data.Monoid (mconcat)
+import           Data.Monoid (mappend, mconcat, mempty)
 
 import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Types hiding (quals, Loc)
+import qualified Language.Fixpoint.Types        as F
 import           Language.Fixpoint.Parse 
-
+import           Language.Fixpoint.Errors
+import           Language.Fixpoint.Misc (mapEither)
 import           Language.Nano.Errors
 import           Language.Nano.Files
 import           Language.Nano.Types
@@ -37,12 +42,15 @@ import           Language.Nano.Liquid.Types
 import           Language.Nano.Env
 
 import           Language.ECMAScript3.Syntax
+import           Language.ECMAScript3.Syntax.Annotations   (getAnnotation)
 import           Language.ECMAScript3.Parser        ( parseJavaScriptFromFile',
-                                                      SourceSpan (..), 
-                                                      initialParserState)
+                                                      initialParserState )
+import           Language.ECMAScript3.Parser.Type   ( SourceSpan (..))
 import           Language.ECMAScript3.Parser.Type hiding (Parser)
 
 import           Language.ECMAScript3.PrettyPrint
+
+
 -- import           Debug.Trace                        (trace, traceShow)
 
 dot        = Token.dot        lexer
@@ -57,9 +65,32 @@ idBindP :: Parser (Id SourceSpan, RefType)
 idBindP = xyP identifierP dcolon bareTypeP
 
 identifierP :: Parser (Id SourceSpan)
--- identifierP = withSpan Id lowerIdP 
 identifierP =   try (withSpan Id upperIdP)
            <|>      (withSpan Id lowerIdP)
+
+pAliasP :: Parser (Id SourceSpan, PAlias) 
+pAliasP = do name <- identifierP
+             πs   <- pAliasVarsP -- many symbolP 
+             reservedOp "="
+             body <- predP 
+             return  (name, Alias name [] πs body) 
+
+pAliasVarsP = try (parens $ sepBy symbolP comma)
+           <|> many symbolP
+
+tAliasP :: Parser (Id SourceSpan, TAlias RefType) 
+tAliasP = do name      <- identifierP
+             (αs, πs)  <- mapEither aliasVarT <$> aliasVarsP 
+             reservedOp "="
+             body      <- bareTypeP
+             return      (name, Alias name αs πs body) 
+
+aliasVarsP    = try (brackets $ sepBy aliasVarP comma) <|> return []
+aliasVarP     = withSpan (,) (wordP $ \_ -> True)
+
+aliasVarT (l, x)      
+  | isTvar x  = Left  $ tvar l x
+  | otherwise = Right $ stringSymbol x 
 
 tBodyP :: Parser (Id SourceSpan, RType Reft)
 tBodyP = do  id <- identifierP 
@@ -111,7 +142,6 @@ bareTypeNoUnionP
  <|>     (bareAtomP bbaseP)
 
 -- | `bareFunP` parses an ordered-intersection type
-
 bareFunP 
   = tAnd <$> many1 (reserved "/\\" >> bareFun1P)
 
@@ -143,46 +173,46 @@ bareAtomP p
 
 bbaseP :: Parser (Reft -> RefType)
 bbaseP 
-  =  try (TVar <$> tvarP)
- <|> try (TObj <$> (braces $ bindsP) )      -- Object types
- <|> try (TObj <$> arrayBindsP)             -- Array literal types
- <|> try (TArr <$> arrayP)
- <|> try (TApp <$> tDefP <*> (brackets $ sepBy bareTypeP comma))  -- This is what allows: list [A], tree [A,B] etc...
- <|>     ((`TApp` []) <$> tconP)
+  =  try (TVar <$> tvarP)                  -- A
+ <|> try (TObj <$> (braces $ bindsP) )     -- { f1: T1, ... , fn: Tn} 
+ <|> try (TObj <$> arrayBindsP)            -- { i1: T1, ... , in: Tn}
+ <|> try (TArr <$> arrayP)                 -- [T]
+ <|> try (TApp <$> tDefP <*> bareTyArgsP)  -- list[A], tree[A,B] etc...
+ 
+ -- <|>     ((`TApp` []) <$> tconP)           -- yuck. this is wierd.
 
-tvarP :: Parser TVar
--- tvarP = TV <$> (stringSymbol <$> upperWordP) <*> getPosition
-tvarP = withSpan (\l x -> TV x l) (stringSymbol <$> upperWordP)
+bareTyArgsP = try (brackets $ sepBy bareTyArgP comma) <|> return []
 
+bareTyArgP  = try bareTypeP 
+           <|> (TExp <$> exprP)
 
-upperWordP :: Parser String
-upperWordP = condIdP nice (not . isLower . head)
+tvarP    :: Parser TVar
+tvarP    = withSpan tvar $ wordP isTvar                  -- = withSpan {- (\l x -> TV x l) -} (flip TV) (stringSymbol <$> upperWordP)
+
+tvar l x = TV (stringSymbol x) l
+
+isTvar   = not . isLower . head
+
+wordP p  = condIdP ok p
   where 
-    nice   = ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0'..'9']
+    ok   = ['A' .. 'Z'] ++ ['a' .. 'z'] ++ ['0'..'9']
 
-tconP :: Parser TCon
-tconP =  try (reserved "number"    >> return TInt)
+tDefP :: Parser TCon
+tDefP =  try (reserved "number"    >> return TInt)
      <|> try (reserved "boolean"   >> return TBool)
      <|> try (reserved "undefined" >> return TUndef)
      <|> try (reserved "void"      >> return TVoid)
      <|> try (reserved "top"       >> return TTop)
      <|> try (reserved "string"    >> return TString)
      <|> try (reserved "null"      >> return TNull)
-     <|> tDefP
-
-tDefP 
-  = do  s <- identifierP 
-        -- XXX: This list will have to be enhanced.
-        if unId s `elem` ["true", "false", "number", "boolean", "string", "top", "void", "null"] 
-          then parserZero
-          else return $ TDef s
+     <|> (TDef <$> identifierP)
 
 bareAllP 
   = do reserved "forall"
-       as <- many1 tvarP
+       αs <- many1 tvarP
        dot
        t  <- bareTypeP
-       return $ foldr TAll t as
+       return $ foldr TAll t αs
 
 arrayP = brackets bareTypeP
 
@@ -215,13 +245,6 @@ dummyP fm = fm `ap` topP
 topP   :: Parser Reft
 topP   = (Reft . (, []) . vv . Just) <$> freshIntP
 
-{--- | Parses bindings of the form: `x : kind`-}
-{-bindP :: Parser (Reft -> a) -> Parser a-}
-{-bindP kindP-}
-{-  = do v <- symbolP -}
-{-       colon-}
-{-       t <- kindP-}
-{-       return $ t (Reft (v, []))-}
 
 -- | Parses refined types of the form: `{ kind | refinement }`
 xrefP :: Parser (Reft -> a) -> Parser a
@@ -281,63 +304,89 @@ specWraps = betweenMany start stop
     start = string "/*@" >> spaces
     stop  = spaces >> string "*/"
 
--- -- specWrap :: Stream s m Char => ParsecT s u m a -> ParsecT s u m a
--- specWrap = between start stop
---   where 
---     start = string "/*@" >> spaces
---     stop  = spaces >> string "*/"
-
-
 ---------------------------------------------------------------------------------
 -- | Specifications
 ---------------------------------------------------------------------------------
 data PSpec l t 
-  = Meas (Id l, t)
-  | Bind (Id l, t) 
-  | Qual Qualifier
-  | Type (Id l, t)
-  | Invt l t 
-  deriving (Show)
+  = Meas   (Id l, t)
+  | Bind   (Id l, t) 
+  | Extern (Id l, t)
+  | Type   (Id l, t)
+  | Talias (Id l, TAlias t)
+  | Palias (Id l, PAlias) 
+  | Qual    Qualifier
+  | Invt   l t 
+  deriving (Eq, Ord, Show, Data, Typeable)
 
 specP :: Parser (PSpec SourceSpan RefType)
 specP 
-  = try (reserved "measure"   >> (Meas <$> idBindP    ))
-    <|> (reserved "qualif"    >> (Qual <$> qualifierP ))
-    <|> (reserved "type"      >> (Type <$> tBodyP     )) 
-    <|> (reserved "invariant" >> (withSpan Invt bareTypeP))
-    <|> ({- DEFAULT -}           (Bind <$> idBindP    ))
+  =   try (reserved "measure"   >> (Meas   <$> idBindP    ))
+  <|> try (reserved "qualif"    >> (Qual   <$> qualifierP ))
+  <|> try (reserved "type"      >> (Type   <$> tBodyP     )) 
+  <|> try (reserved "type"      >> (Talias <$> tAliasP    ))
+  <|> try (reserved "predicate" >> (Palias <$> pAliasP    ))
+  <|> try (reserved "invariant" >> (withSpan Invt bareTypeP))
+  <|>     (reserved "extern"    >> (Extern <$> idBindP    ))
+
+instance (PP l, PP t) => PP (PSpec l t) where
+  pp (Meas (i, t))   = text "measure: " <+> pp i
+  pp (Bind (i, t))   = text "bind: " <+>  pp i <+> text " :: " <+> pp t
+  pp (Extern (i, t)) = text "extern: " <+>  pp i <+> text " :: " <+> pp t
+  pp (Type (i, t))   = text "Type:TODO"
+  pp (Talias _)      = text "Talias:TODO"
+  pp (Palias _)      = text "Palias:TODO"
+  pp (Qual _)        = text "Qual:TODO"
+  pp (Invt _ _)      = text "Invt:TODO"
+
+-- | `AnnToken`: Elements that can are parsed along the source as annotations.
+
+data AnnToken r 
+  = TBind (Id SourceSpan, RType r)          -- ^ Function signature binding
+  | TType (RType r)                         -- ^ Variable declaration binding
+  | TSpec (PSpec SourceSpan (RType r))      -- ^ Specs: qualifiers, measures, type defs, etc.
+  | EmptyToken                              -- ^ Dummy empty token
+  deriving (Eq, Ord, Show, Data, Typeable)
+
+instance (PP r, F.Reftable r) => PP (AnnToken r) where
+  pp (TBind (id,t)) = pp id <+> text " :: " <+> pp t
+  pp (TType t)      = pp t
+  pp (TSpec s)      = pp s
+  pp EmptyToken     = text "<empyt>"
+
+
+-- --------------------------------------------------------------------------------------
+-- parseSpecFromFile :: FilePath -> IO (Nano SourceSpan RefType) 
+-- --------------------------------------------------------------------------------------
+-- parseSpecFromFile f = parseFromFile (mkSpec <$> specWraps specWithDefaultP) f
+-- 
+-- --------------------------------------------------------------------------------------
+-- mkSpec    ::  (PP t, IsLocated l) => [PSpec l t] -> Nano a t
+-- --------------------------------------------------------------------------------------
+-- mkSpec xs = Nano { code   = Src [] 
+--                  , specs  = envFromList [b | Bind b <- xs] 
+--                  , sigs   = envEmpty
+--                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
+--                  , defs   = envFromList [b         | Type b <- xs]
+--                  , tAnns  = M.empty
+--                  , quals  =             [q         | Qual q <- xs]
+--                  , invts  =             [Loc l' t  | Invt l t <- xs, let l' = srcPos l]
+--                  }
+
+-- -- YUCK. Worst hack of all time.
+-- switchProp i@(Id l x) 
+--   | x == (toLower <$> propConName) = Id l propConName
+--   | otherwise                      = i
 
 --------------------------------------------------------------------------------------
-parseSpecFromFile :: FilePath -> IO (Nano SourceSpan RefType) 
+tAnnotP :: ParserState String (AnnToken Reft) -> ExternP String (AnnToken Reft)
 --------------------------------------------------------------------------------------
-parseSpecFromFile f = parseFromFile (mkSpec <$> specWraps specP) f
-
---------------------------------------------------------------------------------------
-mkSpec    ::  (PP t, IsLocated l) => [PSpec l t] -> Nano a t
---------------------------------------------------------------------------------------
-mkSpec xs = Nano { code   = Src [] 
-                 , specs  = envFromList [b | Bind b <- xs] 
-                 , defs   = envEmpty
-                 , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
-                 , tDefs  = envFromList [b         | Type b <- xs]
-                 , tAnns  = M.empty
-                 , quals  =             [q         | Qual q <- xs]
-                 , invts  =             [Loc l' t  | Invt l t <- xs, let l' = srcPos l]
-                 }
-
--- YUCK. Worst hack of all time.
-switchProp i@(Id l x) 
-  | x == (toLower <$> propConName) = Id l propConName
-  | otherwise                      = i
-
---------------------------------------------------------------------------------------
-tAnnotP :: ParsecT  String (ParserState String RefType) Identity (Maybe RefType)
---------------------------------------------------------------------------------------
-tAnnotP = Just <$> changeState fwd bwd bareTypeP
+tAnnotP stIn = EP typeP fSigP tLevP
   where
-    -- XXX: these are pretty much dummy vals
-    fwd _ = initialParserState tAnnotP
-    bwd _ = 0
+    typeP  = TType <$> changeState fwd bwd bareTypeP
+    fSigP  = TBind <$> changeState fwd bwd idBindP
+    tLevP  = TSpec <$> changeState fwd bwd specP
+    fwd _  = stIn  -- NOTE: need to keep the state of the language-ecmascript parser!!!
+    bwd _  = 0     -- TODO: Is this adequate???
 
 -- `changeState` taken from here:
 -- http://stackoverflow.com/questions/17968784/an-easy-way-to-change-the-type-of-parsec-user-state
@@ -361,31 +410,52 @@ changeState forward backward = mkPT . transform . runParsecT
       -> (State s v -> m (Consumed (m (Reply s v a))))
     transform p st = fmap3 (mapReply forward) (p (mapState backward st))
 
+
+-- | Parse Code along with type annotations
+
 --------------------------------------------------------------------------------------
 parseCodeFromFile :: FilePath -> IO (Nano SourceSpan RefType)
 --------------------------------------------------------------------------------------
 parseCodeFromFile fp = parseJavaScriptFromFile' tAnnotP fp >>= return . mkCode
 
--- parseCodeFromFile fp = 
---   parseJavaScriptFromFile fp >>= return . mkCode . (fmap (, Nothing) <$>)
-      
-        
-mkCode    :: [Statement (SST Reft)] -> Nano SourceSpan RefType
-mkCode ss = Nano { code   = Src (stripAnnot $ checkTopStmt <$> ss)
-                 , specs  = envEmpty  
-                 , defs   = envEmpty
-                 , consts = envEmpty 
-                 , tDefs  = envEmpty
-                 , tAnns  = all ss
-                 , quals  = [] 
-                 , invts  = [] 
-                 } 
+--------------------------------------------------------------------------------------
+mkCode :: ([Statement SourceSpan], M.HashMap SourceSpan [AnnToken Reft]) -> 
+  Nano SourceSpan RefType
+--------------------------------------------------------------------------------------
+mkCode (ss, m) = Nano { code   = Src (checkTopStmt <$> ss)
+    , specs  = envFromList [ a       | TSpec (Extern a)    <- list ] 
+    , sigs   = envFromList [ a       | TBind         a     <- list ] 
+    , consts = envFromList [ a       | TSpec (Meas   a)    <- list ] 
+    , defs   = envFromList [ a       | TSpec (Type   a)    <- list ] 
+    , tAlias = envFromList [ a       | TSpec (Talias a)    <- list ]
+    , pAlias = envFromList [ p       | TSpec (Palias p)    <- list ]
+    , tAnns  = foldr (envUnion . vds) envEmpty $ varDeclStmts ss
+    , quals  = [q                    | TSpec (Qual   q)    <- list ]
+    , invts  = [Loc l' t             | TSpec (Invt l t)    <- list, let l' = srcPos l]
+    } 
   where
-    all ss          = foldr one M.empty ss 
-    one s m         = F.foldr f m s
-    f (l,Just t) m  = M.insert l t m 
-    f _          m  = m
-    stripAnnot      = map (fmap fst)
+    list                    = concat $ M.elems m
+    
+    vds (VarDeclStmt l ds)  = mrg (prefixed $ M.lookup l m) (inlined ds)
+    vds _                   = error "BUG: Parse.mkCode"
+
+    prefixed (Just xs)      = envFromList [ a | TBind a <- xs ]
+    prefixed Nothing        = envEmpty
+
+    id (VarDecl _ i _)      = i
+
+    spAn id                 = (id, M.lookup (getAnnotation id) m)
+    inlined xs              = envFromList [(i, t) | (i, Just ans) <- spAn . id <$> xs
+                                                  , TType t <- ans ]
+
+    mrg e1 e2 
+      | not $ null un       = (die . er . head) un
+      where un              = fst <$> (envToList $ envIntersectWith const e1 e2)
+            er s            = bugMultipleAnnots (srcPos s) s
+    mrg e1 e2 
+      | otherwise           = envUnion e1 e2  
+
+
 
 -------------------------------------------------------------------------------
 -- | Parse File and Type Signatures -------------------------------------------
@@ -393,23 +463,20 @@ mkCode ss = Nano { code   = Src (stripAnnot $ checkTopStmt <$> ss)
 
 parseNanoFromFile :: FilePath-> IO (Nano SourceSpan RefType)
 parseNanoFromFile f 
-  = do code  <- parseCodeFromFile f
-       spec  <- parseSpecFromFile f
-       ispec <- parseSpecFromFile =<< getPreludePath
-       return $ shuffleSpecDefs $ mconcat [code, spec, ispec] 
+  = do spec <- parseCodeFromFile =<< getPreludePath
+       code <- parseCodeFromFile f
+       return $ catSpecDefs $ mconcat [spec, code] 
 
-shuffleSpecDefs pgm = pgm { specs = specγ } { defs = defγ }
+catSpecDefs pgm = pgm { sigs = defγ }
   where 
-    defγ            = envFromList [(fn, initFunTy fn γ) | fn <- fns]
-    specγ           = envFromList [(x, t) | (x, t) <- xts, not (x `envMem` defγ)]
-    γ               = specs pgm
-    xts             = envToList γ
-    fns             = definedFuns fs 
-    Src fs          = code pgm
+    defγ        = envFromList [ (x, lookupTy x γ) | x <- fs ]
+    γ           = sigs pgm
+    fs          = definedFuns stmts 
+    Src stmts   = code pgm
 
-initFunTy fn γ = fromMaybe err $ envFindTy fn γ 
+lookupTy x γ   = fromMaybe err $ envFindTy x γ 
   where 
-    err        = throw $ bugUnboundVariable (srcPos fn) fn
+    err        = die $ bugUnboundFunction γ (srcPos x) x
 
 
 -- SYB examples at: http://web.archive.org/web/20080622204226/http://www.cs.vu.nl/boilerplate/#suite
@@ -419,17 +486,15 @@ definedFuns stmts = everything (++) ([] `mkQ` fromFunction) stmts
     fromFunction (FunctionStmt _ x _ _) = [x] 
     fromFunction _                      = []
 
+definedVars          :: [Statement SourceSpan] -> [Id SourceSpan]
+definedVars stmts    = everything (++) ([] `mkQ` fromVarDecl) stmts
+  where 
+    fromVarDecl (VarDeclStmt _ ds) = [x | VarDecl _ x (Just _) <- ds]
+    fromVarDecl _                  = []
 
-
---------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------
-
-instance Inputable RefType where 
-  rr' = doParse' bareTypeP
-
-instance Inputable Type where 
-  rr' = doParse' (fmap (const ()) <$> bareTypeP)
+varDeclStmts         :: [Statement SourceSpan] -> [Statement SourceSpan]
+varDeclStmts stmts    = everything (++) ([] `mkQ` fromVarDecl) stmts
+  where 
+    fromVarDecl s@(VarDeclStmt _ _) = [s]
+    fromVarDecl _                   = []
 

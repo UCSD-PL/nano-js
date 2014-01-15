@@ -48,6 +48,7 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
+  , efoldRType
   , AnnTypeR
 
   -- * Raw low-level Location-less constructors
@@ -59,7 +60,7 @@ import qualified Data.List               as L
 import qualified Data.HashMap.Strict     as M
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.PrettyPrint
-import           Language.ECMAScript3.Parser        (SourceSpan (..))
+import           Language.ECMAScript3.Parser.Type  (SourceSpan (..))
 
 import           Language.Nano.Errors
 import           Language.Nano.Types
@@ -85,20 +86,19 @@ type AnnTypeR    = AnnType F.Reft
 -------------------------------------------------------------------------------------
 
 data CGEnv   
-  = CGE { 
-         -- TODO: add opts 
-         --opts    :: OptionConf
-          renv    :: !(Env RefType) -- ^ bindings in scope 
-        , fenv    :: F.IBindEnv     -- ^ fixpoint bindings
-        , guards  :: ![F.Pred]      -- ^ branch target conditions  
-        , cge_ctx :: !IContext      -- ^ intersection-type context 
+  = CGE { renv     :: !(Env RefType) -- ^ bindings in scope 
+        , fenv     :: F.IBindEnv     -- ^ fixpoint bindings
+        , guards   :: ![F.Pred]      -- ^ branch target conditions  
+        , cge_ctx  :: !IContext      -- ^ intersection-type context 
+        , cge_spec :: !(Env RefType) -- ^ specifications for defined functions
+        , cge_anns :: !(Env RefType) -- ^ specifications for defined variables
         }
 
 
-emptyCGEnv = CGE {-[] -} envEmpty F.emptyIBindEnv [] emptyContext
+emptyCGEnv = CGE envEmpty F.emptyIBindEnv [] emptyContext envEmpty
 
 instance PP CGEnv where
-  pp (CGE {-_ -} re _ gs ctx) = vcat [pp re, pp gs, pp ctx] 
+  pp (CGE  re _ gs ctx sp an) = vcat [pp re, pp gs, pp ctx, pp sp, pp an] 
 
 ----------------------------------------------------------------------------
 -- | Constraint Information ------------------------------------------------
@@ -192,10 +192,10 @@ rTypeSortedReft   ::  (F.Reftable r) => RType r -> F.SortedReft
 rTypeSortedReft t = F.RR (rTypeSort t) (rTypeReft t)
 
 rTypeReft         :: (F.Reftable r) => RType r -> F.Reft
-rTypeReft         = fromMaybe F.top . fmap F.toReft . stripRTypeBase 
+rTypeReft         = fromMaybe fTop . fmap F.toReft . stripRTypeBase 
 
 rTypeValueVar     :: (F.Reftable r) => RType r -> F.Symbol
-rTypeValueVar t   = vv where F.Reft (vv,_) =  rTypeReft t 
+rTypeValueVar t   = vv where F.Reft (vv,_) = rTypeReft t 
 
 ------------------------------------------------------------------------------------------
 rTypeSort :: (F.Reftable r) => RType r -> F.Sort
@@ -284,7 +284,7 @@ emapReftBind f γ (B x t)    = B x $ emapReft f γ t
 ------------------------------------------------------------------------------------------
 mapReftM f (TVar α r)      = TVar α <$> f r
 mapReftM f (TApp c ts r)   = TApp c <$> mapM (mapReftM f) ts <*> f r
-mapReftM f (TFun xts t _)  = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t <*> (return F.top) --f r 
+mapReftM f (TFun xts t r)  = TFun   <$> mapM (mapReftBindM f) xts <*> mapReftM f t <*> (return $ F.top r) --f r 
 mapReftM f (TAll α t)      = TAll α <$> mapReftM f t
 mapReftM f (TObj bs r)     = TObj   <$> mapM (mapReftBindM f) bs <*> f r
 mapReftM f (TArr t r)      = TArr   <$> (mapReftM f t) <*> f r
@@ -305,22 +305,36 @@ foldReft  f = efoldReft (\_ -> ()) (\_ -> f) F.emptySEnv
 ------------------------------------------------------------------------------------------
 efoldReft :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> r -> a -> a) -> F.SEnv b -> a -> RType r -> a
 ------------------------------------------------------------------------------------------
-efoldReft _ f γ z (TVar _ r)       = f γ r z
-efoldReft g f γ z t@(TApp _ ts r)  = f γ r $ efoldRefts g f (efoldExt g (B (rTypeValueVar t) t) γ) z ts
-efoldReft g f γ z (TAll _ t)       = efoldReft g f γ z t
-efoldReft g f γ z (TFun xts t r)   = f γ r $ efoldReft g f γ' (efoldRefts g f γ' z (b_type <$> xts)) t  
+efoldReft g f = go 
   where 
-    γ'                             = foldr (efoldExt g) γ xts
-efoldReft g f γ z (TObj xts r)     = f γ r $ (efoldRefts g f γ' z (b_type <$> xts))
+    go γ z (TVar _ r)       = f γ r z
+    go γ z t@(TApp _ ts r)  = f γ r $ gos (efoldExt g (B (rTypeValueVar t) t) γ) z ts
+    go γ z (TAll _ t)       = go γ z t
+    go γ z (TFun xts t r)   = f γ r $ go γ' (gos γ' z (b_type <$> xts)) t  where γ' = foldr (efoldExt g) γ xts
+    go γ z (TObj xts r)     = f γ r $ (gos γ' z (b_type <$> xts))      where γ' = foldr (efoldExt g) γ xts
+    go γ z (TArr t r)       = f γ r $ go γ z t    
+    go γ z (TAnd ts)        = gos γ z ts 
+    go _ _ t                = error $ "Not supported in efoldReft: " ++ ppshow t
+
+    gos γ z ts              = L.foldl' (go γ) z ts
+
+efoldExt g xt γ             = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
+
+------------------------------------------------------------------------------------------
+efoldRType :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> RType r -> a -> a) -> F.SEnv b -> a -> RType r -> a
+------------------------------------------------------------------------------------------
+efoldRType g f               = go
   where 
-    γ'                             = foldr (efoldExt g) γ xts
-efoldReft g f γ z (TArr t r)       = f γ r $ efoldReft g f γ z t    
-efoldReft g f γ z (TAnd ts)        = efoldRefts g f γ z ts 
-efoldReft _ _ _ _ t                = error $ "Not supported in efoldReft: " ++ ppshow t
+    go γ z t@(TVar _ _)      = f γ t z
+    go γ z t@(TApp _ ts _)   = f γ t $ gos (efoldExt g (B (rTypeValueVar t) t) γ) z ts
+    go γ z t@(TAll _ t1)     = f γ t $ go γ z t1
+    go γ z t@(TFun xts t1 _) = f γ t $ go γ' (gos γ' z (b_type <$> xts)) t1  where γ' = foldr (efoldExt g) γ xts
+    go γ z t@(TObj xts _)    = f γ t $ (gos γ' z (b_type <$> xts))           where γ' = foldr (efoldExt g) γ xts
+    go γ z t@(TArr t1 _)     = f γ t $ go γ z t1    
+    go γ z   (TAnd ts)       = gos γ z ts 
+    go _ _ t                 = error $ "Not supported in efoldRType: " ++ ppshow t
+    gos γ z ts               = L.foldl' (go γ) z ts
 
-efoldRefts g f γ z ts              = L.foldl' (efoldReft g f γ) z ts
-
-efoldExt g xt γ                    = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
 
 ------------------------------------------------------------------------------------------
 isBaseRType :: RType r -> Bool
@@ -335,8 +349,6 @@ isTrivialRefType :: RefType -> Bool
 isTrivialRefType t     = foldReft (\r -> (f r &&)) True t
   where 
     f (F.Reft (_,ras)) = null ras
-
-
 
 ------------------------------------------------------------------------------------------
 prefixOpRTy :: PrefixOp -> CGEnv -> RefType

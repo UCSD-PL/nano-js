@@ -55,8 +55,11 @@ ts = TS {
 
 
 
-config = modes [esc, tc, liquid, ts] 
-            &= help    "nanojs is a suite of toy program verifiers"
+config = modes [ esc
+               , tc
+               , liquid &= auto 
+               ] 
+            &= help    "nanojs is a suite of program verifiers"
             &= program "nanojs" 
             &= summary "nanojs © Copyright 2013 Regents of the University of California." 
             &= verbosity

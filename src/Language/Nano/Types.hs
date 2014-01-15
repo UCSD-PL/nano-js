@@ -27,11 +27,19 @@ module Language.Nano.Types (
   , getAssume
   , getAssert
   , getInvariant
+  , getFunctionStatements 
+  , getFunctionIds
+
   , isSpecification
   , returnSymbol
   , returnId
   , symbolId
   , mkId
+
+  -- * SSA Ids 
+  , mkNextId
+  , isNextId
+  , mkSSAId
 
   -- * Error message
   , convertError
@@ -41,6 +49,7 @@ module Language.Nano.Types (
   , idLoc 
  
   -- * Manipulating SourceSpan
+  , SourceSpan (..)
   , dummySpan
   , srcSpanFile
   , srcSpanStartLine
@@ -60,11 +69,12 @@ import           Data.Hashable
 import           Data.Typeable                      (Typeable)
 import           Data.Generics                      (Data)   
 import           Data.Monoid                        (Monoid (..))
-import           Data.Maybe                         (catMaybes)
+import           Data.Maybe                         (maybe, catMaybes)
+import           Data.List                          (stripPrefix)
 import           Language.ECMAScript3.Syntax 
 import           Language.ECMAScript3.Syntax.Annotations
 import           Language.ECMAScript3.PrettyPrint   (PP (..))
-import           Language.ECMAScript3.Parser        (SourceSpan (..))
+import           Language.ECMAScript3.Parser.Type   (SourceSpan (..))
 
 import qualified Language.Fixpoint.Types as F
 
@@ -115,6 +125,7 @@ instance Functor Located where
 -- | `IsLocated` is a predicate for values which we have a SourceSpan
 --------------------------------------------------------------------------------
 
+sourcePos :: IsLocated a => a -> SourcePos
 sourcePos = sp_begin . srcPos 
 
 class IsLocated a where 
@@ -132,6 +143,12 @@ instance IsLocated SourceSpan where
 instance IsLocated (Located a) where 
   srcPos = loc
 
+instance IsLocated SourcePos where
+  srcPos x = Span x x 
+
+instance IsLocated (F.Located a) where
+  srcPos = srcPos . F.loc
+
 instance IsLocated a => IsLocated (Id a) where 
   srcPos (Id x _) = srcPos x
 
@@ -143,11 +160,6 @@ instance IsLocated F.Symbol where
 
 instance IsLocated (SourceSpan, r) where 
   srcPos = srcPos . fst
-
-
-instance HasAnnotation Id where 
-  getAnnotation (Id x _) = x
-
 
 instance Eq a => Eq (Located a) where 
   x == y = val x == val y
@@ -184,10 +196,11 @@ instance IsNano InfixOp where
   isNano e          = errortext (text "Not Nano InfixOp!" <+> pp e)
 
 instance IsNano (LValue a) where 
-  isNano (LVar _ _)                  = True
-  isNano (LDot _ e _)                = isNano e
-  isNano (LBracket _ e (IntLit _ _)) = isNano e
-  isNano e                           = errortext (text "Not Nano LValue!" <+> pp e)
+  isNano (LVar _ _)        = True
+  isNano (LDot _ e _)      = isNano e
+  isNano (LBracket _ e e') = isNano e && isNano e'
+  -- isNano (LBracket _ e (IntLit _ _)) = isNano e
+  isNano e                 = errortext (text "Not Nano LValue!" <+> pp e)
   -- isNano _          = False
 
 instance IsNano (VarDecl a) where
@@ -256,7 +269,8 @@ instance IsNano (ForInit a) where
 isNanoExprStatement :: Expression a -> Bool
 isNanoExprStatement (AssignExpr _ o lv e) = isNano o && isNano lv && isNano e 
 isNanoExprStatement (CallExpr _ e es)     = all isNano (e:es)
-isNanoExprStatement e                     = errortext (text "Not Nano ExprStmt!" <+> pp e) 
+isNanoExprStatement (Cast _ e)            = isNanoExprStatement e
+isNanoExprStatement e                     = errortext (text "Not Nano ExprStmtZ!" <+> pp e) 
 -- isNanoExprStatement _                     = False
 
 
@@ -292,6 +306,10 @@ getWhiles stmts = everything (++) ([] `mkQ` fromWhile) stmts
 -- For now, we hack them with function calls.
 
 mkId = Id (initialPos "") 
+
+-----------------------------------------------------------------------------------
+-- | Helpers for extracting specifications from @ECMAScript3@ @Statement@ 
+-----------------------------------------------------------------------------------
 
 returnName :: String
 returnName = "$result"
@@ -339,6 +357,18 @@ getStatementPred _ _
 
 getSpec   :: (Statement a -> Maybe F.Pred) -> [Statement a] -> F.Pred 
 getSpec g = mconcat . catMaybes . map g
+
+getFunctionStatements :: Statement a -> [Statement a]
+getFunctionStatements s = [fs | fs@(FunctionStmt _ _ _ _) <- flattenStmt s]
+
+getFunctionIds :: Statement a -> [Id a]
+getFunctionIds s = [f | (FunctionStmt _ f _ _) <- flattenStmt s]
+
+-- getFunctionStatements s@(FunctionStmt _ _ _ _) = [s] 
+-- getFunctionStatements (BlockStmt _ ss)         = concatMap getFunctionStatements ss
+-- getFunctionStatements _                        = []
+
+
 
 ------------------------------------------------------------------
 -- | Converting `ECMAScript3` values into `Fixpoint` values, 
@@ -418,9 +448,6 @@ pOr  p q  = F.pOr  [p, q]
 ------------------------------------------------------------------
 
 
-instance Hashable SourceSpan where 
-  hashWithSalt i = hashWithSalt i . sourceSpanSrcSpan
-
 instance Hashable a => Hashable (Id a) where 
   hashWithSalt i x = hashWithSalt i (idLoc x, idName x)
 
@@ -472,8 +499,30 @@ srcSpanFile      = fst3 . sourcePosElts . sp_start . sourceSpanSrcSpan
 -- | New Builtin Operators ------------------------------------------------------
 ---------------------------------------------------------------------------------
 
-data BuiltinOp = Undefined
+data BuiltinOp = BIUndefined
+               | BIBracketRef
+               | BIBracketAssign
+               | BIArrayLit
+               | BINumArgs
                  deriving (Eq, Ord, Show)
 
 instance PP BuiltinOp where
   pp = text . show 
+
+
+--------------------------------------------------------------------------------
+-- | Manipulating SSA Ids ------------------------------------------------------
+--------------------------------------------------------------------------------
+
+mkSSAId :: SourceSpan -> Id SourceSpan -> Int -> Id SourceSpan 
+mkSSAId l (Id _ x) n = Id l (x ++ ssaStr ++ show n)  
+
+mkNextId :: Id a -> Id a
+mkNextId (Id a x) =  Id a $ nextStr ++ x
+
+isNextId :: Id a -> Maybe (Id a)
+isNextId (Id a s) = Id a <$> stripPrefix nextStr s
+
+nextStr = "_NEXT_"
+ssaStr  = "_SSA_"
+

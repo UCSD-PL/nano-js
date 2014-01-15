@@ -2,7 +2,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
-module Language.Nano.SSA.SSA (ssaTransform) where 
+module Language.Nano.SSA.SSA (ssaTransform, ssaTransform') where 
 
 import           Control.Applicative                ((<$>), (<*>))
 import           Control.Monad                
@@ -16,7 +16,8 @@ import           Language.Nano.Typecheck.Types
 import           Language.Nano.SSA.SSAMonad
 import           Language.ECMAScript3.Syntax
 import           Language.ECMAScript3.Syntax.Annotations
-import           Language.ECMAScript3.Parser        (SourceSpan (..))
+import           Language.ECMAScript3.Parser.Type   (SourceSpan (..))
+import           Language.Fixpoint.Errors
 import           Language.Fixpoint.Misc             
 import qualified Language.Fixpoint.Types            as F
 import           Text.Printf                        (printf)
@@ -27,19 +28,23 @@ ssaTransform :: (F.Reftable r) => Nano SourceSpan (RType r) -> NanoSSAR r
 ----------------------------------------------------------------------------------
 ssaTransform = either throw id . execute . ssaNano 
 
+ssaTransform' = execute . ssaNano
+
 
 ----------------------------------------------------------------------------------
 ssaNano :: F.Reftable r => Nano SourceSpan (RType r) -> SSAM r (NanoSSAR r)
 ----------------------------------------------------------------------------------
-ssaNano p@(Nano {code = Src fs, tAnns = tAnns}) = do 
-    addImmutables $ envMap (\_ -> F.top) (specs p) 
-    addImmutables $ envMap (\_ -> F.top) (defs  p) 
-    addImmutables $ envMap (\_ -> F.top) (consts p) 
-    (_,fs')      <- ssaStmts fs -- mapM ssaFun fs
-    ssaAnns      <- getAnns
-    return        $ p {code = Src $ (patchAnn ssaAnns tAnns' <$>) <$> fs'}
-  where
-    tAnns'        = M.map (\t -> [TAnnot t]) tAnns
+ssaNano p@(Nano {code = Src fs, tAnns = tAnns}) 
+  = withMutability ReadOnly ros 
+    $ withMutability WriteGlobal wgs 
+      $ do (_,fs') <- ssaStmts fs 
+           ssaAnns <- getAnns
+           return   $ p {code = Src $ (patchAnn ssaAnns tAnns' <$>) <$> fs'}
+    where
+      tAnns'        = M.fromList $ mapFst getAnnotation 
+                        <$> (envToList $ envMap (single . TAnnot) tAnns)
+      ros           = readOnlyVars p
+      wgs           = writeGlobalVars p 
 
 patchAnn :: AnnInfo r -> AnnInfo r -> SourceSpan -> AnnSSA r
 patchAnn m1 m2 l = Ann l $ M.lookupDefault [] l m1 ++ M.lookupDefault [] l m2
@@ -47,18 +52,13 @@ patchAnn m1 m2 l = Ann l $ M.lookupDefault [] l m1 ++ M.lookupDefault [] l m2
 -------------------------------------------------------------------------------------
 ssaFun :: F.Reftable r => FunctionStatement SourceSpan -> SSAM r (FunctionStatement SourceSpan)
 -------------------------------------------------------------------------------------
-ssaFun (FunctionStmt l f xs body) = do 
-    θ            <- getSsaEnv  
-    imms         <- getImmutables
-
-    addImmutables $ envMap (\_ -> F.top) θ              -- Variables from OUTER scope are IMMUTABLE
-    setSsaEnv     $ extSsaEnv ((returnId l) : xs) θ  -- Extend SsaEnv with formal binders
-    (_, body')   <- ssaStmts body                    -- Transform function
-
-    setSsaEnv θ                                      -- Restore Outer SsaEnv
-    setImmutables imms                               -- Restore Outer Immutables
-
-    return        $ FunctionStmt l f xs body'
+ssaFun (FunctionStmt l f xs body) 
+  = do θ <- getSsaEnv  
+       withMutability ReadOnly (envIds θ) $                  -- Variables from OUTER scope are IMMUTABLE
+         do setSsaEnv     $ extSsaEnv ((returnId l) : xs) θ  -- Extend SsaEnv with formal binders
+            (_, body')   <- ssaStmts body                    -- Transform function
+            setSsaEnv θ                                      -- Restore Outer SsaEnv
+            return        $ FunctionStmt l f xs body'
 
 ssaFun _ = error "Calling ssaFun not with FunctionStmt"
 
@@ -86,36 +86,22 @@ ssaStmt s@(EmptyStmt _)
   = return (True, s)
 
 -- x = e
-ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign (LVar l3 x) e)) = do 
-    (x', e') <- ssaAsgn l2 (Id l3 x) e
-    return (True, VarDeclStmt l1 [VarDecl l2 x' (Just e')])
+ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign (LVar l3 v) e)) = do 
+    let x     = Id l3 v 
+    (x', e') <- ssaAsgn l2 x e
+    return    $ if x == x' then (True, ExprStmt l1 (AssignExpr l2 OpAssign (LVar l3 v) e'))
+                           else (True, VarDeclStmt l1 [VarDecl l2 x' (Just e')])
 
--- e1.x = e2
+-- | e1.x = e2
 ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign (LDot l3 e3 x) e2)) = do 
     e2' <- ssaExpr e2
     e3' <- ssaExpr e3
     return (True, ExprStmt l1 (AssignExpr l2 OpAssign (LDot l3 e3' x) e2'))
-     
--- e1[i] = e2
-ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign 
-          (LBracket l3 e4@(VarRef _ _) (IntLit l5 i5)) e2)) = do  
-    e2'   <- ssaExpr e2
-    e4'   <- ssaExpr e4
-    return $ (True, ExprStmt l1 (AssignExpr l2 OpAssign 
-              (LBracket l3 e4' (IntLit l5 i5)) e2'))
 
--- x[i] = e ==> var x_SSA_1    = x;
---                  x_SSA_1[i] = e;
---              var x_SSA_3    = x_SSA_1;
---
---ssaStmt (ExprStmt l1 (AssignExpr l2 OpAssign (LBracket l3 e4@(VarRef l4 x4) (IntLit l5 i5)) e2))
---  = do e2'     <- ssaExpr e2
---       (_, vd@(VarDecl _ x4' _)) <- ssaVarDecl (VarDecl l4 x4 (Just e4))
---       let s1   = VarDeclStmt l1 [vd]
---       let s2   = ExprStmt l1 (AssignExpr l2 OpAssign 
---                      (LBracket l3 (VarRef l4 x4') (IntLit l5 i5)) e2')
---       return (True, BlockStmt l1 [s1, s2])
-
+-- e1[e2] = e3
+ssaStmt (ExprStmt z1 (AssignExpr l OpAssign (LBracket z2 e1 e2) e3))
+  = do [e1', e2', e3'] <- mapM ssaExpr [e1, e2, e3]
+       return (True, ExprStmt z1 (AssignExpr l OpAssign (LBracket z2 e1' e2') e3'))
 
 -- e
 ssaStmt (ExprStmt l e) = do 
@@ -146,20 +132,20 @@ ssaStmt (IfStmt l e s1 s2) = do
     dbg (Just θ) = trace ("SSA ENV: " ++ ppshow θ) (Just θ) -}
 
 -- while c { b }
-ssaStmt (WhileStmt l c b) = do  
-    g0         <- getSsaEnv
-    φ          <- getLoopPhis g0 b
-    let φ0      = [x | (SI x, _) <- (snd <$> φ)]
-    φ1         <- mapM (updSsaEnv l) (fst <$> φ)
-    g1         <- getSsaEnv
-    c'         <- ssaExpr c 
-    (t, b')    <- ssaStmt b
-    g2         <- getSsaEnv
-    let φ2      = [x | Just (SI x) <- (`envFindTy` g2) <$> (fst <$> φ)]
-    addAnn l (LoopPhiVar $ zip3 φ0 φ1 φ2)
-    setSsaEnv g1
-    return (t, WhileStmt l c' b')
-     
+ssaStmt (WhileStmt l cond body) 
+  = do (xs, x0s)  <- unzip . map (\(x, (SI xo,_)) -> (x, xo)) <$> getLoopPhis body
+       x1s        <- mapM (updSsaEnv l) xs
+       θ1         <- getSsaEnv
+       cond'      <- ssaExpr cond 
+       (t, body') <- ssaStmt body
+       θ2         <- getSsaEnv
+       let x2s     = [x2 | Just (SI x2) <- (`envFindTy` θ2) <$> xs]
+       addAnn l    $ PhiVar x1s
+       setSsaEnv θ1
+       return      $ (t, (asgn x1s x0s) `presplice` (WhileStmt l cond' (body' `splice` (asgn (mkNextId <$> x1s) x2s))))
+    where 
+       asgn [] _   = Nothing 
+       asgn ls rs  = Just $ BlockStmt l $ zipWith (mkPhiAsgn l) ls rs
 
 ssaStmt (ForStmt _  NoInit _ _ _ )     = 
     errorstar "unimplemented: ssaStmt-for-01"
@@ -176,25 +162,8 @@ ssaStmt (ForStmt l v cOpt (Just (UnaryAssignExpr l1 o lv)) b) =
 ssaStmt (ForStmt l (VarInit vds) cOpt (Just e@(AssignExpr l1 _ _ _)) b) = 
     ssaForLoop l vds cOpt (ExprStmt l1 (expand e)) b
   where
-    expand (AssignExpr l1 o lv e) = AssignExpr l1 OpAssign lv (inf o l1 lv e)
+    expand (AssignExpr l1 o lv e) = AssignExpr l1 OpAssign lv (infOp o l1 lv e)
     expand _ = errorstar "unimplemented: expand assignExpr"
-
-    inf OpAssign         _ _  = id
-    inf OpAssignAdd      l lv = InfixExpr l OpAdd      (lvalToExp lv)
-    inf OpAssignSub      l lv = InfixExpr l OpSub      (lvalToExp lv)
-    inf OpAssignMul      l lv = InfixExpr l OpMul      (lvalToExp lv)
-    inf OpAssignDiv      l lv = InfixExpr l OpDiv      (lvalToExp lv)
-    inf OpAssignMod      l lv = InfixExpr l OpMod      (lvalToExp lv)
-    inf OpAssignLShift   l lv = InfixExpr l OpLShift   (lvalToExp lv)
-    inf OpAssignSpRShift l lv = InfixExpr l OpSpRShift (lvalToExp lv)
-    inf OpAssignZfRShift l lv = InfixExpr l OpZfRShift (lvalToExp lv)
-    inf OpAssignBAnd     l lv = InfixExpr l OpBAnd     (lvalToExp lv)
-    inf OpAssignBXor     l lv = InfixExpr l OpBXor     (lvalToExp lv)
-    inf OpAssignBOr      l lv = InfixExpr l OpBOr      (lvalToExp lv)
-
-    lvalToExp (LVar l s)         = VarRef l (Id l s)
-    lvalToExp (LDot l e s)       = DotRef l e (Id l s)
-    lvalToExp (LBracket l e1 e2) = BracketRef l e1 e2
 
 ssaStmt (ForStmt l (VarInit vds) cOpt (Just i) b) =
     ssaForLoop l vds cOpt (ExprStmt (getAnnotation i) i) b
@@ -222,11 +191,38 @@ ssaStmt s@(FunctionStmt _ _ _ _)
 ssaStmt s 
   = convertError "ssaStmt" s
 
+infOp OpAssign         _ _  = id
+infOp OpAssignAdd      l lv = InfixExpr l OpAdd      (lvalExp lv)
+infOp OpAssignSub      l lv = InfixExpr l OpSub      (lvalExp lv)
+infOp OpAssignMul      l lv = InfixExpr l OpMul      (lvalExp lv)
+infOp OpAssignDiv      l lv = InfixExpr l OpDiv      (lvalExp lv)
+infOp OpAssignMod      l lv = InfixExpr l OpMod      (lvalExp lv)
+infOp OpAssignLShift   l lv = InfixExpr l OpLShift   (lvalExp lv)
+infOp OpAssignSpRShift l lv = InfixExpr l OpSpRShift (lvalExp lv)
+infOp OpAssignZfRShift l lv = InfixExpr l OpZfRShift (lvalExp lv)
+infOp OpAssignBAnd     l lv = InfixExpr l OpBAnd     (lvalExp lv)
+infOp OpAssignBXor     l lv = InfixExpr l OpBXor     (lvalExp lv)
+infOp OpAssignBOr      l lv = InfixExpr l OpBOr      (lvalExp lv)
+
+lvalExp (LVar l s)          = VarRef l (Id l s)
+lvalExp (LDot l e s)        = DotRef l e (Id l s)
+lvalExp (LBracket l e1 e2)  = BracketRef l e1 e2
+
+-------------------------------------------------------------------------------------
+presplice :: Maybe (Statement SourceSpan) -> Statement SourceSpan -> Statement SourceSpan
+-------------------------------------------------------------------------------------
+presplice z s' = splice_ (getAnnotation s') z (Just s')
+
 -------------------------------------------------------------------------------------
 splice :: Statement SourceSpan -> Maybe (Statement SourceSpan) -> Statement SourceSpan
 -------------------------------------------------------------------------------------
-splice s Nothing   = s
-splice s (Just s') = seqStmt (getAnnotation s) s s' 
+splice s z = splice_ (getAnnotation s) (Just s) z 
+
+splice_ l Nothing Nothing    = EmptyStmt l
+splice_ _ (Just s) Nothing   = s
+splice_ _ Nothing (Just s)   = s
+splice_ _ (Just s) (Just s') = seqStmt (getAnnotation s) s s'
+
 
 seqStmt _ (BlockStmt l s) (BlockStmt _ s') = BlockStmt l (s ++ s')
 seqStmt l s s'                             = BlockStmt l [s, s']
@@ -266,14 +262,16 @@ ssaExpr e@(NullLit _)
 ssaExpr   (ArrayLit l es)
   = ArrayLit l <$> (mapM ssaExpr es)
 
-ssaExpr e@(VarRef l x) = do 
-    imm <- isImmutable x
-    xo  <- findSsaEnv x
-    case xo of
-      Just z  -> return $ VarRef l z
-      Nothing -> if imm 
-                  then return e 
-                  else ssaError $ errorUnboundId (srcPos x) x 
+ssaExpr e@(VarRef l x) 
+  = do mut <- getMutability x
+       case mut of
+         WriteGlobal -> return e
+         ReadOnly    -> maybe e   (VarRef l) <$> findSsaEnv x
+         WriteLocal  -> 
+           do opX <- findSsaEnv x 
+              case opX of
+                Just t  -> return   $ VarRef l t
+                Nothing -> ssaError $ errorUnboundId (srcPos x) x
 
 ssaExpr (PrefixExpr l o e)
   = PrefixExpr l o <$> ssaExpr e
@@ -303,7 +301,7 @@ ssaVarDecl (VarDecl l x (Just e)) = do
     (x', e') <- ssaAsgn l x e
     return    (True, VarDecl l x' (Just e'))
 
-ssaVarDecl {-z@-}(VarDecl l x Nothing)
+ssaVarDecl (VarDecl l x Nothing)
   = errorstar $ printf "Variable definition of %s at %s with no initialization is not supported." (ppshow x) (ppshow l)
 
 ------------------------------------------------------------------------------------
@@ -345,17 +343,17 @@ phiAsgn l (x, (SI x1, SI x2)) = do
     let s1 = mkPhiAsgn l x' x1   -- Create Phi-Assignments
     let s2 = mkPhiAsgn l x' x2   -- for both branches
     return $ (s1, s2) 
-  where 
-    mkPhiAsgn l x y = VarDeclStmt l [VarDecl l x (Just $ VarRef l y)]
+
+mkPhiAsgn l x y = VarDeclStmt l [VarDecl l x (Just $ VarRef l y)]
 
 
--- Get the phi vars starting from an SSAEnv @θ@ and going through the 
--- statement @b@.
-getLoopPhis θ b = do
+-- Get the phi vars starting from an SSAEnv @θ@ and going through the statement @b@.
+getLoopPhis b = do
+    θ     <- getSsaEnv
     θ'    <- names <$> snd <$> tryAction (ssaStmt b) 
     return $ envToList (envLefts $ envIntersectWith meet θ θ')
   where
-    meet x1 x2 = if x1 == x2 then Right x1 else Left (x1, x2)
+    meet x x' = if x == x' then Right x else Left (x, x')
 
 
 ssaForLoop l vds cOpt incExp b = 
