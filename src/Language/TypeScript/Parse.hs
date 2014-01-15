@@ -8,7 +8,9 @@ import Data.List
 import Text.XML.Light
 import Text.Regex.Posix
 import Language.ECMAScript3.Syntax
+import Language.Nano.Errors
 import Language.Nano.Typecheck.Types
+
 import Language.Fixpoint.Types as F (Symbol, stringSymbol)
 import Language.Fixpoint.Misc (executeShellCommand)
 
@@ -38,13 +40,14 @@ parseTypeScript fts
 -}
 convertTs2XML        :: FilePath -> IO FilePath
 convertTs2XML inFile 
-  = do executeShellCommand "ts2xml" convertCommand 
+  = do cf <- fromMaybe err <$> findExecutable "ts2xml"
+       executeShellCommand "ts2xml" (convertCommand cf) 
        return outFile
-       where
-         convertCommand = printf "%s %s > %s" convFile inFile outFile
-         convFile       = "$HOME/CSE199/nano-ts/run" 
-         outFile        = replaceExtension inFile ".xml"
-
+    where
+       convertCommand cf = printf "%s %s > %s" cf inFile outFile
+       -- convFile       = "$HOME/CSE199/nano-ts/run" 
+       outFile           = replaceExtension inFile ".xml"
+       err               = error "tx2xml not found in $PATH" 
 {-
   Parse an XML file representing a TS code into a Haskell object.
   Gets the filepath to the XML file.
