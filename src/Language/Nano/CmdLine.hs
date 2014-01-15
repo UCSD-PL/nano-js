@@ -53,15 +53,14 @@ ts = TS {
 
 
 
-
-
 config = modes [ esc
                , tc
-               , liquid &= auto 
+               , liquid &= auto
+               , ts 
                ] 
             &= help    "nanojs is a suite of program verifiers"
             &= program "nanojs" 
-            &= summary "nanojs © Copyright 2013 Regents of the University of California." 
+            &= summary "nanojs © Copyright 2013-14 Regents of the University of California." 
             &= verbosity
             &= verbosity
    

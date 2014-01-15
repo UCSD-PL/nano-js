@@ -2,8 +2,11 @@ module Language.TypeScript.Parse (parseTypeScript) where
 
 import Text.Printf
 import System.Environment
+import System.Directory
+import Control.Applicative
 import System.IO
 import System.FilePath.Posix
+import Data.Maybe
 import Data.List
 import Text.XML.Light
 import Text.Regex.Posix

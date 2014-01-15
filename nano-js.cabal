@@ -16,7 +16,7 @@ data-files:          README.md,
                      include/prelude.js
 
 executable nanojs
-  build-depends:       base, containers, xml, 
+  build-depends:       base, containers, xml,directory, 
                        pretty, 
                        vector, bytestring, text, aeson, 
                        hashable < 1.2, 
@@ -46,7 +46,7 @@ executable nanojs
   hs-source-dirs:      src
 
 Library
-  build-depends:       base, containers, 
+  build-depends:       base, containers,directory, 
                        pretty, 
                        vector, bytestring, text, aeson, 
                        hashable < 1.2, 

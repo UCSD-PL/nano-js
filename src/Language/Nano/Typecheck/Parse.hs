@@ -422,7 +422,8 @@ parseCodeFromFile fp = parseJavaScriptFromFile' tAnnotP fp >>= return . mkCode
 mkCode :: ([Statement SourceSpan], M.HashMap SourceSpan [AnnToken Reft]) -> 
   Nano SourceSpan RefType
 --------------------------------------------------------------------------------------
-mkCode (ss, m) = Nano { code   = Src (checkTopStmt <$> ss)
+mkCode (ss, m) = Nano { 
+      code   = Src (checkTopStmt <$> ss)
     , specs  = envFromList [ a       | TSpec (Extern a)    <- list ] 
     , sigs   = envFromList [ a       | TBind         a     <- list ] 
     , consts = envFromList [ a       | TSpec (Meas   a)    <- list ] 
