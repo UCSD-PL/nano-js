@@ -1,28 +1,19 @@
 /*@ include sorted-list.js */
 
-/* insert :: forall A.
-  (x:<l>+null, k:A)/l |-> ls:incList[A]
-      => {v:<k> | ((keysp(v,ks) = Set_cup(Set_sng(k),keysp(x,ls)))
-                && (lenp(v,ks) = 1 + lenp(x,ls)))}
-         /k |-> ks:incList[A] */
-
-/*@ insert :: forall A.
-  (x:<l>+null, k:A)/l |-> ls:list[A]<{\h v -> h <= v}>
-      => {v:<k> | ((keysp(v,ks) = Set_cup(Set_sng(k),keysp(x,ls)))
-                && (lenp(v,ks) = 1 + lenp(x,ls)))}
-         /k |-> ks:list[A]<{\h v -> h <= v}> */
+/*@ insert :: forall < p :: (number) => prop >.
+  (x:<l>+null, k:number<p>)/l |-> ls:list[number<p>]<{\h v -> h <= v}>
+       => {v:<k> | ((lenp(v,ks) = 1 + lenp(x,ls)) 
+                 && (keysp(v,ks) = Set_sng(k) ∪ keysp(x,ls)))}
+          /k |-> ks:list[number<p>]<{\h v -> h <= v}>
+*/
 function insert(x, k){
   if (x == null){
-    var y  = {};
-    y.data = k;
-    y.next = null;
+    var y  = { data:k, next: null };
     return y;
   } else {
     var xk = x.data;
-    if (cmp(k,xk)){
-      var y  = {};
-      y.data = k;
-      y.next = x;
+    if (k <= xk){
+      var y  = {data: k, next: x};
       return y;
     } else {
       var y = x.next;

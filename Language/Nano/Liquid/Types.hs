@@ -243,10 +243,10 @@ safeRefReadHeap m g σ l = (x, t)
 
 expandTApp :: REnv -> RefType -> RefType            
 expandTApp γ (TApp c@(TDef _) ts rs r)
-  = TApp c ts (apply θ $ appRefts ps rs) r
+  = TApp c ts (tracePP "expandTApp" $ apply θ $ appRefts ps rs) r
   where
     ps  = typeRefArgs γ c
-    θ = fromLists (safeZip "appTVarArgs" (typeVarArgs γ c) ts) []
+    θ = fromLists (safeZip "appTVarArgs" (typeVarArgs γ c) (map (const F.top <$>) ts)) [] :: RSubst RReft
 
 expandTApp _ t
   = t

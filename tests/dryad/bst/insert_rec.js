@@ -1,11 +1,14 @@
 /*@ include bst.js */
 
-/*@ qualif EqKeys(v:a,h:b,ts:d): keysp(v,h) = Set_cup(Set_sng(k),keysp(v,ts)) */
+/*@ qualif EqKeys(v:a,h:b): keys(v) = keysp(x,h) ∪1 k         */
+/*@ qualif RApp(v:a): papp1(r, v)                             */
 
-/*@
-insert :: forall A.
-  (x:<t>+null, k:A)/t |-> ts:tree[A]
-    => {v:<r> | keysp(v,rs) = Set_cup(Set_sng(k),keysp(x,ts))}/r |-> rs:tree[A] */
+/*@ 
+insert :: forall <r :: (number) => prop>.
+  (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\p v -> p > v},
+                                                     {\p v -> p < v}>
+      => {v:<r> | (keysp v rs) = (keysp x ts) ∪1 k}/r |-> rs:tree[number<r>]<{\p v -> p > v},
+                                                                             {\p v -> p < v}> */
 function insert(x, k) {
   if (x == null)
   {
@@ -20,11 +23,11 @@ function insert(x, k) {
   var xl = x.left;
   var xr = x.right;
 
-  if (cmpLT(xk, k)) {
+  if (xk < k) {
     x.right = insert(xr, k);
-  } else if (cmpLT(k, xk)) {
+  } else if (k < xk) {
     x.left  = insert(xl, k);
-  } 
+  }
 
   return x;
 }

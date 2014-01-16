@@ -107,6 +107,7 @@ tcMeasure' γt ts (αs,_,bs,h,_,_)
       ls  = L.nub (heapLocs h ++ concatMap locs ts')
       θ0  = fromLists αts (zip ls ls)
 
-isFalseR (TBd _     ) = False
-isFalseR (TAll _ _  ) = False
-isFalseR t            = isFalse . ur_reft . rTypeR $ t
+isFalseR (TBd _    ) = False
+isFalseR (TAll _ _ ) = False
+isFalseR (TAllP _ _) = False
+isFalseR t           = isFalse . ur_reft . rTypeR $ t

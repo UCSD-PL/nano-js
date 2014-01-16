@@ -258,7 +258,7 @@ mapTys f (TAll v t)            = TAll v  $ mapTys f t
 mapTys f (TAllP v t)           = TAllP v $ mapTys f t
 mapTys f (TApp c ts rs r)      = f $ TApp c (mapTys f <$> ts) rs r
 mapTys f (TFun xts xt hi ho r) = TFun (g <$> xts) (g $ xt) (g <$> hi) (g <$> ho) r
-  where g = mapBind f
+  where g = mapBind (mapTys f)
 mapTys f (TObj xts r)          = TObj (mapBind f <$> xts) r
 mapTys f t                     = f t
 mapBind f (B x t) = B x $ f t
@@ -779,7 +779,7 @@ setRTypeR (TFun xts ot ih oh _) r' = TFun xts ot ih oh r'
 setRTypeR (TObj xts _)  r'   = TObj xts r'
 setRTypeR (TBd  _)     _     = errorstar "Unimplemented: setRTypeR - TBd"
 setRTypeR (TAll _ _ )  _     = errorstar "Unimplemented: setRTypeR - TAll"
-setRTypeR (TAllP _ _ ) _     = errorstar "Unimplemented: rTypeR - TAllP"
+setRTypeR (TAllP _ _ ) _     = errorstar "Unimplemented: setRTypeR - TAllP"
 
 
 ---------------------------------------------------------------------------------------

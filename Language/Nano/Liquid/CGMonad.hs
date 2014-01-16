@@ -586,7 +586,7 @@ freshTyWind g l θ ty
        θ'            <- flip fromLists ls <$> mapM freshSubst αs
        (su,σ')       <- freshHeapEnv l (apply θ' σ)
        ms            <- (instMeas su <$>) <$> getRMeasures ty
-       πs'           <- mapM (freshPredRef l g) πs
+       πs'           <- tracePP "fresh preds" <$> mapM (freshPredRef l g) πs
        let tApp       = mkApp (apply θ' . tVar <$> vs) πs'
            psu        = zip πs (apply θ' πs')
        return (tracePP "freshTyWind heap" $ expBi γ θ' psu <$> σ',
@@ -959,7 +959,7 @@ instance Freshable RReft where
   fresh                  = errorstar "fresh RReft"
   true    (U r _)        = ureft   <$> true r
   refresh (U r p)        = (`U` p) <$> refresh r
-
+                           
 instance Freshable F.SortedReft where
   fresh                  = errorstar "fresh Reft"
   true    (F.RR so r)    = F.RR so <$> true r 
@@ -974,8 +974,19 @@ trueRefType    :: RefType -> CGM RefType
 trueRefType    = mapReftM true
 
 refreshRefType :: RefType -> CGM RefType
-refreshRefType = mapReftM refresh
+refreshRefType t@(TApp _ _ _ _) 
+  = do γ              <- getTDefs
+       TApp c ts rs r <- mapReftM refresh $ expandTApp γ t
+       let rπs         = safeZip "refreshRef" rs (typeRefArgs γ c)
+       TApp c ts <$> (mapM refreshRef rπs) <*> pure r
+            
+refreshRefType t 
+  = mapReftM refresh t
 
+refreshRef (PPoly s t, π) = PPoly <$> (mapM freshSym (pv_as π)) <*> refreshRefType t
+refreshRef (PMono _ _, _) = errorstar "refreshRef: PMono unexpected"
+                            
+freshSym s = liftM (, fst3 s) fresh
 ---------------------------------------------------------------------------------------
 -- | Splitting Subtyping Constraints --------------------------------------------------
 ---------------------------------------------------------------------------------------
@@ -1090,7 +1101,7 @@ rsplitC γ i (PMono _ _, PMono _ _)
 
 rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   = do γ' <- envAdds ((ofType <$>) <$> s2) γ
-       splitC $ Sub γ' i (F.subst su r1) r2
+       seq (tracePP "s1,s2" (s1,s2)) splitC $ Sub γ' i (F.subst su r1) r2
   where
     su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
@@ -1144,7 +1155,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = {- tracePP msg () `seq` -} withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)

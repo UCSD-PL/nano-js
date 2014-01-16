@@ -174,7 +174,7 @@ consFun _ _ = error "consFun called not with FunctionStmt"
 envAddFun :: AnnTypeR -> CGEnv -> Id AnnTypeR -> [Id AnnTypeR] -> RefType -> CGM CGEnv
 -----------------------------------------------------------------------------------
 envAddFun l g f xs ft
-    = do (su', g') <- envAddHeap l g h 
+    = do (su', g') <- envAddHeap l g (applyPredsBind πs <$> h)
          let g''   =  envAddReturn f (F.subst su' . applyPreds πs $ b_type t') g'
          g'''      <- envAdds (envBinds su' xs ts') g''
          gαs       <- envAdds tyBinds g'''
@@ -187,6 +187,8 @@ envAddFun l g f xs ft
     envBinds su xs ts       = varBinds xs (applyPreds πs . F.subst su <$> ts)
     (su, ts')               = renameBinds yts xs
     t'                      = F.subst su <$> t
+
+applyPredsBind πs b     = b { b_type = applyPreds πs $ b_type b }
 
 applyPreds :: [PVar Type] -> RefType -> RefType
 applyPreds πs t
@@ -361,7 +363,10 @@ consReturnHeap g xro (ReturnStmt l _)
 consReturnHeap _ _ _ = undefined           
 
 getFunHeaps g _
-  = (fromJust . funHeaps . flip envFindTy g) <$> getFun
+  -- = (fromJust . funHeaps . flip envFindTy g) <$> getFun
+  = do ft                         <- flip envFindTy g <$> getFun
+       let (_, πs, _, h1, h2, _)  = mfromJust "getFunHeaps" $ bkFun ft
+       return $ mapPair (applyPredsBind πs <$>) (h1, h2)
 
 getFunRetBinder g _
   = (retBind . fromJust . bkFun . flip envFindTy g) <$> getFun
@@ -544,7 +549,7 @@ consCall :: (PP a)
 
 consCall g l _ es ft 
   = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
-       (xes, g')            <- consScan consExpr g es
+       (xes, g')            <- seq ot seq hi' seq ho' consScan consExpr g es
        let (argSu, ts')   = renameBinds its xes
            (heapSu, hi'') = fmap b_type <$> renameHeapBinds (rheap g') hi'
            su             = heapSu `F.catSubst` argSu
@@ -575,7 +580,11 @@ topMissingBinds g σ σenv
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 
-  = freshTyInst l g αs τs tbody' >>= freshPredInst l g πs
+  -- = freshTyInst l g αs τs tbody' >>= (tracePP "Post Type" <$>) . freshPredInst l g πs . tracePP "Pre Type"
+  = do γ   <- getTDefs 
+       tαs <- freshTyInst l g αs τs tbody'
+       freshPredInst l g πs $ mapTys (tracePP "expandTApp barrrr" . expandTApp γ . tracePP "expandTApp foooo") tαs
+       -- tπs(tracePP "Post Type" <$>) . freshPredInst l g πs . tracePP "Pre Type" 
   where 
     tbody'          = apply θl tbody
     (αs, πs, tbody) = bkAll t
@@ -673,12 +682,15 @@ consUnwind l g (m, ty, θl) =
         su         = hsu `F.catSubst` sub1 s s'
     (_, g'')       <- envAddHeap l g' σ''
     g'''           <- envAdds [(s', strengthenObjBinds s' t')] g''
-    applyLocMeasEnv m g'''
+    gm             <- applyLocMeasEnv m g'''
+    -- Add "witness" for each type variable??
+    foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
   where
-    rs       = unwindTyRefs $ envFindTy b g 
-    subst su = fmap $ F.subst su
-    sub1 x y = F.mkSubst [(F.symbol x, F.eVar y)]
-    b        = heapRead "consUnwind" m $ rheap g
+    envAdd l g t = snd <$> envAddFresh l t g
+    rs           = unwindTyRefs $ envFindTy b g 
+    subst su     = fmap $ F.subst su
+    sub1 x y     = F.mkSubst [(F.symbol x, F.eVar y)]
+    b            = heapRead "consUnwind" m $ rheap g
   
 instPropBind r (B x t) = B x $ strengthen t r
 

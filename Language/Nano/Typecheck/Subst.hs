@@ -134,8 +134,12 @@ instance (PP r, Ord r, F.Reftable r) => Substitutable r (RType r) where
 --     where 
 --       msg   = printf "apply [θ = %s] [t = %s]" (ppshow θ) (ppshow t)
 instance (PP r, Ord r, F.Reftable r) => Substitutable r (PRef Type r (RType r)) where
-  apply θ (PMono xts r) = PMono ((toType . appTy θ . ofType <$>) <$> xts) r
-  apply θ (PPoly xts t) = PPoly ((toType . appTy θ . ofType <$>) <$> xts) (apply θ t)
+  apply θ  (PMono xts r) = PMono ((toType . appTy θ . ofType <$>) <$> xts) r
+  apply θ' (PPoly xts t) = PPoly ((toType . appTy θ . ofType <$>) <$> xts) (apply θ t)
+    where
+      (vts, ls) = toLists θ'
+      vts'      = [(v, setRTypeR t F.top) | (v, t) <- vts] :: [(TVar, RType r)]
+      θ         = fromLists vts' ls :: RSubst r
 
 instance (PP r, Ord r, F.Reftable r) => Substitutable r (PVar Type) where
   apply θ (PV s l t as) = PV s l (apply θ' t) (mapFst3 (apply θ') <$> as)

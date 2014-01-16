@@ -1,34 +1,21 @@
-/*@ measure keys :: forall A. (list[A]+incList[A]) => set[A]  */
-/*@ measure keysp :: forall A. (<l> + null, list[A]+incList[A]) => set[A]  */
-/*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else
-   keys(x)) */
+/*@ qualif PApp(v:a) : papp1(p, v) */
 
-/*@ measure len  :: forall A. (list[A]+incList[A]) => number  */
-/*@ measure lenp :: forall A. (<l> + null, list[A]+incList[A]) => number */
+/*@ measure keys :: (list[number]+incList[number]) => set[number]  */
+/*@ measure keysp ::(<l> + null, list[number]+incList[number]) => set[number]  */
+/*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(0), Set_sng(1)) else keys(x)) */
+
+/*@ measure len  :: (list[number]+incList[number]) => number  */
+/*@ measure lenp :: (<l> + null, list[number]+incList[number]) => number */
 /*@ measure lenp(p,x) = (if (p = null) then 0 else len(x)) */
-
 /* ---------------- -------------- ---------------- */
-/* ---------------- SORTED   LISTS ---------------- */
-/* ---------------- -------------- ---------------- */
-
-/*@ type incList[A]
-      exists! l |-> tl:incList[{v:A | field(hd, "data") <= v }]
-      . hd:{ data : A, next : <l> + null }
-
-      with len(x)  = 1 + lenp(field(hd, "next"), tl)
-      and  keys(x) = Set_cup(Set_sng(field(hd, "data")),
-                                     keysp(field(hd, "next"),tl))
-*/
-
-/* ---------------- -------------- ---------------- */
-/* ---------------- UNSORTED LISTS ---------------- */
+/* ---------------- ---- LISTS --- ---------------- */
 /* ---------------- -------------- ---------------- */
 
 /*@
 type list[A]<p :: (A, A) => prop>
-        exists! l |-> tl:list[A<p (field me "data")>]<p>. 
-          r:{ data : A, next : <l> + null }
+        exists! l |-> tl:list[A<p (field hd "data")>]<p>. 
+          hd:{ data : A, next : <l> + null }
 
-     with len(x) = 1 + lenp(field(r, "next"), tl)
-     and keys(x) = Set_cup(Set_sng(field(r, "data")), keysp(field(r, "next"), tl))
+     with len(x)   = 1 + lenp(field(hd, "next"), tl)
+     and keys(x)   = Set_cup(Set_sng(field(hd, "data")), keysp(field(hd, "next"), tl))
 */
