@@ -1,11 +1,11 @@
 /*@ include bst.js */
 
+/*@ qualif RApp(v:a): papp1(r, v)                             */
+
 /*@ lemma_nonMem :: forall A B.
-      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]
-         => {v:void | ((~(Set_mem(k, keys(ots)))))}
-            /x |-> ots:{tree[{B | v != k}] | (keys(v) = keys(its)
-                                           && hd(v) = hd(its)
-                                           && (hd(v) != k || x = null)) } */
+      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}>
+         => {v:void | (~Set_mem(k,keys(ots)) && (keysp(x,its) = keysp(x,ots)))}
+            /x |-> ots:{v:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}> | (keys(v) = keys(its))} */
 function lemma_nonMem(k, x) {
   if (x == null){
     return;
@@ -17,17 +17,16 @@ function lemma_nonMem(k, x) {
   }
 }
 
+/*@ qualif PApp(v:a) : papp1(p, v) */
+
 /*@
-  removeRoot :: forall A.
-    (t:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null }
-          * l |-> ls:tree[{A | v < field(ts, "data")}]
-          * r |-> rs:tree[{A | v > field(ts, "data")}]
-      => {v:<k>+null | (keysp(v,ks) = Set_cup(keysp(field(ts,"left"),ls),
-                                              keysp(field(ts,"right"),rs))
-                     && (~(Set_mem(field(ts, "data"),keysp(field(ts,"left"),ls))))
-                     && (~(Set_mem(field(ts, "data"),keysp(field(ts,"right"),rs))))
-                                              )}
-         /k |-> ks:tree[{A | v != field(ts, "data")}]
+  removeRoot :: forall <p :: (number) => prop>.
+    (t:<t>)/t |-> ts:{ data:number, left:<l>+null, right:<r>+null }
+          * l |-> ls:tree[{number<p> | v < field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+          * r |-> rs:tree[{number<p> | v > field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+      => {v:<k>+null | ((keysp(v,ks) = keysp(field(ts,"left"),ls) ∪ keysp(field(ts,"right"),rs))
+                        && (~Set_mem(field(ts, "data"),keysp(v,ks))))}
+         /k |-> ks:tree[{number<p> | v != field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
 */
 function removeRoot(t){
   var tl = t.left;
@@ -54,9 +53,10 @@ function removeRoot(t){
   }
 }
 
-/*@ remove :: forall A. (t:<t>+null, k:A)/t |-> in:tree[A] =>
-                                 {v:<r>+null | (v = null || (~(Set_mem(k,keys(out)))))}
-                                 /r |-> out:tree[A]
+/*@ remove :: forall <p :: (number) => prop>.
+(t:<t>+null, k:number<p>)/t |-> in:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}> =>
+                                 {v:<r>+null | (v = null || ~Set_mem(k,keys(out)))}
+                                 /r |-> out:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}>
                                  */
 function remove(x, k){
   if (x == null){

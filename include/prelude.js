@@ -4,7 +4,7 @@ function crash(){
 }
 
 
-/*@ assume :: (boolean) => void */ 
+/*@ assume :: (p:boolean) => {void | (Prop p)} */ 
 function assume(p){
   return;
 }

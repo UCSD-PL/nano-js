@@ -482,15 +482,15 @@ rTypeSortApp TUn  _  = F.FApp (tconFTycon TUn) [] -- simplifying union sorts, th
 rTypeSortApp c ts    = F.FApp (tconFTycon c) (rTypeSort <$> ts) 
 
 tconFTycon TInt      = F.intFTyCon
-tconFTycon TBool     = F.stringFTycon "boolean"
-tconFTycon TVoid     = F.stringFTycon "void"
-tconFTycon (TDef s)  = F.stringFTycon $ unId s
-tconFTycon TUn       = F.stringFTycon "union"
+tconFTycon TBool     = rawStringFTycon "boolean"
+tconFTycon TVoid     = rawStringFTycon "void"
+tconFTycon (TDef s)  = F.stringFTycon $ F.Loc (sourcePos s) (unId s)
+tconFTycon TUn       = rawStringFTycon "union"
 tconFTycon TString   = F.strFTyCon -- F.stringFTycon "string"
-tconFTycon TTop      = F.stringFTycon "top"
-tconFTycon TNull     = F.stringFTycon "null"
-tconFTycon TUndef    = F.stringFTycon "undefined"
-tconFTycon (TRef l)  = F.stringFTycon ("ref("++l++")")
+tconFTycon TTop      = rawStringFTycon "top"
+tconFTycon TNull     = rawStringFTycon "null"
+tconFTycon TUndef    = rawStringFTycon "undefined"
+tconFTycon (TRef l)  = rawStringFTycon ("ref("++l++")")
 
 
 rTypeSortForAll t    = genSort n θ $ rTypeSort tbody
@@ -1186,3 +1186,5 @@ prefixOpId o            = errorstar $ "Cannot handle: prefixOpId " ++ ppshow o
 
 builtinId       = mkId . ("builtin_" ++)
 
+rawStringSymbol = F.Loc F.dummyPos . F.stringSymbol
+rawStringFTycon = F.stringFTycon . F.Loc F.dummyPos

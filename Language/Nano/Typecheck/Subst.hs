@@ -316,7 +316,7 @@ dotAccessRef ::  (Ord r, PP r, F.Reftable r, F.Symbolic s, PP s) =>
   (Env (RType r), RHeap r) -> s -> RType r -> Maybe [ObjectAccess r]
 -------------------------------------------------------------------------------
 dotAccessRef (γ,σ) f (TApp (TRef l) _ _ _)
-  = dotAccessBase γ f (heapRead "dotAccessRef" l σ)
+  = dotAccessBase γ f $ tracePP "dotAccessRef" (heapRead "dotAccessRef" l $ tracePP "dotAccessRef heap" σ)
 
 dotAccessRef (γ,σ) f _ = Nothing
 
@@ -342,6 +342,7 @@ dotAccessBase γ f t@(TApp c ts _ _) = go c
          go (TDef i) = dotAccessDef γ i f t -- dotAccess γ f $ unfoldSafe γ t
          go TTop     = error "dotAccess top"
          go TVoid    = error "dotAccess void"
+         go c        = error $ "dotAccess " ++ ppshow c
 
 dotAccessBase _ _ t@(TFun _ _ _ _ _) = Just $ accessNoUnfold t tUndef
 dotAccessBase _ _ t               = error $ "dotAccessBase " ++ (ppshow t) 

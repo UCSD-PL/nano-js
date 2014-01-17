@@ -392,7 +392,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _ _)
        -- Get a list of all the possible types at location "l"
        -- including unfolded types and heaps, then freshen each
        -- and join
-       case dotAccessRef (γ,σ) f t of
+       case dotAccessRef (γ,σ) f $ tracePP "dotAccessRef" t of
          Nothing -> return Nothing -- error "safeDotAccess: unsafe"
          Just as -> do a <- joinAccess <$> traverse freshen as
                        castM e' (heapRead "safeDotAccess'" l σ) (ac_cast a)

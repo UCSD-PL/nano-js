@@ -1,33 +1,17 @@
-/*@ measure hd :: forall A. (btree[A]+heap[A]) => A                               */
-
-/*@ measure keys :: forall A. (btree[A]+heap[A]) => set[A]  */
-/*@ measure keysp :: forall A. (<l> + null, btree[A]+heap[A]) => set[A]  */
+/*@ measure keys :: (tree[number]) => set[number]  */
+/*@ measure keysp :: (<l> + null, tree[number]) => set[number]  */
 /*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else keys(x)) */
 
 /*@
-  type btree[A]
-       exists! l |-> lh:btree[A] * r |-> rh:btree[A]
+  type tree[A] <p :: (A, A) => prop, q :: (A, A) => prop>
+       exists! l |-> lh:tree[A<p (field me "key")>]<p, q>
+             * r |-> rh:tree[A<q (field me "key")>]<p, q>
                . me:{ left:<l>+null
                     , key:A
                     , right:<r>+null
                     }
 
-     with hd(x)   = field(me, "key")
-     and  keys(x) = Set_cup(Set_sng(field(me, "key")),
-                              Set_cup(keysp(field(me, "left"), lh),
-                                      keysp(field(me, "right"), rh)))
-*/
-/*@
-  type heap[A]
-       exists! l |-> lh:heap[{A | (v <= field(me, "key"))}]
-             * r |-> rh:heap[{A | (v <= field(me, "key"))}]
-               . me:{ left:<l>+null
-                    , key:A
-                    , right:<r>+null
-                    }
-
-     with hd(x)   = field(me, "key")
-     and  keys(x) = Set_cup(Set_sng(field(me, "key")),
+     with  keys(x) = Set_cup(Set_sng(field(me, "key")),
                               Set_cup(keysp(field(me, "left"), lh),
                                       keysp(field(me, "right"), rh)))
 */

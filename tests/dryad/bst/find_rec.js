@@ -1,17 +1,11 @@
 /*@ include bst.js */
 
-/* qualif EqField(v:a, x:b): v = hd(x)                */
-/* qualif EqField(v:a, x:b): field(v, "data") = hd(x) */
-/* qualif LtField(v:a, x:b): v < field(x, "data")     */
-/* qualif LtField(v:a, x:b): v > field(x, "data")     */
-/* qualif EqField(v:a, x:b): v = field(x, "data")     */
+/*@ qualif RApp(v:a): papp1(r, v)                             */
 
 /*@ lemma_nonMem :: forall A B.
-      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]
-         => {v:void | ((~(Set_mem(k, keys(ots)))))}
-            /x |-> ots:{tree[{B | v != k}] | (keys(v) = keys(its)
-                                           && hd(v) = hd(its)
-                                           && (hd(v) != k || x = null)) } */
+      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}>
+         => {v:void | (((~(Set_mem(k, keys(ots))))) && (keysp(x,its) = keysp(x,ots)))}
+            /x |-> ots:{v:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}> | (keys(v) = keys(its))} */
 function lemma_nonMem(k, x) {
   if (x == null){
     return;
@@ -23,9 +17,10 @@ function lemma_nonMem(k, x) {
   }
 }
 
-/*@ search :: forall A. (x:<t>+null, k:A)/t |-> ts:tree[A]
-                                     => {boolean | (Prop(v) <=> Set_mem(k, keysp(x,ts)))}
-                                         /t |-> tss:tree[A]                                */
+/*@ search :: forall < r :: (number) => prop >.
+     (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>
+        => {boolean | ((keysp(x,ts) = keysp(x,tss)) && (Prop(v) <=> Set_mem(k, keysp(x,ts))))}
+          /t |-> tss:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>   */
 function search(x, k){
   if (x == null){
     return false;
@@ -35,13 +30,13 @@ function search(x, k){
   var xl = x.left;
   var xr = x.right;
 
-  if (cmpLT(k,xk)){
-    var r  = search(xl, k);
-    var t  = lemma_nonMem(k, xr);
+  if (k < xk){
+    var r = search(xl, k);
+    lemma_nonMem(k, xr);
     return r;
-  } else if (cmpLT(xk,k)){
+  } else if (k > xk){
     var r = search(xr, k);
-    var t = lemma_nonMem(k, xl);
+    lemma_nonMem(k, xl);
     return r;
   } else {
     // k == xk
