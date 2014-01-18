@@ -24,7 +24,7 @@ import           Data.Monoid (mempty, mconcat, mappend)
 
 import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Misc (errorstar)
-import           Language.Fixpoint.Types hiding (quals)
+import           Language.Fixpoint.Types hiding (quals, Loc)
 import           Language.Fixpoint.Parse 
 
 import           Language.Nano.Errors
@@ -41,7 +41,7 @@ import           Language.ECMAScript3.Parser        (parseJavaScriptFromFile, So
 import           Language.ECMAScript3.PrettyPrint
 
 dot        = Token.dot        lexer
-braces     = Token.braces     lexer
+--braces     = Token.braces     lexer
 plus       = Token.symbol     lexer "+"
 star       = Token.symbol     lexer "*"
 angles     = Token.angles     lexer
@@ -170,11 +170,13 @@ boundTypeP = do s <- symbolP
 
 argBind t = B (rTypeValueVar t) t
 
-bareAtomP p
+bareAtomP p'
   =  try (refP  p)
  <|> try (bRefP p)
 --  <|> try (bindP p)   -- This case is taken separately at Function parser
  <|>     (dummyP (p <* spaces))
+   where p = p' >>= \f -> return (\r -> f (ureft r))
+
 
 bbaseP :: Parser (RReft -> RefType)
 bbaseP 
@@ -366,13 +368,13 @@ bRefP kindP
       return $ t (ureft $ Reft (v, ras))
 
 -- | Parses refined types of the form: `{ kind | refinement }`
-refP :: Parser (RReft -> a) -> Parser a
-refP kindP
-  = braces $ do
-      t   <- kindP
-      reserved "|"
-      ras <- refasP 
-      return $ t (ureft $ Reft (stringSymbol "v", ras))
+-- refP :: Parser (RReft -> a) -> Parser a
+-- refP kindP
+--   = braces $ do
+--       t   <- kindP
+--       reserved "|"
+--       ras <- refasP 
+--       return $ t (ureft $ Reft (stringSymbol "v", ras))
 
 refasP :: Parser [Refa]
 refasP  =  (try (brackets $ sepBy (RConc <$> predP) semi)) 

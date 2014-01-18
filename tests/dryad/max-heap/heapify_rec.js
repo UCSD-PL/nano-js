@@ -8,7 +8,7 @@
  ({v:<x> | true})/x |-> bs:{left:<l>+null, key:number<r>, right:<r>+null}
                              * l |-> ls:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
                              * r |-> rs:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
-                       => void/x |-> hs:tree[{number<r> | true }]<{\p v -> v <= p},{\p v -> v <= p}>
+                       => void/x |-> hs:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
                                     
 
 */                               

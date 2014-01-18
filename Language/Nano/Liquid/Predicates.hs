@@ -5,15 +5,15 @@ import Text.Printf                        (printf)
 import Control.Applicative
 import Text.Parsec.Pos
 import Language.ECMAScript3.Syntax
-import Language.ECMAScript3.Parser    (SourceSpan (..))
-import Language.Nano.Types
+import Language.ECMAScript3.Parser        (SourceSpan (..))
+import Language.Nano.Types           hiding (Loc)
 import Language.Nano.Typecheck.Types
 import Language.Nano.Typecheck.Heaps
 import Language.Nano.Liquid.Types
 import Language.Nano.Errors
 
 import Language.Fixpoint.Misc
-import Language.Fixpoint.Types
+import Language.Fixpoint.Types as F
 import Language.Fixpoint.PrettyPrint
 
 -- | Handy functions for dealing with (abstract) predicates. Shamelessly
@@ -140,7 +140,7 @@ uPVar = fmap (const ())
 -----------------------------  Predicate Application --------------------------
 -------------------------------------------------------------------------------
 pappArity  = 2
-pappSym n  = S $ "papp" ++ show n
+pappSym n  = dummyLoc (S $ "papp" ++ show n)
 
 pappSort n = RR (FFunc n $ args ++ [bSort]) top
   where args  = FVar <$> [0..n]
@@ -149,7 +149,7 @@ pappSort n = RR (FFunc n $ args ++ [bSort]) top
 pVartoRConc p (v, args)
   = RConc $ pApp (pv_sym p) $ EVar v:(thd3 <$> args)
 
-pappSymSorts = [ (pappSym n, pappSort n) | n <- [1..pappArity] ]
+pappSymSorts = [ (F.val $ pappSym n, pappSort n) | n <- [1..pappArity] ]
 
 pApp :: Symbol -> [Expr] -> Pred
 pApp p es= PBexp $ EApp (pappSym $ length es) (EVar p:es)

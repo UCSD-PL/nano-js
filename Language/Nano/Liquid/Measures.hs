@@ -11,7 +11,7 @@ import           Language.Fixpoint.PrettyPrint
 import           Language.Fixpoint.Misc
 
 import           Language.Nano.Errors
-import           Language.Nano.Types
+import           Language.Nano.Types             hiding (Loc)
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Parse
@@ -42,7 +42,7 @@ instMeasure args (foo, fargs, expr) = ureft . predReft $ PAtom Eq lhs rhs
   where
     eargs = eVar <$> args
     su    = mkSubst $ zip fargs eargs
-    lhs   = EApp foo eargs
+    lhs   = EApp (Loc dummyPos foo) eargs
     rhs   = subst su expr
             
 --------------------------------------------------------------------------------

@@ -17,6 +17,7 @@ module Language.Nano.Types (
   -- * Located Values
   , Located (..) 
   , IsLocated (..)
+  , sourcePos
 
   -- * Accessing Spec Annotations
   , getSpec
@@ -108,6 +109,9 @@ instance Functor Located where
   fmap f (Loc l x) = Loc l (f x)
 
 -- | `IsLocated` is a predicate for values which we have a SourceSpan
+
+sourcePos :: IsLocated a => a -> SourcePos
+sourcePos = sp_begin . srcPos
 
 class IsLocated a where 
   srcPos :: a -> SourceSpan

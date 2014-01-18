@@ -678,9 +678,10 @@ addMeasObjBinds g (TObj bs r)
     = mapM (addMeasuresM g) bs >>= \bs' -> return (TObj bs' r)
 
 -- HACK
-field x y = F.EApp (F.symbol "field") [F.expr $ F.symbol x, bind2sym y]
+field x y = F.EApp fieldSym [F.expr $ F.symbol x, bind2sym y]
   where bind2sym = F.ESym . F.SL . F.symbolString
 
+fieldSym = F.dummyLoc $ F.symbol "field"
   
 ---------------------------------------------------------------------------------------
 -- | Adding Subtyping Constraints -----------------------------------------------------
@@ -1293,12 +1294,12 @@ instance ClearSorts F.Sort where
   clear (F.FFunc i s) = F.FFunc i $ clear <$> s
   -- clear (F.FApp _ _ ) = F.FInt -- F.FApp  c $ clear s
   clear s@(F.FApp c ss) 
-      | F.fTyconString c == "set" = F.FApp (F.stringFTycon "Set_Set") (clear <$> ss)
+      | F.val (F.fTyconString c) == "set" = F.FApp setSym (clear <$> ss)
       | c == F.propFTyCon         = s
       | c == F.boolFTyCon         = s
       | otherwise                 = F.FInt -- F.FApp  c $ clear s
-
-                             
+                                    
+setSym = F.stringFTycon . F.dummyLoc $ "Set_Set"
 
 clearFunTy s@(F.FVar _) = s
 clearFunTy s            = clear s
