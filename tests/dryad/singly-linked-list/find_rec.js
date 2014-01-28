@@ -1,19 +1,21 @@
-//import "singly-linked-list.js"
-/*  v=1 <=> set_mem(k, keys(x)) */
+/*@ include singly-linked-list.js */
+/*@ qualif PApp(v:a): (papp1 p v) */
 
-/*@ find :: forall A. (x:<l>+null,k:A)/l |-> list[A] => {v:number | (v = 1 <=> set_mem(k, keys(x))) }/same */
+/*@ find :: forall < p :: (number) => prop >. 
+            (x:<l>+null,k:number<p>)/l |-> xs:list[number<p>] => 
+              {v:boolean | (Prop(v) <=> Set_mem(k, keysp(x,xs))) }
+               /l |-> y:list[number<p>] */
 function find(x, k){
-  if (typeof(x) != "null"){ 
+  if (x != null){ 
     var xk = x.data; 
     if (xk == k) {
-      return 1;
+      return true;
     } else {
-      var r = find(x.next, k);
+      r = find(x.next, k);
       return r;
     }
   } 
-  else {
-    return 0;
-  }
+
+  return false;
 }
 

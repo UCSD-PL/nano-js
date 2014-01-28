@@ -1,10 +1,10 @@
 /*@ include singly-linked-list.js */
 
-/*@ insert :: forall A.
-  (x:<l>+null, k:A)/l |-> xs:list[A] =>
+/*@ insert ::
+  (x:<l>+null, k:number)/l |-> xs:list[number] =>
                    {v:<m> | ((lenp(v,ys) = lenp(x,xs) + 1)
-                          && (keysp(v,ys) = Set_cup(Set_sng(k),keysp(x,xs)))) }
-                             /m |-> ys:list[A] */
+                          && (keysp(v,ys) = keysp(x,xs) ∪1 k)) }
+                   /m |-> ys:list[number] */
 function insert(x, k) {
   var y = {};
   y.data = k;

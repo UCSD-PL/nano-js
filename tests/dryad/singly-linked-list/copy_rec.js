@@ -1,22 +1,19 @@
 /*@ include singly-linked-list.js */
 
 /*@
-  copy :: forall A.
-    (x:<l>+null)/l |-> xs:list[A]
+  copy ::
+    (x:<l>+null)/l |-> xs:list[number]
       => {v:<m>+null | ((lenp(v,ms) = lenp(x,xs))
                      && (keysp(v,ms) = keysp(x,xs)))}
-        /l |-> xss:list[A] * m |-> ms:list[A]
+        /l |-> xss:list[number] * m |-> ms:list[number]
 */
 function copy(x){
   if (x == null){
     var ret = null;
     return ret;
-  } else {
-    var u  = copy(x.next);
-    var d  = x.data;
-    var n  = u;
-    var t  = {data: d, next: n};
-    return t;
-  } 
+  }
+  var u  = copy(x.next);
+  var t  = {data: x.data, next: u};
+  return t;
 }
 

@@ -1,10 +1,10 @@
 /*@ include singly-linked-list.js */
 
 /*@
-  remove :: forall A.
-    (x:<l>+null, k:A)/l |-> xs:list[A]
+  remove ::
+    (x:<l>+null, k:number)/l |-> xs:list[number]
      => {v:<m>+null | (keysp(v,ms) = Set_dif(keysp(x,xs),Set_sng(k)))}
-        /m |-> ms:list[A]
+        /m |-> ms:list[number]
 */
 function remove(x, k){
   if (x != null) {
@@ -17,8 +17,7 @@ function remove(x, k){
     } else {
       return x;
     }
-  } else {
-    r = null;
-    return r;
-  } 
+  }
+
+  return null;
 }
