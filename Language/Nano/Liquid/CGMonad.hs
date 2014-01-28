@@ -105,7 +105,7 @@ import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Liquid.Types
 import           Language.Nano.Liquid.Measures
 import           Language.Nano.Liquid.Predicates
-
+import           Language.Nano.Liquid.Qualifiers
 
 import qualified Language.Fixpoint.Types as F
 import           Language.Fixpoint.Misc
@@ -167,8 +167,9 @@ getDefType f
        l   = srcPos f
 
 -- cgStateFInfo :: Nano a1 (RType F.Reft)-> (([F.SubC Cinfo], [F.WfC Cinfo]), CGState) -> CGInfo
-cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fi) (cg_ann cg)
+cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
   where 
+    fiQs = inferQuals fi
     fi   = F.FI { F.cm    = M.fromList $ F.addIds fcs  
                 , F.ws    = fws
                 , F.bs    = binds cg
@@ -852,13 +853,15 @@ alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 renameHeapBinds :: RefHeap -> RHeapEnv RReft -> (F.Subst, RHeapEnv RReft)
 ------------------------------------------------------------------------------------------
 renameHeapBinds σ1 σ2
-  = (su, fmap (F.subst su) <$> σ2)
+  = (su, (F.subst su <$>) <$> σ2)
   where l1s = heapLocs σ1
         l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
         nil = filter (`notElem` l1s) l2s
-        xs  = map (F.eVar . lx σ1) ls
-        ys  = map (b_sym <$> lx σ2) ls
+        xIs = lx σ1 <$> ls
+        yIs = lx σ2 <$> ls
+        xs  = F.eVar <$> xIs
+        ys  = b_sym  <$> yIs
         nys = map (b_sym <$> lx σ2) nil
         su  = F.mkSubst $ (zip ys xs ++ (zip nys (repeat (F.eVar nilSymbol))))
         lx  = flip (heapRead "renameHeapBinds")
@@ -1102,7 +1105,7 @@ rsplitC γ i (PMono _ _, PMono _ _)
 
 rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   = do γ' <- envAdds ((ofType <$>) <$> s2) γ
-       seq (tracePP "s1,s2" (s1,s2)) splitC $ Sub γ' i (F.subst su r1) r2
+       splitC $ Sub γ' i (F.subst su r1) r2
   where
     su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
@@ -1170,6 +1173,7 @@ subTypeWindTys seen l g σ t1@(TObj _ _) t2@(TObj _ _)
   = do (t1', t2') <- alignTsM t1 t2 
        subTypeContainers l g t1' t2'
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) $ bkPaddedObject t1 t2
+       return ()
 
 subTypeWindTys seen l g σ t1 t2
   = do subTypeContainers l g t1 t2

@@ -33,6 +33,7 @@ import           Language.Nano.Types
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Liquid.Types
+import           Language.Nano.Liquid.Predicates
 import           Language.Nano.Env
 
 import           Language.ECMAScript3.Syntax
@@ -114,12 +115,12 @@ bareTypeP
                 [t] -> return t
                 _   -> return $ TApp TUn (sort ts) [] tr)
          
- <|> try (bRefP ( do  ts <- bareTypeNoUnionP `sepBy1` plus
-                      case ts of
-                        [ ] -> error "impossible"
-                        [_] -> error "bareTypeP parser BUG"
-                        _   -> return $ TApp TUn (sort ts) [] 
-                ))
+ -- <|> try (bRefP ( do  ts <- bareTypeNoUnionP `sepBy1` plus
+ --                      case ts of
+ --                        [ ] -> error "impossible"
+ --                        [_] -> error "bareTypeP parser BUG"
+ --                        _   -> return $ TApp TUn (sort ts) [] 
+ --                ))
 
 
 bareTypeNoUnionP
@@ -197,8 +198,9 @@ tvarP = withSpan (\l x -> TV x l) (stringSymbol <$> upperWordP)
 
 tvarTyP :: Parser (RReft -> RefType)
 tvarTyP = do v <- tvarP
-             p <- monoPredicateP
-             return $ \r -> TVar v (r `meet` ureft p)
+             ps <- try (angles $ sepBy monoPredicate1P comma) <|> return []
+             return $ \r -> TVar v (foldl meet r (ureft <$> ps))
+    
 
 
 upperWordP :: Parser String
@@ -222,10 +224,9 @@ tconP =  try (reserved "number"    >> return TInt)
      <|> tDefP
 
 tRefP
-  = do  char '<'
-        l <- locationP
-        char '>'
-        return (TRef l)
+  = angles $ do
+      l <- locationP
+      return (TRef l)
 
 locationP = lowerIdP
 
@@ -242,7 +243,7 @@ bareAllP
        ps <- predVarDefsP
        dot
        t  <- bareTypeP
-       return $ foldr TAll (foldr TAllP t ps) as
+       return $ substPredVarSorts $ foldr TAll (foldr TAllP t ps) as
 
 bindsP 
   =  try (sepBy1 bareBindP comma)
@@ -295,7 +296,7 @@ monoPredicateP
   <|> return mempty
 
 predicate1P
-  =  liftM (PMono [] . predUReft) monoPredicate1P 
+  =  liftM (PMono [] . predUReft) monoPredicate1P
      <|> (braces $ liftM2 bPPoly symsP' refasP)
   where
     symsP' = do ss <- symsP
@@ -328,9 +329,9 @@ monoPredicate1P
 
 predVarUseP :: Parser (PVar RefType)              
 predVarUseP
-  = withSpan bPredUse $ do
+  = withSpan bPredUse  $ do
       p  <- predVarIdP
-      xs <- sepBy exprP spaces
+      xs <- try (sepBy exprP spaces) <|> return []
       return (p, xs)
     where
       bPredUse l (p, xs) = PV p l tUndef [ (tUndef, dummySymbol, x) | x <- xs ]

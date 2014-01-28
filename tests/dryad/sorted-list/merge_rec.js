@@ -1,10 +1,10 @@
 /*@ include sorted-list.js */
 
-/*@ merge :: forall A.
-  (x1:<a>+null, x2:<b>+null)/a |-> x1s:incList[A]
-                           * b |-> x2s:incList[A]
-    => {v:<m>+null | keysp(v,ms) = Set_cup(keysp(x1,x1s),keysp(x2,x2s))} 
-       /m |-> ms:incList[A]
+/*@ merge :: forall <p :: (number) => prop>.
+  (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[number<p>]<{\h v -> h <= v}>
+                           * b |-> x2s:list[number<p>]<{\h v -> h <= v}>
+    => {v:<m>+null | keysp(v,ms) = (keysp(x1,x1s) ∪ keysp(x2,x2s))} 
+       /m |-> ms:list[number<p>]<{\h v -> h <= v}>
 */
 function merge(x1, x2){
   if (x1 == null) {
@@ -17,7 +17,7 @@ function merge(x1, x2){
   var x1k = x1.data;
   var x2k = x2.data;
   
-  if (cmp(x1k,x2k)){
+  if (x1k <= x2k){
     var n   = x1.next;
     var y   = merge(n, x2);
     x1.next = y;
@@ -30,18 +30,20 @@ function merge(x1, x2){
   }
 }
 
-/*@ split :: forall A.
-      (x:<l>+null)/l |-> ls:list[A]
+/*@ qualif QApp(v:a): (papp1 q v) */
+
+/*@ split :: forall <q :: (number) => prop>.
+      (x:<l>+null)/l |-> ls:list[{v:number<q> | true}]<{\h v -> true}>
         => {v:<r> | keysp(x,ls) = Set_cup(keysp(field(r,"x"),xs),keysp(field(r,"y"),ys))}
            /r |-> r:{x:<x>+null, y:<y>+null}
-          * x |-> xs:list[A]
-          * y |-> ys:list[A]                                                                */
+          * x |-> xs:list[number<q>]<{\h v -> true}> 
+          * y |-> ys:list[number<q>]<{\h v -> true}>                                       */
 function split(x){
   if (x == null) {
     r = {x:null, y:null};
     return r;
   } 
-  
+ 
   var xn = x.next;
 
   if (xn == null) {
@@ -58,10 +60,9 @@ function split(x){
     return r;
   }
 }
-/*@ sortList :: forall A.
-      (x:<j>+null)/j |-> xs:list[A]
-         => {v:<k>+null | keysp(v,ks) = keysp(x,xs)}
-           /k |-> ks:incList[A]                       */
+/*@ sortList :: forall <q :: (number) => prop>. 
+      (x:<j>+null)/j |-> xs:list[{v:number<q> | true}]<{\h v -> true}>
+         => {v:<k>+null | keysp(v,ks) = keysp(x,xs)}/k |-> ks:list[number<q>]<{\h v -> h <= v}> */
 function sortList(x) {
   if (x == null){
     return null;
@@ -76,17 +77,5 @@ function sortList(x) {
   var ys = sortList(y);
   var zs = sortList(z);
   var ret = merge(ys,zs);
-  if (ys != null) {
-    if (zs != null) {
-      return ret;
-    } else {
-      return ret;
-    }
-  } else {
-    if (zs != null) {
-      return ret;
-    } else {
-      return ret;
-    }
-  }
+  return ret;
 }

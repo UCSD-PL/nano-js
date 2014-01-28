@@ -35,7 +35,39 @@ replacePreds :: RefType -> [(PVar Type, Ref RReft)] -> RefType
 -------------------------------------------------------------------------------
 replacePreds = foldl' go
   where go z (π, t@(PPoly _ _)) = substPred (π, t) z
-        go _ (_, PMono _ _)    = error "replacePreds on PMono"
+        go _ (_, PMono _ _)     = error "replacePreds on PMono"
+                                 
+-------------------------------------------------------------------------------
+-- make instance of some class? like Susbtitutable?
+substPredVarSorts :: RefType -> RefType
+-------------------------------------------------------------------------------
+substPredVarSorts t = foldl (\t π -> mapTys (substPredVarSort π) t) t πs
+  where (_,πs,t') = bkAll t 
+                    
+substPredVarSort π t@(TApp c ts rs r) 
+  = tracePP (printf "substPredVarSort (%s)" (ppshow t)) $ TApp c ts (go <$> rs) r
+  where go (PMono ss (U r (Pr [π']))) 
+          | pv_sym π == pv_sym π' = PMono [(y,x) | (x,y,z) <- pv_as π] $ U r (Pr [πn])
+        go r                      = r
+        πn                        = π { pv_as = [((),y,z) | (_,y,z) <- pv_as π]
+                                      , pv_ty = ()
+                                      }
+                                    
+substPredVarSort _ t = t
+
+-- substPredVarSort π (TApp c ts rs r) 
+  -- = TApp c ts' rs' r'
+  --   where
+  --     ts' = substPredVarSort π <$> ts
+  --     rs' = substPredVarSortRef π <$> rs
+  --     r'  = substPredVarSortReft π <$> r
+
+-- substPredVar π (TVar v r)           = TVar v $ substPredVarRef π r
+-- substPredVar π (TFun bs rb hi ho r) =   
+-- substPredVar π t@(TAllP π' t') 
+--   | pv_sym π == pv_sym π' = t
+--   | otherwise             = TAllP π' $ substPredVar π t'
+                            
 
 -------------------------------------------------------------------------------
 substPred :: (PVar Type, Ref RReft) -> RefType -> RefType

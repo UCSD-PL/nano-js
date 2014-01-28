@@ -1,7 +1,7 @@
 /*@ include bst.js */
 
 /*@ qualif EqKeys(v:a,h:b): keys(v) = keysp(x,h) ∪1 k         */
-/*@ qualif RApp(v:a): papp1(r, v)                             */
+/*@  qualif RApp(v:a): papp1(r, v)                             */
 
 /*@ 
 insert :: forall <r :: (number) => prop>.

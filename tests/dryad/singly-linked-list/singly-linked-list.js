@@ -1,5 +1,5 @@
-/*@ measure keys :: forall A. (list[A]) => set[A]  */
-/*@ measure keysp :: forall A. (<l> + null, list[A]) => set[A]  */
+/*@ measure keys ::  (list[number]) => set[number]  */
+/*@ measure keysp :: (<l> + null, list[number]) => set[number]  */
 /*@ measure keysp(p,x) = (if (p = null) then Set_cap(Set_sng(1),Set_sng(0)) else
    keys(x)) */
 

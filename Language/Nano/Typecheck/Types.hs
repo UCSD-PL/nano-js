@@ -50,7 +50,7 @@ module Language.Nano.Typecheck.Types (
   , efoldReft, foldReft
   , emapReft
   , mapTys
-
+  , mapBind 
   -- * Helpful checks
   , isTop, isNull, isUndefined, isObj, isUnion
 

@@ -1,5 +1,11 @@
 # Status
 
+## scraping quals
+* manual scraping of qualifiers from the fq files seems to be pretty
+  effective, I bet it could be mechanized. Not sure what's done in lh, but
+  I just grabbed the RHS, performed the substitutions that were applied to the lhs, and
+  added this qual (with free variables).
+
 ## heaps+locations
 
 * I've added reference types and changed objects so

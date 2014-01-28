@@ -1,11 +1,11 @@
 /*@ include sorted-list.js */
 /*@ qualif AppKeys(v:a) : keys(v) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
 
-/*@ append :: forall A.
-  (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:incList[{A | v <  xk }]
-                                 * g |-> gg:incList[{A | v >= xk }]
+/*@ append :: forall <p :: (number) => prop>.
+  (xk:number, ls:<l>+null, gs:<g>+null)/l |-> ll:list[{v:number<p> | v <  xk}]<{\h v -> h <= v}>
+                                 * g |-> gg:list[{v:number<p> | v >= xk}]<{\h v -> h <= v}>
     => {v:<k>+null | keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) }
-       /k |-> kk:incList[A]                                             */
+       /k |-> kk:list[number<p>]<{\h v -> h <= v}>                                             */
 function append(xk, ls, gs) {
   if (ls == null) {
     return gs;
@@ -20,15 +20,14 @@ function append(xk, ls, gs) {
   }
   return ls;
 }
+/*@ qualif PApp(v:a): (papp1 p v) */
 
-/*@ nullList :: forall A. (A) => {v:<l>+null | v = null}/l |-> list[A] */
-
-/*@ partition :: forall A.
-   (piv:A, x:<x>+null)/x |-> xs:list[A]
+/*@ partition :: forall <p :: (number) => prop >.
+   (piv:number, x:<x>+null)/x |-> xs:list[number<p>]<{\h v -> true}>
      => {v:<r> | keysp(x,xs) = Set_cup(keysp(field(p,"x"),as),keysp(field(p,"y"),bs))}
-                 /a |-> as:list[{A | v < piv}]
-                * b |-> bs:list[{A | v >= piv}]
-                * r |-> p:{x:<a>+null, y:<b>+null}                                  */
+                 /a |-> as:list[{v:number<p> | piv >  v}]<{\h v -> true}>
+                * b |-> bs:list[{v:number<p> | piv <= v}]<{\h v -> true}>
+                * r |-> p:{x:<a>+null, y:<b>+null}                */
 function partition(piv, x){
   if (x == null) {
       var ret = {};
@@ -42,7 +41,7 @@ function partition(piv, x){
   var xd = x.data;
   var a = yz.x;
   var b = yz.y;
-  if (cmpLT(xd,piv)){
+  if (xd < piv){
     x.next = a
     var ret = {};
     ret.x = x;
@@ -57,10 +56,10 @@ function partition(piv, x){
   }
 }
 
-/*@ quickSort :: forall A.
-      (x:<x>+null)/x |-> in:list[A]
+/*@ quickSort :: forall <p:: (number) => prop>.
+      (x:<x>+null)/x |-> in:list[number<p>]<{\h v -> true}>
         => {v:<o>+null | keysp(v,out) = keysp(x,in) }
-          /o |-> out:incList[A] */
+          /o |-> out:list[number<p>]<{\h v -> h <= v}> */
 function quickSort(x) {
   if (x == null){
     return null;
@@ -74,4 +73,3 @@ function quickSort(x) {
   var ret = append(piv, ls, x);
   return ret;
 }
-

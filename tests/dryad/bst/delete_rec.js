@@ -1,11 +1,9 @@
 /*@ include bst.js */
 
-/*@ qualif RApp(v:a): papp1(r, v)                             */
-
 /*@ lemma_nonMem :: forall A B.
-      (k:A, x:<x>+null)/x |-> its:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}>
+      (k:A, x:<x>+null)/x |-> its:tree[{v:B | v != k}]<{\x y -> x > y}, {\x y -> x < y}>
          => {v:void | (~Set_mem(k,keys(ots)) && (keysp(x,its) = keysp(x,ots)))}
-            /x |-> ots:{v:tree[{B | v != k}]<{\x y -> x > y}, {\x y -> x < y}> | (keys(v) = keys(its))} */
+            /x |-> ots:{v:tree[{v:B | v != k}]<{\x y -> x > y}, {\x y -> x < y}> | (keys(v) = keys(its))} */
 function lemma_nonMem(k, x) {
   if (x == null){
     return;
@@ -22,11 +20,11 @@ function lemma_nonMem(k, x) {
 /*@
   removeRoot :: forall <p :: (number) => prop>.
     (t:<t>)/t |-> ts:{ data:number, left:<l>+null, right:<r>+null }
-          * l |-> ls:tree[{number<p> | v < field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
-          * r |-> rs:tree[{number<p> | v > field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+          * l |-> ls:tree[{v:number<p> | v < field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+          * r |-> rs:tree[{v:number<p> | v > field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
       => {v:<k>+null | ((keysp(v,ks) = keysp(field(ts,"left"),ls) ∪ keysp(field(ts,"right"),rs))
                         && (~Set_mem(field(ts, "data"),keysp(v,ks))))}
-         /k |-> ks:tree[{number<p> | v != field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+         /k |-> ks:tree[{v:number<p> | v != field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
 */
 function removeRoot(t){
   var tl = t.left;
@@ -65,12 +63,12 @@ function remove(x, k){
  
   var xk = x.data;
 
-  if (cmpLT(k,xk)) {
+  if (k < xk) {
     lemma_nonMem(k, x.right);
     var xl = x.left;
     x.left = remove(xl, k);
     return x;
-  } else if (cmpLT(xk,k)) {
+  } else if (xk < k) {
     lemma_nonMem(k, x.left);
     var xr = x.right;
     x.right = remove(xr, k);
