@@ -3,8 +3,8 @@
 /*@ qualif Keyz(v:a): keys(v) = Set_cup(Set_sng(k), keys(xs)) */
 /*@ qualif Lenz(v:a): len(v) = len(xs) + 1 */
 
-/*@ insert :: forall A H. (p:<p>,k:A)/p |-> xs:clist[A,H]
-                             => void/p |-> ys:{clist[A,H] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
+/*@ insert :: forall H. (p:<p>,k:number)/p |-> xs:clist[number,H]
+                             => void/p |-> ys:{v:clist[number,H] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
                                                           && (len(v)  = len(xs) + 1)) }
 */
             

@@ -4,10 +4,10 @@
       (keys(v) = (Set_cup(Set_sng(field(y, "data")),
                           dkeysp(field(y, "next"), ys)))) */
 
-/*@ remove :: forall A P.
-  (x:<l>+null,k:A)/l |-> ls:dlist[A,<l>,P]
+/*@ remove :: forall P.
+  (x:<l>+null,k:number)/l |-> ls:dlist[number,<l>,P]
     => r:{v:<v>+null | dkeysp(v,vs) = Set_dif(dkeysp(x,ls),Set_sng(k))}
-       /v |-> vs:dlist[A,<v>,null] */
+       /v |-> vs:dlist[number,<v>,null] */
 function remove(x, k){
   if (x == null){
     return null;

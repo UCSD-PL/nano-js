@@ -1,8 +1,8 @@
 /*@ include cyclic_list.js */
 
-/*@ remove :: forall A. (x:<x>)/x |-> xs:clist[A,<x>]
+/*@ remove :: (x:<x>)/x |-> xs:clist[number,<x>]
                     => {v:<x>+null | ((len(xs) > 1) => (v != null))}
-                       /x |-> ys:{clist[A,<x>] | ((len(xs) > 1) => (len(v) = len(xs) - 1))} */
+                       /x |-> ys:{v:clist[number,<x>] | ((len(xs) > 1) => (len(v) = len(xs) - 1))} */
 function remove(x){
   var xn = x.next;
   if (isL(xn)) {

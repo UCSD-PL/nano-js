@@ -392,7 +392,7 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _ _)
        -- Get a list of all the possible types at location "l"
        -- including unfolded types and heaps, then freshen each
        -- and join
-       case dotAccessRef (γ,σ) f $ tracePP "dotAccessRef" t of
+       case dotAccessRef (γ,σ) f t of
          Nothing -> return Nothing -- error "safeDotAccess: unsafe"
          Just as -> do a <- joinAccess <$> traverse freshen as
                        castM e' (heapRead "safeDotAccess'" l σ) (ac_cast a)
@@ -411,12 +411,13 @@ safeDotAccess' σ f t@(TApp (TRef l) _ _ _)
                                                    , ac_cast   = apply θ  $ ac_cast a
                                                    , ac_unfold = appUf θ <$> ac_unfold a
                                                    }
-                  (Just θ, Just σ)   -> do (θi,_,σ') <- freshHeap σ
-                                           return $ a { ac_result = apply θ . apply θi  $ ac_result a
-                                                      , ac_cast   = apply θ . apply θi  $ ac_cast a
-                                                      , ac_heap   = Just . apply θ $ σ'
-                                                      , ac_unfold = appUf θ . appUf θi <$> ac_unfold a
-                                                      }
+                  (Just θ, Just σ)   -> do 
+                    (θi,_,σ') <- freshHeap σ
+                    return $ a { ac_result = apply θ . apply θi  $ ac_result a
+                               , ac_cast   = apply θ . apply θi  $ ac_cast a
+                               , ac_heap   = Just . apply θ $ σ'
+                               , ac_unfold = appUf θ . appUf θi <$> ac_unfold a
+                               }
                   _                  -> error "BUG: safeDotAccess' didn't expect heap without unfold"
     appUf θ (l,θ',t) = (l, θ `mappend` θ', apply θ t)
 
@@ -439,7 +440,7 @@ getAnns = do θ     <- tc_subst <$> get
 addAnn :: SourceSpan -> Fact_ r -> TCM r () 
 -------------------------------------------------------------------------------
 addAnn l f = do stmt <- getStmt
-                let l' = maybe l (ann . getAnnotation . tracePP "addAnn" ) stmt
+                let l' = maybe l (ann . getAnnotation) stmt
                 modify $ \st -> st { tc_anns = inserts l f (tc_anns st) 
                                    , tc_tos  = M.insert l l' (tc_tos st)
                                    } 
@@ -781,14 +782,14 @@ revertWindsM l θ0 θi
                           , tc_anns  = HM.insert (srcPos l) as' a
                           }
   where
-    revertWind θ w@(WindInst _ _ _ _ _) = tracePP "WindInst'" $ apply θ $ tracePP "WindInst" w
+    revertWind θ w@(WindInst _ _ _ _ _) = apply θ w
     revertWind _ a                      = a
 ----------------------------------------------------------------------------------
 unifyTypeRenameM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
   l -> [Location] -> [Location] -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r, RSubst r, RSubst r)
 ----------------------------------------------------------------------------------
 unifyTypeRenameM l ls ls' m e t t'
-  = do θ0 <- tracePP "unifyTypeRenameM pre" <$> getSubst
+  = do θ0 <- getSubst
        let θ' =  θ0 `mappend` fromLists [] (zip ls ls)
        setSubst θ'
        θ <- unifyTypeM l m e t t'
@@ -805,7 +806,7 @@ unifyHeapRenameM :: (Ord r, PP r, F.Reftable r, IsLocated l, Free (Fact_ r), Sub
   l -> [Location] -> [Location] -> String ->  RHeap r -> RHeap r -> TCM r (RSubst r, RSubst r, RSubst r)
 ----------------------------------------------------------------------------------
 unifyHeapRenameM l ls ls' m σ σ'
-  = do θ0 <- tracePP "unifyHeapRenameM pre" <$> getSubst
+  = do θ0 <- getSubst
        let θ' = θ0 `mappend` fromLists [] (zip ls ls)
        setSubst θ'
        θ <- unifyHeapsM l m σ σ'

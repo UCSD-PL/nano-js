@@ -1,10 +1,10 @@
 /*@ measure len  :: forall A. (dlist[A]) => number                      */
-/*@ measure keys :: forall A. (dlist[A]) => set[A]                      */
+/*@ measure keys :: (dlist[number]) => set[number]                      */
 
 /*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number   */
 /*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x))             */
 
-/*@ measure dkeysp :: forall A B C. (<l>+null, dlist[A,B,C]) => set[A]  */
+/*@ measure dkeysp :: forall B C. (<l>+null, dlist[number,B,C]) => set[number]  */
 /*@ measure dkeysp(p,x) = (if (p = null) then
                             Set_cap(Set_sng(1),Set_sng(0))
                          else

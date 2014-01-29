@@ -585,16 +585,18 @@ freshTyWind g l θ ty
        γ             <- getTDefs
        let (αs,ls)    = toLists θ
        θ'            <- flip fromLists ls <$> mapM freshSubst αs
-       (su,σ')       <- freshHeapEnv l (apply θ' σ)
+       let θα         = uncurry fromLists . fmap (const []) $ toLists θ'
+       (su,σ')       <- freshHeapEnv l $ apply θ' σ
        ms            <- (instMeas su <$>) <$> getRMeasures ty
-       πs'           <- tracePP "fresh preds" <$> mapM (freshPredRef l g) πs
+       πs'           <- mapM (freshPredRef l g) πs
        let tApp       = mkApp (apply θ' . tVar <$> vs) πs'
            psu        = zip πs (apply θ' πs')
-       return (tracePP "freshTyWind heap" $ expBi γ θ' psu <$> σ',
-               tracePP "freshTyWind bind" (s, exp γ θ' psu $ F.subst su t),
-               tracePP "freshTyWind tApp" $ exp γ θ' [] tApp,
+       return (expBi γ θα psu <$> σ',
+               (s, exp γ θα psu $ apply θ' $ F.subst su t),
+               exp γ θα [] tApp,
                ms)
     where 
+      -- traceType m t        = tracePP m (toType t) `seq` t
       exp γ θ su           = subPvs su . apply θ . expandTApp γ 
       expBi γ θ su (B x t) = B x $ exp γ θ su t
       instMeas su (id, sym, e) = (id, sym, F.subst su e)
@@ -1159,7 +1161,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = {- tracePP msg () `seq` -} withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)

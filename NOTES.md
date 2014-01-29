@@ -1,5 +1,22 @@
 # Status
 
+## If Single Stmt
+* Need to fold if there's only an "if" with a return in it?
+
+  if (foo) {
+    return
+  }
+  
+  gets transformed to
+  
+  if (foo) {
+   fold all
+   return
+  } else {
+   fold all
+  }
+  
+
 ## scraping quals
 * manual scraping of qualifiers from the fq files seems to be pretty
   effective, I bet it could be mechanized. Not sure what's done in lh, but

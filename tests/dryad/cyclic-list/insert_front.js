@@ -2,9 +2,10 @@
 
 
 
-/*@ insert :: forall A H. (x:<x>, k:A)/x |-> xs:clist[A,<x>]
-                               => void/x |-> ys:{clist[A,<x>] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
-                                                                 && (len(v) = len(xs) + 1))}
+/*@ insert :: 
+      (x:<x>, k:number)/x |-> xs:clist[number,<x>]
+        => void/x |-> ys:{v:clist[number,<x>] | ((keys(v) = Set_cup(Set_sng(k), keys(xs)))
+                                              && (len(v) = len(xs) + 1))}
  */
 function insert(x, k){
   var z  = {};

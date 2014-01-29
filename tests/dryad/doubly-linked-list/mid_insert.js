@@ -2,7 +2,7 @@
 
 /*@ qualif LenPlusOne(v:a, x:b, y:c): len(v) = 1 + dlenp(x,y) */
 
-/*@ newNode :: forall A. (A)/emp => {v:<x> | dlenp(v,xs) = 1}/x |-> xs:dlist[{A | v = k},<x>,null] */
+/*@ newNode :: forall A. (A)/emp => {v:<x> | dlenp(v,xs) = 1}/x |-> xs:dlist[{v:A | v = k},<x>,null] */
 function newNode(k) {
     var ret = { data:k, next:null, prev:null };
     return ret;

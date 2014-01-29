@@ -1,18 +1,18 @@
 /*@ include doubly-linked-list.js */
 
 /*@
-  insert :: forall A P.
-    (x:<l>+null, k:A)/l |-> xs:dlist[A,<l>,P]
+  insert :: forall P.
+    (x:<l>+null, k:number)/l |-> xs:dlist[number,<l>,P]
        => r:{v:<k> | ((dlenp(v,ks) = 1+dlenp(x,xs))
-                   && (dkeysp(v,ks) = Set_cup(Set_sng(k),dkeysp(x,xs)))) }
-         /k |-> ks:dlist[A,<k>,null]
+                   && (dkeysp(v,ks) = dkeysp(x,xs) ∪1 k)) }
+         /k |-> ks:dlist[number,<k>,null]
 */
 function insert(x, k){
   if (x != null){
     var y  = x.next;
     var t  = insert(y, k);
-    t.prev = x;
     x.next = t;
+    t.prev = x;
     x.prev = null;
     return x;
   } else {

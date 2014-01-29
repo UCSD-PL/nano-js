@@ -2,12 +2,12 @@
 
 /*@ qualif EqLen(v:a, x:b): (len(v) = len(x)) */
 
-/*@ delete_at_middle :: forall A.
-      (p:<p>+null, q:<q>, r:<r>+null)/p |-> pp:{ data:A, next:<q>+null, prev:null }
-                                    * q |-> qq:{ data:A, next:<r>+null, prev:<p>+null}
-                                    * r |-> rr:dlist[A,<r>,<q>+null]
-                              => void/p |-> ps:{ data:A, next:<r>+null, prev:null}
-                                    * r |-> rs:{dlist[A,<r>,<p>+null] | len(v) = len(rr) }
+/*@ delete_at_middle :: 
+      (p:<p>+null, q:<q>, r:<r>+null)/p |-> pp:{ data:number, next:<q>+null, prev:null }
+                                    * q |-> qq:{ data:number, next:<r>+null, prev:<p>+null}
+                                    * r |-> rr:dlist[number,<r>,<q>+null]
+                              => void/p |-> ps:{ data:number, next:<r>+null, prev:null}
+                                    * r |-> rs:{v:dlist[number,<r>,<p>+null] | len(v) = len(rr) }
  */
 function delete_at_middle (p, q, r){
   q.next = null;

@@ -328,7 +328,7 @@ dotAccessBase _ f t@(TObj bs _) =
   do  case find (match $ F.symbol f) bs of
         Just b -> Just $ accessNoUnfold t $ b_type b
         _      -> case find (match $ F.stringSymbol "*") bs of
-                    Just b' -> Just $ accessNoUnfold t $ b_type b'
+                    Just b' -> Just $ accessNoUnfold t $ tracePP "b_type b'" $ b_type b'
                     _       -> Just $ accessNoUnfold t tUndef
   where match s (B f _)  = s == f
 
@@ -347,7 +347,7 @@ dotAccessBase γ f t@(TApp c ts _ _) = go c
 dotAccessBase _ _ t@(TFun _ _ _ _ _) = Just $ accessNoUnfold t tUndef
 dotAccessBase _ _ t               = error $ "dotAccessBase " ++ (ppshow t) 
                                 
-dotAccessDef γ i f t = (addUnfolded <$>) <$> dotAccessBase γ f t_unfold
+dotAccessDef γ i f t = (addUnfolded <$>) <$> (dotAccessBase γ f $ tracePP "t_unfold" t_unfold)
   where  
     (σ_unfold, t_unfold, θ_unfold) = unfoldSafe γ $ tracePP "dotAccessDef unfolding" t
     addUnfolded access             = 

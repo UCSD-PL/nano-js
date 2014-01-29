@@ -1,17 +1,17 @@
 /*@ type either[A,B] A + B     */
 
-/*@ measure keys :: forall A. (list[A]) => set[A]  */
+/*@ measure keys :: (clist[number]) => set[number]  */
 /*@ measure len  :: forall A. (clist[A]) => number  */
 
-/*@ isL   :: forall A B. (x:{either[A,B] | true}) => {v:boolean | (if Prop(v) then
+/*@ isL   :: forall A B. (x:{v:either[A,B] | true}) => {v:boolean | (if Prop(v) then
                                                                      (ttag(x) = "inl")
                                                                   else
                                                                      (ttag(x) = "inr"))}          */
 
-/*@ projL :: forall A B. ({either[A,B] | (ttag(v) = "inl")}) => A                                 */
-/*@ projR :: forall A B. ({either[A,B] | (ttag(v) = "inr")}) => B                                 */
-/*@ inL   :: forall A B. (A) => {either[A,B] | (ttag(v) = "inl")}                                 */
-/*@ inR   :: forall A B. (B) => {either[A,B] | (ttag(v) = "inr")}                                 */
+/*@ projL :: forall A B. ({v:either[A,B] | (ttag(v) = "inl")}) => A                                 */
+/*@ projR :: forall A B. ({v:either[A,B] | (ttag(v) = "inr")}) => B                                 */
+/*@ inL   :: forall A B. (A) => {v:either[A,B] | (ttag(v) = "inl")}                                 */
+/*@ inR   :: forall A B. (B) => {v:either[A,B] | (ttag(v) = "inr")}                                 */
 
 /*@
   type clist[A,H] exists! l |-> rest:clist[A,H]

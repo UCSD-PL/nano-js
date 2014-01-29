@@ -444,17 +444,26 @@ windType γ l loc tWind@(Id _ i) σ
        -- There may be locations (never unwound) that need to get wound up at this point
            σe'       = apply θ σe
            wls       = filter (needWind σ1) $ woundLocations  σ2
-       (_,σ1')      <- windLocations' (γ,σ1) l wls
+       (_,σ1')      <- windLocations' (γ,σ1) l $ tracePP "wls" wls
        θ' <- unifyHeapsM l "Wind(heap)" σ2 σ1'
        let θf = θ `mappend` θ'
+           θr = restrictSub (θ_inst `mappend` θ') θ_inst
        castHeapM γ l (apply θf σ1') (apply θf σ2)
-       recordWindExpr (ann l) (loc, heapLocs σe', tWind) (θ_inst `mappend` θ')
+       -- recordWindExpr (ann l) (loc, heapLocs σe', tWind) $ tracePP "record sub" (θ_inst `mappend` θ')
+       recordWindExpr (ann l) (loc, heapLocs σe', tWind) θr
        return (θf, foldl (flip heapDel) σ1' $ heapLocs σe', apply θf t')
   where 
     dropThird (a,b,_)  = (a,b)
     needWind σ (l,t,_) = case L.lookup l $ map dropThird $ woundLocations σ of
                            Just t' -> F.symbol t /= F.symbol t'
                            _       -> elem l $ heapLocs σ
+
+restrictSub θ θ' = fromLists (restrict vs vs') (restrict ls ls')
+  where
+    (vs, ls)          = toLists θ
+    (vs',ls')         = mapBoth fst fst $ toLists θ'
+    restrict i o      = filter (flip elem o . fst) i
+    mapBoth f g (x,y) = (map f x, map g y)
 
 uwOrder σ ls = reverse $ map (fst3 . v2e) $ topSort g
   -- For each unwound location l |-> t, record (l, locations referred to by t

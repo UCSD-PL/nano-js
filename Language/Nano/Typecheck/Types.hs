@@ -1084,9 +1084,8 @@ instance PP Fact where
   pp (WindInst l wls i αs ls) = pp (l:wls)
                             <+> pp αs
                             <+> pp ls
-                            <+> text "↦" <+> pp i
-                            <+> text "↦" <+> pp i
-  pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
+                            <+> text "⇑" <+> pp i
+  pp (UnwindInst l i ls) = pp l <+> text "⇓" <+> pp i <+> pp ls
   
 
 instance (F.Reftable r, PP r) => PP (Fact_ r) where
@@ -1101,8 +1100,8 @@ instance (F.Reftable r, PP r) => PP (Fact_ r) where
   pp (WindInst l wls i αs ls) = pp (l:wls)
                             <+> pp αs
                             <+> pp ls
-                            <+> text "↦" <+> pp i
-  pp (UnwindInst l i ls) = pp l <+> text "↝" <+> pp i <+> pp ls
+                            <+> text "⇑" <+> pp i
+  pp (UnwindInst l i ls) = pp l <+> text "⇓" <+> pp i <+> pp ls
 
 instance (F.Reftable r, PP r) => PP (AnnInfo_ r) where
   pp             = vcat . (ppB <$>) . M.toList 

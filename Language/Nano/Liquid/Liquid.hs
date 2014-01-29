@@ -358,7 +358,7 @@ consReturnHeap g xro (ReturnStmt l _)
                          (tracePP "whaaaat" (fmap (F.subst su) <$> σ'))
        return (rsu `F.catSubst` su, θi)
     where
-      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
+      θi = tracePP "WorldInst" $ head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
 
 consReturnHeap _ _ _ = undefined           
 
@@ -657,13 +657,13 @@ consWind l g (m, wls, ty, θ)
 
 subWinds l g m σ' (x',t')
   = do g_st <- envAdds xts g
-       subTypeWind l g_st (toId <$> σw') (tracePP "tw" tw) (tracePP "t'" (F.subst su t'))
+       subTypeWind l g_st (toId <$> σw') tw $ F.subst su t'
   where
-    σ         = tracePP "sigma" $ rheap g
-    xts       = tracePP "xts" $ (fmap (F.subst su <$>) . toIdTyP) <$> heapTypes σw'
-    σw''      = tracePP "sigma w" $ (toId <$> σw')
+    σ         = rheap g
+    xts       = (fmap (F.subst su <$>) . toIdTyP) <$> heapTypes σw'
+    σw''      = toId <$> σw'
     (x,tw)    = safeRefReadHeap "subWinds" g σ m
-    su        = traceShow "su" $ F.catSubst su1 su2
+    su        = F.catSubst su1 su2
     (su1,σw') = renameHeapBinds σ σ'
     su2       = F.mkSubst [(F.symbol x', F.eVar x)]
     toIdTyP b = (toId b, b_type b)
