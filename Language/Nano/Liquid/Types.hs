@@ -52,6 +52,7 @@ module Language.Nano.Liquid.Types (
   , AnnTypeR
   ) where
 
+import           Data.Monoid 
 import           Data.Maybe             (fromMaybe) -- (catMaybes, , isJust)
 import qualified Data.List               as L
 import qualified Data.HashMap.Strict     as M
@@ -195,7 +196,7 @@ mapReftM f (TFun xts t h h' _) = TFun   <$> mapM (mapReftBindM f) xts
                                         <*> mapReftBindM f t
                                         <*> mapReftHeapM f h
                                         <*> mapReftHeapM f h'
-                                        <*> (return F.top) --f r 
+                                        <*> (return mempty)
 mapReftM f (TAll α t)          = TAll α <$> mapReftM f t
 mapReftM f (TAllP π t)         = TAllP π <$> mapReftM f t
 mapReftM f (TObj bs r)         = TObj   <$> mapM (mapReftBindM f) bs <*> f r
@@ -243,10 +244,10 @@ safeRefReadHeap m g σ l = (x, t)
 
 expandTApp :: REnv -> RefType -> RefType            
 expandTApp γ (TApp c@(TDef _) ts rs r)
-  = TApp c ts (tracePP "expandTApp" $ apply θ $ appRefts ps rs) r
+  = TApp c ts (apply θ $ appRefts ps rs) r
   where
     ps  = typeRefArgs γ c
-    θ = fromLists (safeZip "appTVarArgs" (typeVarArgs γ c) (map (const F.top <$>) ts)) [] :: RSubst RReft
+    θ = fromLists (safeZip "appTVarArgs" (typeVarArgs γ c) (map (F.top <$>) ts)) [] :: RSubst RReft
 
 expandTApp _ t
   = t

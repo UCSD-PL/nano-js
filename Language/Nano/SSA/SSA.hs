@@ -4,6 +4,7 @@
 
 module Language.Nano.SSA.SSA (ssaTransform) where 
 
+import           Data.Monoid
 import           Control.Applicative                ((<$>), (<*>))
 import           Control.Monad                
 import qualified Data.HashMap.Strict as M 
@@ -33,9 +34,9 @@ ssaTransform = either (errorstar . snd) id . execute . ssaNano
 ssaNano :: F.Reftable r => Nano SourceSpan t -> SSAM r (Nano (Annot (Fact_ r) SourceSpan) t)
 ----------------------------------------------------------------------------------
 ssaNano p@(Nano {code = Src fs}) 
-  = do addImmutables $ envMap (\_ -> F.top) (specs p) 
-       addImmutables $ envMap (\_ -> F.top) (defs  p) 
-       addImmutables $ envMap (\_ -> F.top) (consts p) 
+  = do addImmutables $ envMap (const mempty) (specs p) 
+       addImmutables $ envMap (const mempty) (defs  p) 
+       addImmutables $ envMap (const mempty) (consts p) 
        (_,fs') <- ssaStmts fs -- mapM ssaFun fs
        anns    <- getAnns
        return   $ p {code = Src $ (patchAnn anns <$>) <$> fs'}
@@ -53,7 +54,7 @@ ssaFun (FunctionStmt l f xs body)
   = do θ            <- getSsaEnv  
        imms         <- getImmutables
 
-       addImmutables $ envMap (\_ -> F.top) θ              -- Variables from OUTER scope are IMMUTABLE
+       addImmutables $ envMap (const mempty) θ          -- Variables from OUTER scope are IMMUTABLE
        setSsaEnv     $ extSsaEnv ((returnId l) : xs) θ  -- Extend SsaEnv with formal binders
        (_, body')   <- ssaStmts body                    -- Transform function
 

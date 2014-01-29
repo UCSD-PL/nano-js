@@ -354,11 +354,11 @@ consReturnHeap g xro (ReturnStmt l _)
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
-       subTypeHeaps l g' (tracePP "huuuuuh" (flip envFindTy g' <$> rheap g'))
-                         (tracePP "whaaaat" (fmap (F.subst su) <$> σ'))
+       subTypeHeaps l g' (flip envFindTy g' <$> rheap g')
+                         (fmap (F.subst su) <$> σ')
        return (rsu `F.catSubst` su, θi)
     where
-      θi = tracePP "WorldInst" $ head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
+      θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
 
 consReturnHeap _ _ _ = undefined           
 
@@ -581,11 +581,9 @@ topMissingBinds g σ σenv
 
 instantiate :: AnnTypeR -> CGEnv -> RefType -> CGM RefType
 instantiate l g t 
-  -- = freshTyInst l g αs τs tbody' >>= (tracePP "Post Type" <$>) . freshPredInst l g πs . tracePP "Pre Type"
   = do γ   <- getTDefs 
        tαs <- freshTyInst l g αs τs tbody'
-       freshPredInst l g πs $ mapTys (tracePP "expandTApp barrrr" . expandTApp γ . tracePP "expandTApp foooo") tαs
-       -- tπs(tracePP "Post Type" <$>) . freshPredInst l g πs . tracePP "Pre Type" 
+       freshPredInst l g πs $ mapTys (expandTApp γ) tαs
   where 
     tbody'          = apply θl tbody
     (αs, πs, tbody) = bkAll t
@@ -619,9 +617,9 @@ consObj l g pe =
     let (ps, es) = unzip pe
     (xes, g1)   <- consScan consExpr g es
     let pxs      = zipWith B (map F.symbol ps) $ map (flip envFindTy g1) xes
-    let tptr     = TApp (TRef loc) [] [] F.top
+    let tptr     = TApp (TRef loc) [] [] mempty
     (x, g2)     <- envFreshHeapBind l loc g1
-    let tob_pre  = TObj pxs F.top    
+    let tob_pre  = TObj pxs mempty
     -- This creates binders in the envt for each field
     (tob, g3)   <- freshObjBinds l g2 (x `strengthenObjBinds` tob_pre)
     g4          <- envAdds [(x,tob)] g3
@@ -646,7 +644,6 @@ consWind l g (m, wls, ty, θ)
        (z, g'')             <- envFreshHeapBind l m g'
        g'''                 <- envAdds [(z, strengthen t r)]  g''
        subTypeWind l g_st σw (snd $ hpRead g_st (rheap g_st) m) tw
-       -- subWinds l g m σenv (x,tw)
        applyLocMeasEnv m g'''
        where
          hpRead        = safeRefReadHeap "consWind"
@@ -654,31 +651,6 @@ consWind l g (m, wls, ty, θ)
          toId          = Id s . F.symbolString . b_sym                      
          toIdTyPair b  = (toId b, b_type b)
          heapDiff σ ls = foldl (flip heapDel) σ ls
-
-subWinds l g m σ' (x',t')
-  = do g_st <- envAdds xts g
-       subTypeWind l g_st (toId <$> σw') tw $ F.subst su t'
-  where
-    σ         = rheap g
-    xts       = (fmap (F.subst su <$>) . toIdTyP) <$> heapTypes σw'
-    σw''      = toId <$> σw'
-    (x,tw)    = safeRefReadHeap "subWinds" g σ m
-    su        = F.catSubst su1 su2
-    (su1,σw') = renameHeapBinds σ σ'
-    su2       = F.mkSubst [(F.symbol x', F.eVar x)]
-    toIdTyP b = (toId b, b_type b)
-    toId      = Id (srcPos l) . F.symbolString . b_sym                      
-    -- σw'       = fmap (F.subst su) (toId <$> σ')
-    -- tw'       = fmap (F.subst su) t'
-    -- xts       = (fmap (F.subst su <$>) . toIdTyP) <$> xmiss
-    -- su        = F.mkSubst [ (F.symbol x', F.eVar x) 
-    --                       | (x, x') <- zip (x:x1s) (x':x2s) ]
-    -- (x1s,x2s) = (fx <$> ls, fst . fy <$> ls)
-    -- ls        = [ l | l <- heapLocs σ', l `heapMem` σ  ]
-    -- xmiss     = [ heapRead "subWinds a" l σ' | l <- heapLocs σ' 
-    --                                          , l `notElem` ls  ]
-    -- (fx,fy)   = (flip (heapRead "subWinds b") σ, 
-    --              toIdTyP . flip (heapRead "subWinds c") σ')
 
 freshConsWind g l θ ty m
     = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
@@ -689,7 +661,7 @@ freshConsWind g l θ ty m
              tw'         = F.subst su tw
              t'          = F.subst su t
              ms'         = subMeas su <$> ms 
-         return (tracePP "sigma env ''" σenv'', (x',tw'), t', ms')
+         return (σenv'', (x',tw'), t', ms')
     where
       x'                  = hpRead m (rheap g)
       subMeas su (f,as,e) = (f, as, F.subst su e)

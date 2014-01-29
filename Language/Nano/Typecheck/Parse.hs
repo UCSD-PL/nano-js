@@ -308,7 +308,7 @@ symsP
   = do reserved "\\"
        ss <- sepBy symbolP spaces
        reserved "->"
-       return $ (, TApp TUndef [] [] top) <$> ss
+       return $ (, TApp TUndef [] [] mempty) <$> ss
  <|> return []
 
 bPPoly []   _    = error "Empty poly list"
@@ -339,7 +339,7 @@ predVarUseP
 -- This and more lifted from LiquidHaskell
 reftUReft     = (`U` mempty)
 predUReft     = U dummyReft
-dummyReft     = top
+dummyReft     = mempty
  
 dummyP ::  Parser (RReft -> b) -> Parser b
 dummyP fm = fm `ap` topP 

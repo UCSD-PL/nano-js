@@ -290,7 +290,7 @@ instance F.Reftable r => UReftable r r where
   ureft r = U r pdTrue
 
 instance F.Reftable r => UReftable Predicate r where
-  ureft p = U F.top p
+  ureft p = U mempty p
 
 instance F.Reftable r => UReftable (UReft r) r where
   ureft = id
@@ -457,7 +457,7 @@ rTypeSortedReft   ::  (F.Reftable r) => RType r -> F.SortedReft
 rTypeSortedReft t = F.RR (rTypeSort t) (rTypeReft t)
 
 rTypeReft         :: (F.Reftable r) => RType r -> F.Reft
-rTypeReft         = fromMaybe F.top . fmap F.toReft . stripRTypeBase 
+rTypeReft         = fromMaybe mempty . fmap F.toReft . stripRTypeBase 
 
 rTypeValueVar     :: (F.Reftable r) => RType r -> F.Symbol
 rTypeValueVar t   = vv where F.Reft (vv,_) =  rTypeReft t 
@@ -525,7 +525,7 @@ stripPreds t                = t
   
 -- | Adding in Refinements
 ofType :: (F.Reftable r) => Type -> RType r
-ofType = fmap (const F.top)
+ofType = fmap (const mempty)
 
 locs :: RType r -> [Location]
 locs = locs' locsNonNil'
@@ -631,7 +631,7 @@ updateField t' f t =
 ---------------------------------------------------------------------------------
 mkUnion :: (Ord r, Eq r, F.Reftable r) => [RType r] -> RType r
 ---------------------------------------------------------------------------------
-mkUnion = mkUnionRef F.top
+mkUnion = mkUnionRef mempty
 
 ---------------------------------------------------------------------------------
 mkUnionRef :: (Ord r, Eq r, F.Reftable r) => r -> [RType r] -> RType r
@@ -756,7 +756,7 @@ isUnion _                = False
 -- TODO: Fill up for other types
 rUnion               :: F.Reftable r => RType r -> r
 rUnion (TApp TUn _ _ r) = r
-rUnion _                = F.top
+rUnion _                = mempty
 
 rsUnion               :: F.Reftable r => RType r -> [Ref r]
 rsUnion (TApp TUn _ r _) = r
@@ -1121,21 +1121,21 @@ isAsm  _           = False
 -----------------------------------------------------------------------
 
 tVar   :: (F.Reftable r) => TVar -> RType r
-tVar   = (`TVar` F.top) 
+tVar   = (`TVar` mempty) 
 
 tInt, tBool, tUndef, tNull, tString, tVoid, tErr :: (F.Reftable r) => RType r
-tInt    = TApp TInt     [] [] F.top 
-tBool   = TApp TBool    [] [] F.top
-tString = TApp TString  [] [] F.top
-tTop    = TApp TTop     [] [] F.top
-tVoid   = TApp TVoid    [] [] F.top
-tUndef  = TApp TUndef   [] [] F.top
-tNull   = TApp TNull    [] [] F.top
+tInt    = TApp TInt     [] [] mempty 
+tBool   = TApp TBool    [] [] mempty
+tString = TApp TString  [] [] mempty
+tTop    = TApp TTop     [] [] mempty
+tVoid   = TApp TVoid    [] [] mempty
+tUndef  = TApp TUndef   [] [] mempty
+tNull   = TApp TNull    [] [] mempty
 tErr    = tVoid
 tFunErr = ([],[],[],heapEmpty,heapEmpty,B returnSymbol tErr)
 
 tRef :: (F.Reftable r) => Location -> RType r
-tRef l  = TApp (TRef l) [] [] F.top
+tRef l  = TApp (TRef l) [] [] mempty
 
 -- tProp :: (F.Reftable r) => RType r
 -- tProp  = TApp tcProp [] F.top 

@@ -444,12 +444,11 @@ windType γ l loc tWind@(Id _ i) σ
        -- There may be locations (never unwound) that need to get wound up at this point
            σe'       = apply θ σe
            wls       = filter (needWind σ1) $ woundLocations  σ2
-       (_,σ1')      <- windLocations' (γ,σ1) l $ tracePP "wls" wls
+       (_,σ1')      <- windLocations' (γ,σ1) l  wls
        θ' <- unifyHeapsM l "Wind(heap)" σ2 σ1'
        let θf = θ `mappend` θ'
            θr = restrictSub (θ_inst `mappend` θ') θ_inst
        castHeapM γ l (apply θf σ1') (apply θf σ2)
-       -- recordWindExpr (ann l) (loc, heapLocs σe', tWind) $ tracePP "record sub" (θ_inst `mappend` θ')
        recordWindExpr (ann l) (loc, heapLocs σe', tWind) θr
        return (θf, foldl (flip heapDel) σ1' $ heapLocs σe', apply θf t')
   where 
@@ -688,7 +687,7 @@ tcObject (γ,σ) l bs
        let (ps, es)  = unzip bs
        (ts,σ')      <- foldM (tcExprs γ) ([],σ) es
        let bts       =  zipWith B (map F.symbol ps) ts
-       let t         = TObj bts F.top 
+       let t         = TObj bts mempty
        return (tRef loc, heapAdd "tcObject" loc t σ')
 
 ----------------------------------------------------------------------------------

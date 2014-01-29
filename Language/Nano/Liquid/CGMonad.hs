@@ -556,7 +556,7 @@ freshTyInst l g αs τs tbody
            rs'              = F.symbol xr
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
-           tbody' = TFun (suBind su <$> bs) (B rs' rt') (heapSu hi') (heapSu ho') F.top
+           tbody' = TFun (suBind su <$> bs) (B rs' rt') (heapSu hi') (heapSu ho') mempty
        return $ {- tracePP msg $ -} apply θ tbody'
     where
        suBind su b = F.subst su <$> b
@@ -603,7 +603,7 @@ freshTyWind g l θ ty
       s                    = srcPos l
       toId                 = Id s . F.symbolString . b_sym                      
       toIdTyPair b         = (toId b, b_type b)
-      mkApp vs πs          = TApp (TDef ty) vs πs F.top
+      mkApp vs πs          = TApp (TDef ty) vs πs mempty
       freshSubst (α,τ)     = do τ <- freshTy "freshTyWind" τ
                                 _ <- wellFormed l g τ
                                 return (α,τ)
@@ -1119,7 +1119,7 @@ bsplitC :: (F.Reftable r) => CGEnv -> a -> RType r -> RType r -> [F.SubC a]
 ---------------------------------------------------------------------------------------
 bsplitC g ci t1 t2
   | F.isFunctionSortedReft r1 && F.isNonTrivialSortedReft r2
-  = [F.subC (fenv g) F.PTrue (r1 {F.sr_reft = F.top}) r2 Nothing [] ci]
+  = [F.subC (fenv g) F.PTrue (r1 {F.sr_reft = mempty}) r2 Nothing [] ci]
   | F.isNonTrivialSortedReft r2
   = [F.subC (fenv g) p r1 r2 Nothing [] ci]
   | otherwise
@@ -1161,7 +1161,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = {- tracePP msg () `seq` -} withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)

@@ -62,8 +62,8 @@ module Language.Nano.Typecheck.TCMonad (
   , recordWindExpr
   , recordingUnwind
   , recordUnwindExpr
-  , recordRenameM
-  , recordDeleteM
+--  , recordRenameM
+--  , recordDeleteM
   , getUnwound
   , setUnwound
   , addUnwound
@@ -310,7 +310,7 @@ freshApp l i@(Id _ d)
          _                              -> err γ
     where
       err     γ    = logError (ann l) (errorUnboundIdEnv d γ) (mempty, tErr)
-      mkApp   i vs = TApp (TDef i) vs [] F.top
+      mkApp   i vs = TApp (TDef i) vs [] mempty
       freshen i vs = do vs' <- mapM (freshTVar (ann l)) vs
                         extSubst vs'
                         let tVs = tVar <$> vs'

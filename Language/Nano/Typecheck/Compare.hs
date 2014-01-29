@@ -258,7 +258,7 @@ compareTs γ t1 t2 | otherwise              = compareTs' γ t1 t2
 compareTs' _ t1 _  | isTop t1               = errorstar "unimplemented: compareTs - top"
 compareTs' _ t1 t2 | isTop t2               = (t1', t1, t2', SubT)
   where
-    t1' = setRTypeR t1 F.top -- this will be kVared
+    t1' = setRTypeR t1 mempty -- this will be kVared
     -- @t2@ is a Top, so just to make the types compatible we will 
     -- use the base type of @t1@ and stregthen with @t2@'s refinement.
     t2' = setRTypeR t1 $ rTypeR t2
@@ -277,7 +277,7 @@ compareTs' γ t1@(TObj _ _) t2@(TObj _ _)     =
 
 -- TODO: only handles this case for now - cyclic type defs will loop infinitely
 compareTs' γ (TApp d1@(TDef _) t1s rs1 r1) (TApp d2@(TDef _) t2s rs2 r2) | d1 == d2 = 
-  (mk tjs [] F.top, mk t1s' rs1 r1, mk t2s' rs2 r2, mconcatP bds)
+  (mk tjs [] mempty, mk t1s' rs1 r1, mk t2s' rs2 r2, mconcatP bds)
   where
     (tjs, t1s', t2s', bds)  = unzip4 $ zipWith (compareTs γ) t1s t2s
     mk xs rs r              = TApp d1 xs rs r
@@ -375,7 +375,7 @@ padUnion env t1 t2 =
     t1s'       = L.sortBy sortFun $ (commonT1s ++ d1s ++ (fmap F.bot <$> d2s))
     t2s'       = L.sortBy sortFun $ (commonT2s ++ d2s ++ (fmap F.bot <$> d1s))
 
-    sortFun t1 t2 = uncurry compare $ tracePP (printf "(t1[%s],t2[%s])" (show $ toType t1) (show $ toType t2)) (t1,t2)
+    sortFun t1 t2 = uncurry compare (t1,t2)
 
     commonT1s  = snd4 <$> commonTs
     commonT2s  = thd4 <$> commonTs
@@ -485,7 +485,7 @@ padObject :: (Eq r, Ord r, F.Reftable r, PP r) =>
                (RType r, RType r, RType r, SubDirection)
 --------------------------------------------------------------------------------
 padObject γ (TObj bs1 r1) (TObj bs2 r2) = 
-  (TObj jbs' F.top, TObj b1s' r1, TObj b2s' r2, direction)
+  (TObj jbs' mempty, TObj b1s' r1, TObj b2s' r2, direction)
   where
     -- Total direction
     direction = cmnDir &*& distDir d1s d2s
@@ -545,7 +545,7 @@ padFun γ (TFun b1s o1 h1 h1' r1) (TFun b2s o2 h2 h2' r2)
       (otj , ot1 , ot2 , od )= compareTs γ (b_type o1) (b_type o2)
       t1'                    = TFun (updTs b1s t1s') (updT o1 ot1) h1 h1' r1
       t2'                    = TFun (updTs b2s t2s') (updT o2 ot2) h2 h2' r2
-      joinT                  = TFun (updTs b1s tjs) (updT o1 otj) h1 h1' F.top 
+      joinT                  = TFun (updTs b1s tjs) (updT o1 otj) h1 h1' mempty 
       updTs                  = zipWith updT
       updT b t               = b { b_type = t }
 

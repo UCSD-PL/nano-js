@@ -1,6 +1,7 @@
 module Language.Nano.Liquid.Predicates where
 
 import Data.List
+import Data.Monoid
 import Text.Printf                        (printf)
 import Control.Applicative
 import Text.Parsec.Pos
@@ -45,7 +46,7 @@ substPredVarSorts t = foldl (\t π -> mapTys (substPredVarSort π) t) t πs
   where (_,πs,t') = bkAll t 
                     
 substPredVarSort π t@(TApp c ts rs r) 
-  = tracePP (printf "substPredVarSort (%s)" (ppshow t)) $ TApp c ts (go <$> rs) r
+  = TApp c ts (go <$> rs) r
   where go (PMono ss (U r (Pr [π']))) 
           | pv_sym π == pv_sym π' = PMono [(y,x) | (x,y,z) <- pv_as π] $ U r (Pr [πn])
         go r                      = r
@@ -54,20 +55,6 @@ substPredVarSort π t@(TApp c ts rs r)
                                       }
                                     
 substPredVarSort _ t = t
-
--- substPredVarSort π (TApp c ts rs r) 
-  -- = TApp c ts' rs' r'
-  --   where
-  --     ts' = substPredVarSort π <$> ts
-  --     rs' = substPredVarSortRef π <$> rs
-  --     r'  = substPredVarSortReft π <$> r
-
--- substPredVar π (TVar v r)           = TVar v $ substPredVarRef π r
--- substPredVar π (TFun bs rb hi ho r) =   
--- substPredVar π t@(TAllP π' t') 
---   | pv_sym π == pv_sym π' = t
---   | otherwise             = TAllP π' $ substPredVar π t'
-                            
 
 -------------------------------------------------------------------------------
 substPred :: (PVar Type, Ref RReft) -> RefType -> RefType
@@ -84,7 +71,7 @@ substPred su@(π, _) t@(TApp c ts rs r)
   | null πs   = t'
   | otherwise = substRCon su t' πs r2'
   where
-    t' = tracePP (printf "substPred TApp(%s)" (ppshow t)) $ TApp c (substPred su <$> ts) (substPredP su <$> rs) r
+    t' = TApp c (substPred su <$> ts) (substPredP su <$> rs) r
     (r2', πs) = splitPVar π r
 
 substPred su (TFun xts xt hi ho r)
@@ -174,7 +161,7 @@ uPVar = fmap (const ())
 pappArity  = 2
 pappSym n  = dummyLoc (S $ "papp" ++ show n)
 
-pappSort n = RR (FFunc n $ args ++ [bSort]) top
+pappSort n = RR (FFunc n $ args ++ [bSort]) mempty
   where args  = FVar <$> [0..n]
         bSort = FApp boolFTyCon []
 
@@ -187,6 +174,6 @@ pApp :: Symbol -> [Expr] -> Pred
 pApp p es= PBexp $ EApp (pappSym $ length es) (EVar p:es)
 
 toPredType :: (Reftable r1, Reftable r2) => PVar (RType r1) -> RType r2
-toPredType π = TApp (TDef (Id dummySpan "Pred")) (fmap (const top) <$> ts) [] top
+toPredType π = TApp (TDef (Id dummySpan "Pred")) (fmap (const mempty) <$> ts) [] mempty
   where ts = pv_ty π : (fst3 <$> pv_as π)
 
