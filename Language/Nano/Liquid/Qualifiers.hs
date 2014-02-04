@@ -28,6 +28,6 @@ qualFromSubPred ((vv,t,su), p)
       , q_body   = subst su' p
       }
   where
-    su'   = mkSubst [ (subst su x, eVar x) | x <- dom ]
+    su'   = mkSubst [ (subst su x, eVar x) | x <- dom, subst su x /= vv ]
     dom   = substDom su
     psyms = syms p

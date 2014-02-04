@@ -62,8 +62,6 @@ module Language.Nano.Typecheck.TCMonad (
   , recordWindExpr
   , recordingUnwind
   , recordUnwindExpr
---  , recordRenameM
---  , recordDeleteM
   , getUnwound
   , setUnwound
   , addUnwound
@@ -77,8 +75,6 @@ module Language.Nano.Typecheck.TCMonad (
   -- * Unification
   , unifyTypeM, unifyTypesM
   , unifyHeapsM
-  , unifyTypeRenameM
-  , unifyHeapRenameM
   , revertWindsM
   , addFreeLocsM
 
@@ -278,10 +274,11 @@ freshFun l fn ft
        let ls             = nub $ heapLocs σi ++ heapLocs σo
        ls'               <- mapM (const freshLocation') ls
        let θl             = fromLists [] (zip ls ls') :: RSubst r
-       let (σi',σo')      = mapPair (apply θl) (b_type <$> σi, b_type <$> σo)
-       let ibs'           = apply θl <$> ibs
-       let ot'            = apply θl ot
-       addFreeLocsM ls'
+           (σi',σo')      = mapPair (apply θl) (b_type <$> σi, b_type <$> σo)
+           ibs'           = apply θl <$> ibs
+           ot'            = apply θl ot
+           freeLocs       = [ l' | (l,l') <- zip ls ls', l `elem` heapLocs σi ]
+       addFreeLocsM freeLocs
        addAnn (srcPos l) $ FunInst (zip (fst3 bkft) τs) (zip ls ls')
        return (ts, ibs', σi', σo', ot')
   where
@@ -622,39 +619,6 @@ unfoldSafeTC :: (PP r, Ord r, F.Reftable r) => RType r -> TCM r (RHeap r, RType 
 unfoldSafeTC  t = getTDefs >>= \γ -> return $ unfoldSafe γ t
 
 -------------------------------------------------------------------------------
-recordDeleteM :: SourceSpan -> [Location] -> TCM r ()
--------------------------------------------------------------------------------
-recordDeleteM l ls = addAnn l $ Delete ls
-
--------------------------------------------------------------------------------
-recordRenameM :: (Ord r, PP r, F.Reftable r,
-                  Substitutable r (Fact_ r), Free (Fact_ r)) =>
-  SourceSpan -> (RSubst r, RSubst r, RSubst r) -> TCM r (RSubst r)
--------------------------------------------------------------------------------
-recordRenameM l (θ,θr,θrInv)  
-  = do setSubst θ
-       setRename θr
-       modify $ \st -> st { tc_anns = map fixup <$> tc_anns st
-                          -- , tc_unwound = map (\(l,i,s) -> (apply θr l, i, θr`mappend`s)) $ tc_unwound st
-                          }
-       return (θ `mappend` θr)
-  where
-    -- fixup f@(FunInst ts ls) = apply (tracePP "recordRenameM" θf) $ tracePP "recordRenameM" f
-    fixup f                 = f
-    -- fixup f                 = tracePP "!!!Not doing any fixups!!!" f
-    θf                      = θ `mappend` θrInv
-    setRename θr = do m <- tc_renames <$> get
-                      let θ = M.findWithDefault mempty l m
-                      -- when (M.member l m) $ tcError l "Multiple Renames"
-                      when (toLists θr /= ([],[])) $ do 
-                        addRename $ mappend θ θr
-                        addAnn l . Rename . snd $ toLists $ mappend θ θr
-                        
-    addRename θr = modify $ \s -> s {
-      tc_renames = M.insert l θr (tc_renames s)
-      }
-  
--------------------------------------------------------------------------------
 recordWindExpr :: (PP r, F.Reftable r) => 
   SourceSpan -> WindCall r -> RSubst r -> TCM r ()
 -------------------------------------------------------------------------------
@@ -784,39 +748,6 @@ revertWindsM l θ0 θi
   where
     revertWind θ w@(WindInst _ _ _ _ _) = apply θ w
     revertWind _ a                      = a
-----------------------------------------------------------------------------------
-unifyTypeRenameM :: (Ord r, PrintfArg t1, PP r, PP a, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
-  l -> [Location] -> [Location] -> t1 -> a -> RType r -> RType r -> TCM r (RSubst r, RSubst r, RSubst r)
-----------------------------------------------------------------------------------
-unifyTypeRenameM l ls ls' m e t t'
-  = do θ0 <- getSubst
-       let θ' =  θ0 `mappend` fromLists [] (zip ls ls)
-       setSubst θ'
-       θ <- unifyTypeM l m e t t'
-       let rs   = filter ((`elem` ls') . snd) $ snd $ toLists θ
-           irs  = map swap . filter ((`elem` locs t) . fst) $ rs
-           θr   = Su HM.empty (HM.fromList rs)
-           θri  = Su HM.empty (HM.fromList  irs)
-       setSubst θ0
-       recordRenameM (srcPos l) (θ0, θr, θri)
-       return (θ0, θr, θri)
-
-----------------------------------------------------------------------------------
-unifyHeapRenameM :: (Ord r, PP r, F.Reftable r, IsLocated l, Free (Fact_ r), Substitutable r (Fact_ r)) =>
-  l -> [Location] -> [Location] -> String ->  RHeap r -> RHeap r -> TCM r (RSubst r, RSubst r, RSubst r)
-----------------------------------------------------------------------------------
-unifyHeapRenameM l ls ls' m σ σ'
-  = do θ0 <- getSubst
-       let θ' = θ0 `mappend` fromLists [] (zip ls ls)
-       setSubst θ'
-       θ <- unifyHeapsM l m σ σ'
-       let rs   = filter ((`elem` ls') . snd) $ snd $ toLists θ
-           irs  = map swap . filter ((`elem` heapLocs σ) . fst) $ rs
-           θr   = Su HM.empty (HM.fromList rs)
-           θri  = Su HM.empty (HM.fromList  irs)
-       setSubst θ0
-       recordRenameM (srcPos l) (θ0, θr, θri)
-       return (θ0, θr, θri)
 
 ----------------------------------------------------------------------------------
 addFreeLocsM :: (Ord r, PP r, F.Reftable r) => [Location] -> TCM r ()

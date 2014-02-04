@@ -208,7 +208,7 @@ type Measure = (F.Symbol, [F.Symbol], F.Expr) -- (name, v in keys(v) = ..., e)
 typeRefArgs γ t@(TDef i) =
   case envFindTy i γ of
     Just (TBd body) -> td_refs body
-    _               -> error $ "BUG: typeRefArgs of " ++ ppshow t
+    _               -> [] -- error $ "BUG: typeRefArgs of " ++ ppshow t
 typeRefArgs _ _        = []
 
 typeVarArgs γ t@(TDef i) =                          

@@ -547,7 +547,7 @@ consCall :: (PP a)
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 
-consCall g l _ es ft 
+consCall g l fn es ft 
   = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
        let (argSu, ts')      = renameBinds its xes
@@ -561,12 +561,15 @@ consCall g l _ es ft
        (_,g'')              <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
        let lost  = deletedLocs σin $ rheap g''
            B rs rt = fmap (F.subst su) ot
-           g'''  = g'' { renv  = envMap (deleteLocsTy lost) $ renv g''
+           g'''  = g'' { renv  = {- envMap (deleteLocsTy lost) $ -} renv g''
                        , rheap = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
                        }
        g_out                <- topMissingBinds g''' (rheap g') hi' >>= envAdds [(rs, rt)]
        g_outms              <- foldM (flip applyLocMeasEnv) g_out $ heapLocs hi'
        return (Id l $ F.symbolString rs, g_outms)
+  -- where
+    -- msg hi ho su = printf "consCall (%s) \n[hi' = %s]\n[ho' = %s]\n[su = %s]" (ppshow fn) (ppshow hi) (ppshow ho) (show su)
+    -- dbg hi ho su = tracePP (msg hi ho su)
                                         
      {- where
          msg xes its = printf "consCall-SUBST %s %s" (ppshow xes) (ppshow its)-}
@@ -676,11 +679,11 @@ consUnwind l g (m, ty, θl) =
     (σ',t',hsu)    <- unwindInst l (unwindTyApp l g m αs) θl πs rs (σ,t)
     ms             <- getRMeasures ty
     (s',g')        <- envFreshHeapBind l m g
-    let r          = instRMeas su (F.symbol b) ms
-        σ''        = (instPropBind r . subst su) <$> σ'
-        su         = hsu `F.catSubst` sub1 s s'
+    let r           = instRMeas su (F.symbol b) ms
+        σ''         = (instPropBind r . subst su) <$> σ'
+        su          = hsu `F.catSubst` sub1 s s'
     (_, g'')       <- envAddHeap l g' σ''
-    g'''           <- envAdds [(s', strengthenObjBinds s' t')] g''
+    g'''           <- envAdds [(s', subst su $ strengthenObjBinds s' t')] g''
     gm             <- applyLocMeasEnv m g'''
     -- Add "witness" for each type variable??
     foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)

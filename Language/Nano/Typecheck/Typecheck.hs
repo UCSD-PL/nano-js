@@ -540,8 +540,8 @@ tcDotAsgn :: (PP r, Ord r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ 
   -> Expression (AnnSSA_ r)
   -> TCM r (TCEnv r)
 ------------------------------------------------------------------------------------
-tcDotAsgn (γ,σ) l x f e
-  = do (t,σ)            <- tcExpr (γ,σ) e 
+tcDotAsgn (γ,σ0) l x f e
+  = do (t,σ)            <- tcExpr (γ,σ0) e
        acc              <- safeDotAccess σ f x
        (rs,σ')          <- unpackAccess l σ acc
        let ls            = locs x
@@ -551,14 +551,7 @@ tcDotAsgn (γ,σ) l x f e
        return $ Just (γ, heapCombineWith const [σ_asgn, σ'])
   where  
     updHeapField  σ t loc = return $ updateField t (F.symbol f) (heapRead "updHeapField"  loc σ)
-    wUpdHeapField σ t loc =
-      do γ  <- getTDefs 
-         t' <- updHeapField σ t loc
-         return $ fst4 $ compareTs γ (heapRead "wUpdHeapField" loc σ) t'
-
-weakenUpdTy _ t []      = t
-weakenUpdTy γ t (t':ts) = 
-  weakenUpdTy γ (fst4 $ compareTs γ t t') ts
+    wUpdHeapField σ t loc = error "weak updated not supported (yet)"
 
 -------------------------------------------------------------------------------
 tcExpr :: (Ord r, PP r, F.Reftable r, Substitutable r (Fact_ r), Free (Fact_ r)) =>
@@ -649,9 +642,11 @@ tcCall (γ,σ) l fn es ft
   = do  (_,ibs,σi,σo,ot) <- freshFun l fn ft
         let its           = b_type <$> ibs
         -- Typecheck argument
+        θ <- getSubst
         (ts, σ')         <- foldM (tcExprs γ) ([], σ) es
         -- Unify with formal parameter types
-        θ <- (unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi)
+        θ <- getSubst
+        θ <- unifyTypesM l "tcCall" its ts >> unifyHeapsM l "tcCall" σ' σi
         -- Apply the substitution
         let (ts',its')    = mapPair (apply θ) (ts,its)
         -- This function call may require some locations

@@ -169,7 +169,7 @@ getDefType f
 -- cgStateFInfo :: Nano a1 (RType F.Reft)-> (([F.SubC Cinfo], [F.WfC Cinfo]), CGState) -> CGInfo
 cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
   where 
-    fiQs = inferQuals fi
+    fiQs = {- inferQuals -} fi
     fi   = F.FI { F.cm    = M.fromList $ F.addIds fcs  
                 , F.ws    = fws
                 , F.bs    = binds cg

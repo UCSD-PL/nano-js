@@ -4,7 +4,7 @@ function crash(){
 }
 
 
-/*@ assume :: (p:boolean) => {v:void | (Prop p)} */ 
+/*@ assume :: (p:boolean)/emp => {v:void | (Prop p)}/emp */ 
 function assume(p){
   return;
 }
@@ -120,7 +120,7 @@ function unwind(x) {
 //PV: @==@ and @===@ could be handled more precisely
 /*@ builtin_OpEq        :: forall A. ({x:A|true}, {y:A|true}) => {e:boolean | ((Prop e) <=> (x = y)) }    */
 /*@ builtin_OpSEq       :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
-/*@ builtin_OpNEq       :: forall A B. ({x:A|true}, {y:B|true}) => {e:boolean | ((Prop e) <=> (x != y)) } */
+/*@ builtin_OpNEq       :: forall A B. (x:{v:A|true}, y:{v:B|true}) => {e:boolean | ((Prop e) <=> (x != y)) } */
 
 /*@ builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) => {v:boolean | true}                             */
 /*  builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) =>
