@@ -112,8 +112,8 @@ function unwind(x) {
 /************** Types for Builtin Operators ******************************/
 /*************************************************************************/
 
-/*@ builtin_OpLT        :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x <  y)) }   */
-/*@ builtin_OpLEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x <= y)) }   */
+/*@ builtin_OpLT        :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x <  y)) }   */
+/*@ builtin_OpLEq       :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x <= y)) }   */
 /*@ builtin_OpGT        :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x >  y)) }   */
 /*@ builtin_OpGEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x >= y)) }   */
 
@@ -165,7 +165,7 @@ function unwind(x) {
 /*@ invariant {v:number    | ttag(v) = "number"   } */
 /*@ invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
-/*@ invariant {v:<l>       | ((ttag(v) = "ref") && (v != null))    } */
+/*@ invariant {e:<l>       | ((ttag(e) = "ref") && (e != null))    } */
 /*@ invariant {v:<u>       | ttag(v) = "ref(u)"} */
 /*@ invariant {v:<v>       | ttag(v) = "ref(v)"} */
 /*@ invariant {v:<r>       | ttag(v) = "ref(r)"} */

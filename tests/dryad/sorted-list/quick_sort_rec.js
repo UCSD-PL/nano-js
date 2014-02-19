@@ -1,33 +1,37 @@
 /*@ include sorted-list.js */
-/*@ qualif AppKeys(v:a) : keys(v) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
 
-/*@ append :: forall <p :: (number) => prop>.
-  (xk:number, ls:<l>+null, gs:<g>+null)/l |-> ll:list[{v:number<p> | v <  xk}]<{\h v -> h <= v}>
-                                 * g |-> gg:list[{v:number<p> | v >= xk}]<{\h v -> h <= v}>
-    => {v:<k>+null | keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) }
-       /k |-> kk:list[number<p>]<{\h v -> h <= v}>                                             */
+/*@ qualif AppKeys(v:a) : keys(v)     = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
+/*@ qualif AppKeys(v:a) : keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
+/*@ qualif PartKey(v:a) : keysp(x,xs) = Set_cup(keysp(field(r,"x"),as),keysp(field(r,"y"),bs)) */
+
+/*@ append :: forall A.
+  (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h v -> h <= v}>
+                                 * g |-> gg:list[A]<{\h v -> h <= v}>
+    => v:<k>+null
+       /k |-> kk:list[A]<{\h v -> h <= v}>                                             */
 function append(xk, ls, gs) {
   if (ls == null) {
     return gs;
   }
 
   var n = ls.next;
+
   if (n == null) {
     ls.next = gs;
   } else {
+    zzz = n.data;
     n = append(xk, n, gs);
     ls.next = n;
   }
   return ls;
 }
-/*@ qualif PApp(v:a): (papp1 p v) */
 
-/*@ partition :: forall <p :: (number) => prop >.
-   (piv:number, x:<x>+null)/x |-> xs:list[number<p>]<{\h v -> true}>
-     => {v:<r> | keysp(x,xs) = Set_cup(keysp(field(p,"x"),as),keysp(field(p,"y"),bs))}
-                 /a |-> as:list[{v:number<p> | piv >  v}]<{\h v -> true}>
-                * b |-> bs:list[{v:number<p> | piv <= v}]<{\h v -> true}>
-                * r |-> p:{x:<a>+null, y:<b>+null}                */
+/*@ partition :: forall A.
+   (piv:A, x:<x>+null)/x |-> xs:list[A]<{\h v -> true}>
+     => <r>
+                 /a |-> as:list[A]<{\h v -> true}>
+                * b |-> bs:list[A]<{\h v -> true}>
+                * r |-> r:{x:<a>+null, y:<b>+null}                */
 function partition(piv, x){
   if (x == null) {
       var ret = {};
@@ -41,7 +45,7 @@ function partition(piv, x){
   var xd = x.data;
   var a = yz.x;
   var b = yz.y;
-  if (xd < piv){
+  if (xd < piv) {
     x.next = a
     var ret = {};
     ret.x = x;
@@ -56,10 +60,10 @@ function partition(piv, x){
   }
 }
 
-/*@ quickSort :: forall <p:: (number) => prop>.
-      (x:<x>+null)/x |-> in:list[number<p>]<{\h v -> true}>
+/*@ quickSort :: forall A.
+      (x:<x>+null)/x |-> in:list[A]<{\h v -> true}>
         => {v:<o>+null | keysp(v,out) = keysp(x,in) }
-          /o |-> out:list[number<p>]<{\h v -> h <= v}> */
+          /o |-> out:list[A]<{\h v -> h <= v}> */
 function quickSort(x) {
   if (x == null){
     return null;

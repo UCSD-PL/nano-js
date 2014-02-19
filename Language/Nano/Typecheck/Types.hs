@@ -261,6 +261,7 @@ mapTys f (TFun xts xt hi ho r) = TFun (g <$> xts) (g $ xt) (g <$> hi) (g <$> ho)
   where g = mapBind (mapTys f)
 mapTys f (TObj xts r)          = TObj (mapBind f <$> xts) r
 mapTys f t                     = f t
+
 mapBind f (B x t) = B x $ f t
 
 -- Lifted from LiquidHaskell             
@@ -518,10 +519,14 @@ type BHeap   = RHeap ()
 
 -- | Stripping out Refinements 
 toType :: RType a -> Type
-toType = stripPreds . fmap (const ())
+toType = toTypePreds . fmap (const ())
 
-stripPreds (TApp c ts rs r) = TApp c ts [] r
-stripPreds t                = t
+toTypePreds (TApp c ts rs r) = TApp c ts rs' r
+  where rs' = toTypeRef <$> rs
+toTypePreds t                = t
+                               
+toTypeRef (PMono ss s) = PMono ss ()
+toTypeRef (PPoly ss t) = PPoly ss (toType t)
   
 -- | Adding in Refinements
 ofType :: (F.Reftable r) => Type -> RType r
@@ -963,15 +968,15 @@ instance (F.Reftable a) => PP (PRef Type a (RType a)) where
 instance F.Reftable r => PP (RType r) where
   pp (TVar α r)                 = F.ppTy r $ pp α 
   pp (TFun xts t h h' _)        = ppArgs parens comma xts
-                              <+> text "/" <+> pp h
-                              <+> text "=>"
-                              <+> pp t <+> text "/" <+> pp h'
+                                  $$ nest 1 (text "/" <+> pp h <+> text "=>")
+                                  $$ nest 1 (pp t $$ text "/" <+> pp h')
   pp t@(TAll _ _)               = ppAll $ bkAll t
   pp t@(TAllP _ _)              = ppAll $ bkAll t
   pp (TApp TUn ts ps r)         = F.ppTy r $ parens (ppArgs id (text "+") ts )
   pp (TApp d@(TDef _)ts ps r)   = F.ppTy r $ ppTC d <+> ppArgs brackets comma ts
                                                     <+> ppArgs angleBrackets comma ps
-  pp (TApp c [] ps r)           = F.ppTy r $ ppTC c 
+  pp (TApp c [] [] r)           = F.ppTy r $ ppTC c 
+  pp (TApp c [] ps r)           = F.ppTy r $ ppTC c <+> ppArgs angleBrackets comma ps
   pp (TApp c ts ps r)           = F.ppTy r $ parens (ppTC c <+> ppArgs id space ts)  
   pp (TObj bs _ )               = ppArgs braces comma bs
   pp (TBd (TD (TDef id) s v πs h r _)) =  pp (F.symbol id)

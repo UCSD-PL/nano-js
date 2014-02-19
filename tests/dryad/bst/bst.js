@@ -1,5 +1,5 @@
-/*@ measure keys :: (tree[number]) => set[number]  */
-/*@ measure keysp :: (<l> + null, tree[number]) => set[number]  */
+/*@ measure keys :: forall A. (tree[A]) => set[number]  */
+/*@ measure keysp :: forall A. (<l> + null, tree[A]) => set[number]  */
 /*@ measure keysp(p,x) = (if (p = null) then Set_sng(1) ∩ Set_sng(0) else keys(x)) */
 
 /*@ type tree[A] < p :: (A, A) => prop, q :: (A, A) => prop >

@@ -4,7 +4,6 @@
 /*@ qualif RApp(v:a): papp1(r,v)                                             */
 
 /*@ heapify :: forall < r :: (number) => prop >.
-
  ({v:<x> | true})/x |-> bs:{left:<l>+null, key:number<r>, right:<r>+null}
                              * l |-> ls:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
                              * r |-> rs:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>

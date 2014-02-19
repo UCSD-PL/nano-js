@@ -1,10 +1,9 @@
 /*@ include singly-linked-list.js */
-/*@ qualif PApp(v:a): (papp1 p v) */
 
-/*@ find :: forall < p :: (number) => prop >. 
-            (x:<l>+null,k:number<p>)/l |-> xs:list[number<p>] => 
-              {v:boolean | (Prop(v) <=> Set_mem(k, keysp(x,xs))) }
-               /l |-> y:list[number<p>] */
+/*@ find :: forall A. 
+  (x:<l>+null,k:A)/l |-> xs:list[A] => 
+  {v:boolean | (Prop(v) <=> Set_mem(k, keysp(x,y))) }
+  /l |-> y:list[A] */
 function find(x, k){
   if (x != null){ 
     var xk = x.data; 
@@ -14,8 +13,7 @@ function find(x, k){
       r = find(x.next, k);
       return r;
     }
-  } 
-
+  }
   return false;
 }
 

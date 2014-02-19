@@ -1,6 +1,6 @@
 /*@ include doubly-linked-list.js */
 
-/*@ qualif LLen(v:a, y:c, ys:d):
+/* qualif LLen(v:a):
       (keys(v) = (Set_cup(Set_sng(field(y, "data")),
                           dkeysp(field(y, "next"), ys)))) */
 
@@ -20,14 +20,18 @@ function remove(x, k){
     if (d != k) {
       if (r != null) {
         r.prev = x;
+        return x;
+      } else {
+        return x;
       }
-      return x;
     } else {
       delete(x);
       if (r != null) {
         r.prev = null;
-      } 
-      return r;
+        return r;
+      } else {
+        return r;
+      }
     }
   }
 }

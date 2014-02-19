@@ -1,10 +1,11 @@
 /*@ include sorted-list.js */
 
-/*@ insert :: forall < p :: (number) => prop >.
-  (x:<l>+null, k:number<p>)/l |-> ls:list[number<p>]<{\h v -> h <= v}>
-       => {v:<k> | ((lenp(v,ks) = 1 + lenp(x,ls)) 
-                 && (keysp(v,ks) = Set_sng(k) ∪ keysp(x,ls)))}
-          /k |-> ks:list[number<p>]<{\h v -> h <= v}>
+/*@ qualif Ret(v:a): (lenp(v,ys) = 1 + lenp(x,xs)) */
+/*@ qualif Ret(v:a): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
+
+/*@ insert :: forall A.
+  (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> true}>
+             => <k>/k |-> ys:list[A]<{\h v -> true}>
 */
 function insert(x, k){
   if (x == null){
@@ -12,7 +13,7 @@ function insert(x, k){
     return y;
   } else {
     var xk = x.data;
-    if (k <= xk){
+    if (k <= xk) {
       var y  = {data: k, next: x};
       return y;
     } else {
@@ -24,17 +25,17 @@ function insert(x, k){
   }
 }
 
-/*@ insertion_sort :: forall < p :: (number) => prop >.
-  (x:<l>+null)/l |-> ls:list[number<p>]<{\h v -> true}>
-    => {v:<k>+null | (lenp(v,ks) = lenp(x,ls)
-                   && keysp(v,ks) = keysp(x,ls)) }/k |-> ks:list[number<p>]<{\h v -> h <= v}>  */
+/*@ insertion_sort ::  forall A.
+  (x:<l>+null)/l |-> ls:list[A]<{\h v -> true}>
+    => {v:<k>+null | (lenp(v,ys) = lenp(x,ls)
+                  && (keysp(v,ys) = keysp(x,ls))) }/k |-> ys:list[A]<{\h v -> h <= v}>  */
 function insertion_sort(x){
   if (x == null){
-      return null;
+    return null;
   } else {
-      var xn = x.next;
-      var xk = x.data;
-      var t  = insertion_sort(xn);
-      return insert(t, xk);
+    var xn = x.next;
+    var xk = x.data;
+    var t  = insertion_sort(xn);
+    return insert(t, xk);
   }
 }

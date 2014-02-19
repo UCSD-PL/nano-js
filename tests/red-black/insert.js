@@ -3,8 +3,8 @@
 /*@ rotate_left :: forall K K2 L L2 R.
       (p:<z>)/z |-> zi:{ color:number, key:K,  left:L,  right:<r> }
             * r |-> ri:{ color:number, key:K2, left:L2, right:R   }
-        => <r>/r |-> ro:{ color:{v:number | v = 0}, key:K2, left:<z>, right:R  }
-             * z |-> zo:{ color:{v:number | v = 1}, key:K,  left:L,   right:L2 } */
+        => <r>/r |-> ro:{ color:number, key:K2, left:<z>, right:R  }
+             * z |-> zo:{ color:number, key:K,  left:L,   right:L2 } */
 function rotate_left(p) {
   var pr   = p.right;
   var prl  = pr.left;
@@ -16,10 +16,10 @@ function rotate_left(p) {
 }
 
 /*@ rotate_right :: forall K K2 L R R2.
-     (p:<t>)/t |-> { color:number, key:K, left:<l>, right:R  } 
-           * l |-> { color:number, key:K2, left:L, right:R2 } 
-        => <l>/l |-> { color:{v:number | v = 0}, key:K2, left:L, right:<t>} 
-             * t |-> { color:{v:number | v = 1}, key:K, left:R2, right:R }*/
+     (p:<t>)/t |-> it:{ color:number, key:K, left:<l>, right:R  } 
+           * l |-> il:{ color:number, key:K2, left:L, right:R2 } 
+        => <l>/l |-> ol:{ color:number, key:K2, left:L, right:<t>} 
+             * t |-> ot:{ color:number, key:K, left:R2, right:R }*/
 function rotate_right(p) {
   var pl  = p.left;
   var plr = pl.right;
@@ -30,19 +30,40 @@ function rotate_right(p) {
   return pl;
 }
 
-/*@ is_red :: forall <f :: (number,number) => prop, g :: (number,number) => prop, h :: (number) => prop>. 
-                (x:<t>+null)/t |-> in:rbtree[number<h>]<f,g> 
-                  => {b:boolean | ((Prop b) <=> (colorp(x,in) != 0))}
-                     /t |-> out:{v:rbtree[number<h>]<f,g> | v = in}                  */
+/* qualif PApp(v:a, v2:b): (papp2 f v2 v) */
+/* qualif PApp(v:a, v2:b): (papp2 g v2 v) */
+/* qualif PApp(v:a): (papp1 h v) */
+
+/*@ qualif IsRed(v:a): (((Prop v) <=> (colorp(x,in) != 0))
+                      && (colorp(x,out) = colorp(x,in))
+                      && (bheightp(x,out) = bheightp(x,in))) */
+
+/* is_red :: forall A.
+                (x:<t>+null)/t |-> in:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+                  => ret:{b:boolean | (((Prop b) <=> (colorp(x,in) != 0))
+                      && (colorp(x,out) = colorp(x,in))
+                      && (bheightp(x,out) = bheightp(x,in)))}/t |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
+/*@ is_red :: forall A.
+                (x:<t>+null)/t |-> in:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+                  => boolean/t |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
+function is_red(x) {
+  if (x == null) {
+    return false;
+  } else {
+    var xc = x.color; 
+    return (xc != 0);
+  }
+}
 
 /*@ qualif QApp(v:a): (papp1 q v) */
-/*@ qualif GTField(v:a,x:a): (v > field(x, "key")) */
+/* qualif GTField(v:a,x:a): (v > field(x, "key")) */
+
 /*@
-  insert :: forall < q :: (number) => prop >.
-    (p:<t>+null, k:number<q>)/t |-> in:rbtree[number<q>]<{\h v -> v < h},{\h v -> v > h}>
+  insert :: forall A.
+    (p:<t>+null, k:A)/t |-> in:rbtree[A]<{\h v -> v < h},{\h v -> v > h}>
          => {v:<u>+null | v != null}
-            / a |-> lft:rbtree[{v:number<q> | v < field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
-            * b |-> rgt:rbtree[{v:number<q> | v > field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+            / a |-> lft:rbtree[{v:A | v < field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+            * b |-> rgt:rbtree[{v:A | v > field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
             * u |-> out:{ color : { v:number | (((v != 0) => (bheightp(p,in) =     bheightp(field(out,"left"),lft))) &&
                                                 ((v != 0) => (bheightp(p,in) =     bheightp(field(out,"right"),rgt))) &&
                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field(out,"left"),lft))) &&
@@ -50,7 +71,7 @@ function rotate_right(p) {
                                                 ((v = 0) || (((colorp(field(out,"left"),lft) = 0) || (colorp(field(out,"right"),rgt) = 0)) 
                                                           && ((colorp(p,in) != 0) || ((colorp(field(out,"left"),lft) = 0) && (colorp(field(out,"right"),rgt) = 0))))))
                                                }
-                        , key:   number<q>
+                        , key:   A
                         , left:  {v:<a>+null  | (bheightp(v,lft) = bheightp(field(out,"right"),rgt)) }
                         , right: {v:<b>+null  | (bheightp(v,rgt) = bheightp(field(out,"left"),lft))  }
                         }
@@ -85,15 +106,15 @@ function insert (p,k) {
         } else {
           var pll = pl.left;
           if (is_red(pll)) {
-            var root = rotate_right(p);
-            return root;
+            var p = rotate_right(p);
+            return p;
           } else {
             var plr = pl.right;
             if (is_red(plr)) {
               plr.color = 0;
               p.left = rotate_left(pl);
-              var root = rotate_right(p);
-              return root; 
+              var p = rotate_right(p);
+              return p; 
             }  else {
               return p;
             }
@@ -116,15 +137,15 @@ function insert (p,k) {
         } else {
           var prr = pr.right;
           if (is_red(prr)) {
-            var root = rotate_left(p);
-            return root;
+            var p = rotate_left(p);
+            return p;
           } else {
             var prl = pr.left;
             if (is_red(prl)) {
               prl.color = 0;
               p.right = rotate_right(pr);
-              var root = rotate_left(p);
-              return root; 
+              var p = rotate_left(p);
+              return p; 
             }  else {
               return p;
             }

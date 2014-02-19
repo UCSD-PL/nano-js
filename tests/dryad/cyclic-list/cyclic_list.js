@@ -1,6 +1,6 @@
 /*@ type either[A,B] A + B     */
 
-/*@ measure keys :: (clist[number]) => set[number]  */
+/*@ measure keys :: forall A. (clist[A]) => set[number]  */
 /*@ measure len  :: forall A. (clist[A]) => number  */
 
 /*@ isL   :: forall A B. (x:{v:either[A,B] | true}) => {v:boolean | (if Prop(v) then

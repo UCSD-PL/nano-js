@@ -1,30 +1,34 @@
 /*@ include bst.js */
 
+/*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
+/*@ qualif RootKeys(v:a):((keysp(v,ks) = keysp(field(ts,"left"),ls) ∪ keysp(field(ts,"right"),rs))
+                        && (~Set_mem(field(ts, "data"),keysp(v,ks)))) */
+/*@ qualif RootInput(v:a): v < field(ts, "data") */
+/*@ qualif RootInput(v:a): v > field(ts, "data") */
+/*@ qualif PApp(v:a): (papp1 p v) */
+
 /*@ lemma_nonMem :: forall A B.
-      (k:A, x:<x>+null)/x |-> its:tree[{v:B | v != k}]<{\x y -> x > y}, {\x y -> x < y}>
-         => {v:void | (~Set_mem(k,keys(ots)) && (keysp(x,its) = keysp(x,ots)))}
-            /x |-> ots:{v:tree[{v:B | v != k}]<{\x y -> x > y}, {\x y -> x < y}> | (keys(v) = keys(its))} */
+      (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
+                => number/x |-> ots:tree[B]<{\x y -> x > y}, {\x y -> x < y}> */
 function lemma_nonMem(k, x) {
   if (x == null){
-    return;
+    return 0;
   } else {
     var xk = x.data;
     var xl = x.left;
     var xr = x.right;
-    return;
+    lemma_nonMem(k, xl);
+    lemma_nonMem(k, xr);
+    return 0;
   }
 }
 
-/*@ qualif PApp(v:a) : papp1(p, v) */
-
 /*@
-  removeRoot :: forall <p :: (number) => prop>.
-    (t:<t>)/t |-> ts:{ data:number, left:<l>+null, right:<r>+null }
-          * l |-> ls:tree[{v:number<p> | v < field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
-          * r |-> rs:tree[{v:number<p> | v > field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
-      => {v:<k>+null | ((keysp(v,ks) = keysp(field(ts,"left"),ls) ∪ keysp(field(ts,"right"),rs))
-                        && (~Set_mem(field(ts, "data"),keysp(v,ks))))}
-         /k |-> ks:tree[{v:number<p> | v != field(ts, "data")}]<{\x y -> x > y}, {\x y -> x < y}>
+  removeRoot :: forall A B. 
+    (t:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null }
+          * l |-> ls:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
+          * r |-> rs:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
+      => v:<k>+null/k |-> ks:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
 */
 function removeRoot(t){
   var tl = t.left;
@@ -37,21 +41,21 @@ function removeRoot(t){
     return tr;
   } else if (tr == null) {
     t.left = null;
-   lemma_nonMem(tk, tl);
+    lemma_nonMem(tk, tl);
     return tl;
   } else {
-   var trl = tr.left;
-   var trk = tr.data;
-   tr.left = null;     // extra, to cut sharing
-   t.right = trl;
-   t = removeRoot(t);
-   tr.left = t;
-   lemma_nonMem(tk, tr);
-   return tr;
+    var trl = tr.left;
+    var trk = tr.data;
+    tr.left = null;     // extra, to cut sharing
+    t.right = trl;
+    t = removeRoot(t);
+    tr.left = t;
+    lemma_nonMem(tk, tr);
+    return tr;
   }
 }
 
-/*@ remove :: forall <p :: (number) => prop>.
+/*@ remove :: forall < p :: (number) => prop >.
 (t:<t>+null, k:number<p>)/t |-> in:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}> =>
                                  {v:<r>+null | (v = null || ~Set_mem(k,keys(out)))}
                                  /r |-> out:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}>

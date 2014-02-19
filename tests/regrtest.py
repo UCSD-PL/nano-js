@@ -108,7 +108,15 @@ options, args = parser.parse_args()
 #runner    = rtest.TestRunner (Config ("nanojs liquid -q", options.opts, testdirs, logfile, options.threadcount))
 #runner.run ()
 
-testdirs  = [ ("dryad/singly-linked-list", 0), ("dryad/doubly-linked-list", 0), ("dryad/cyclic-list", 0), ("dryad/sorted-list", 0), ("dryad/bst", 0), ("dryad/max-heap", 0), ("dryad/tree-traversals", 0)]
+testdirs  = [ 
+                ("dryad/singly-linked-list", 0)
+              # ("dryad/doubly-linked-list", 0)
+              # ("dryad/cyclic-list", 0) 
+              # ("dryad/sorted-list", 0) 
+              # ("dryad/bst", 0) 
+              # ("dryad/max-heap", 0) 
+              # ("dryad/tree-traversals", 0)
+             ]
 runner    = rtest.TestRunner (Config ("nanojs liquid -q", options.opts, testdirs, logfile, options.threadcount))
 runner.run ()
 

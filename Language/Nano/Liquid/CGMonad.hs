@@ -57,6 +57,7 @@ module Language.Nano.Liquid.CGMonad (
   , envToList
   , envFindReturn
   , envJoin
+  , concretizeLoc
 
   -- * Add Subtyping Constraints
   , subTypes, subTypes', subType, subType'
@@ -82,6 +83,7 @@ module Language.Nano.Liquid.CGMonad (
   ) where
 
 import           Data.Maybe                     (fromMaybe)
+import           Data.Function                  (on)
 import           Data.List
 import           Data.Tuple                     (swap)
 import           Data.Ord
@@ -169,7 +171,7 @@ getDefType f
 -- cgStateFInfo :: Nano a1 (RType F.Reft)-> (([F.SubC Cinfo], [F.WfC Cinfo]), CGState) -> CGInfo
 cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
   where 
-    fiQs = {- inferQuals -} fi
+    fiQs = inferQuals fi
     fi   = F.FI { F.cm    = M.fromList $ F.addIds fcs  
                 , F.ws    = fws
                 , F.bs    = binds cg
@@ -209,7 +211,7 @@ addMeasuresM g b
          return $ addMeasures γm γt ms σ b
        where
          σ      = bind <$> rheap g
-         bind x = B (F.symbol x) (envFindTy x g)
+         bind x = B (locSym x) (locTy g x)
 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
@@ -225,49 +227,6 @@ withFun f m = do fOld <- cg_fun <$> get
                  r <- m
                  modify $ \st -> st { cg_fun = fOld }
                  return r
-
-
--- | Get binding from object type
--- <<<<<<< HEAD
--- ---------------------------------------------------------------------------------
--- getBinding :: (PP r, F.Reftable r) => E.Env (RType r) -> Id a -> RType r -> Either String (RType r)
--- ---------------------------------------------------------------------------------
--- getBinding _ i (TObj bs _ ) = 
---   case L.find (\s -> F.symbol i == b_sym s) bs of
---     Just b      -> Right $ b_type b
---     _           -> Left  $ errorObjectBinding
--- getBinding defs i t@(TApp (TDef _) _ _) = 
---   case unfoldMaybe defs t of
---     Right (_,t')-> getBinding defs i t'
---     Left  s     -> Left $ s ++ "\nand\n" ++ errorObjectTAccess t
--- getBinding _ _ t = Left $ errorObjectTAccess t
--- =======
--- >>>>>>> pvekris
-
--- Use the TCMonad dotAccess)
-
-
-{-----------------------------------------------------------------------------------}
-{-getBinding :: (PP r, F.Reftable r, F.Symbolic s) => -}
-{-  E.Env (RType r) -> s -> RType r -> Either String (RType r)-}
-{-----------------------------------------------------------------------------------}
-{-getBinding _ i (TObj bs _ ) = -}
-{-  case L.find (\s -> F.symbol i == b_sym s) bs of-}
-{-    Just b      -> Right $ b_type b-}
-{-    _           -> Left  $ errorObjectBinding-}
-{-getBinding defs i t@(TApp (TDef _) _ _) = -}
-{-  case unfoldMaybe defs t of-}
-{-    Right t'    -> getBinding defs i t'-}
-{-    Left  s     -> Left $ s ++ "\nand\n" ++ errorObjectTAccess t-}
-{-getBinding _ _ t = Left $ errorObjectTAccess t-}
-
-{-----------------------------------------------------------------------------------------}
-{-getBindingM :: (F.Symbolic s) => s -> RefType -> CGM (Either String RefType)-}
-{-----------------------------------------------------------------------------------------}
-{-getBindingM i t -}
-{-  = do  td <- cg_tdefs <$> get-}
-{-        return $ getBinding td i t -}
-
 
 ---------------------------------------------------------------------------------------
 -- measureBinds   ::  Nano a (RType RReft) -> F.SEnv F.SortedReft
@@ -341,14 +300,14 @@ envAddFreshHeap l lt g
   = do x           <- freshId (srcPos l) 
        g'          <- envAdds [(x, snd lt)] g
        return $ (x, g' { rheap = heapCombineWith const [heapBinders [(fst lt, x)] , rheap g'] })
-  where heapBinders = heapFromBinds "envAddHeap" 
+  where heapBinders = refHeapFromBinds "envAddHeap" 
 
 envFreshHeapBind :: (IsLocated l) => l -> Location -> CGEnv -> CGM (Id SourceSpan, CGEnv)
 envFreshHeapBind l j g
   = freshId (srcPos l) >>= (\i -> return $ (i, g { rheap = newHeap i }))
     where
       newHeap i   = heapCombineWith const [heapBinders [(j,i)], rheap g]
-      heapBinders = heapFromBinds "envAddHeap" 
+      heapBinders = refHeapFromBinds "envAddHeap" 
 
 addFixpointBind :: (F.Symbolic x) => (x, RefType) -> CGM F.BindId
 addFixpointBind (x, t) 
@@ -489,31 +448,44 @@ envJoin' l g g1 g2
 joinHeaps l γ g g1 g2
   = do let (σ1,σ2)          = mapPair rheap (g1,g2)
            (one',both,two') = heapSplit σ1 σ2
-           one            = filter (`elem` heapLocs (rheap g)) one'
-           two            = filter (`elem` heapLocs (rheap g)) two'
-           t1s            = map (snd . safeRefReadHeap "joinHeaps" g1 σ1) both
-           t2s            = map (snd . safeRefReadHeap "joinHeaps" g2 σ2) both
-           t4             = zipWith (compareTs γ) t1s t2s
-       ts                <- mapM (freshTy "joinHeaps" . toType . fst4) t4
-       xs                <- mapM (const (freshId (srcPos l))) ts
-       g'                <- envAdds (zipWith str xs ts) g
-       _                 <- mapM (wellFormed l g') ts
-       (ts',g')          <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
-       let σj             = heapFromBinds "joinHeaps σj" $ zip both xs
-           su1            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ1) both)
-           su2            = F.mkSubst $ zip (F.symbol <$> xs) (map (F.eVar . F.symbol . flip (heapRead "joinHeaps") σ2) both)
+           one              = filter (`elem` heapLocs (rheap g)) one'
+           two              = filter (`elem` heapLocs (rheap g)) two'
+           t1s              = map (flip (heapReadType g1 "joinHeaps") σ1) both
+           t2s              = map (flip (heapReadType g2 "joinHeaps") σ2) both
+           t4               = zipWith (compareTs γ) t1s t2s
+       ts                  <- mapM (freshTy "joinHeaps" . toType . fst4) t4
+       xs                  <- mapM (const (freshId (srcPos l))) ts
+       g'                  <- envAdds (zipWith str xs ts) g
+       _                   <- mapM (wellFormed l g') ts
+       (ts',g')            <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
+       let σj               = refHeapFromTyBinds "joinHeaps σj" $ zip both xts
+           xts              = zipWith B (F.symbol <$> xs) ts
+           su1              = F.mkSubst $ zip (xsyms xs) (evars σ1 both)
+           su2              = F.mkSubst $ zip (xsyms xs) (evars σ2 both)
        -- Subtype the common heap locations
-       zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
-       zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
-       zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
-       zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
-       xs'             <- mapM (const (freshId (srcPos l))) xs
-       g''             <- envAdds (zip xs' (reverse ts')) g'
-       return $ g'' { rheap = σj }
+       subTypeHeaps l g1 σ1 ((F.subst su1 <$>) <$> σj)
+       subTypeHeaps l g2 σ2 ((F.subst su2 <$>) <$> σj)
+       g'' <- foldM (\g l-> concretizeLoc "joinHeaps" l g) (g' { rheap = σj }) both
+       -- zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
+       -- zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
+       -- zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
+       -- zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
+       xs'                 <- mapM (const (freshId (srcPos l))) xs
+       g'                  <- envAdds (zip xs' (reverse ts')) g'
+       return $ g' { rheap = rheap g'' }
+           
     where
+      xsyms xs           = F.symbol <$> xs
+      evars σ ls         = map (F.eVar . flip (heapReadSym "joinHeaps") σ) ls
       foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
-      str x t  = (x, strengthenObjBinds x t)
-      rdHeap = heapRead "joinHeaps"
+      str x t            = (x, strengthenObjBinds x t)
+      rdHeap             = heapRead "joinHeaps"
+          
+concretizeLoc msg l g = 
+  envAdds [(x, xt `eSingleton` x)] $ g { rheap = σ' }
+  where
+    (x, xt, σ') = refHeapMakeConc msg l (rheap g)
+
 
 -- freshSubHeap l σ g_wf g locs
 --   = do let (xs,ts) = unzip $ map (safeRefReadHeap "freshSubHeap safe" g σ) locs
@@ -528,13 +500,16 @@ joinHeaps l γ g g1 g2
        
 -- | Instantiate Fresh Type (at Function-site)
 ---------------------------------------------------------------------------------------
-freshTyFun :: (IsLocated l) => CGEnv -> l -> Id AnnTypeR -> RefType -> CGM RefType 
+freshTyFun :: CGEnv -> AnnTypeR -> Id AnnTypeR -> RefType -> CGM RefType 
 ---------------------------------------------------------------------------------------
 freshTyFun g l f t = freshTyFun' g l f t . kVarInst . cg_opts =<< get  
 
+-- A "trivial" type may nevertheless include abstract refinements. 
+-- Therefore, when creating a fresh fun type, let's first instantiate
 freshTyFun' g l _ t b
-  | b && isTrivialRefType t = freshTy "freshTyFun" (toType t) >>= \t -> wellFormed l g t
-  | otherwise               = return t
+  | isTrivialRefType t && b = freshTy "freshTyFun" t >>= \t -> wellFormed l g $ tracePP "FRESH TY FUN" t
+  | otherwise = return t
+
 
 -- | Instantiate Fresh Type (at Call-site)
 
@@ -551,8 +526,8 @@ freshTyInst l g αs τs tbody
        (hosu, ho')         <- freshHeapEnv l ho
        let su               = retsu `F.catSubst` hisu `F.catSubst` hosu
        ts                  <- mapM (freshTy "freshTyInst") (F.subst su <$> τs)
-       _                   <- mapM (wellFormed l g) ts
-       let θ                = fromLists (zip αs ts) []
+       _                   <- mapM (wellFormed l g . fmap stripSubsHack) ts
+       let θ                = tracePP "freshTyInst" $ fromLists (zip αs ts) []
            rs'              = F.symbol xr
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
@@ -564,7 +539,7 @@ freshTyInst l g αs τs tbody
 
 freshPredInst l g πs tbody
   = do πs'   <- mapM (freshPredRef l g) πs
-       return $ replacePreds tbody (zip πs πs')
+       return $ replacePreds tbody $ zip πs πs'
 
 freshPredRef :: (IsLocated l) => l -> CGEnv -> PVar Type -> CGM (PRef Type RReft RefType)
 freshPredRef l g (PV _ _ t as)
@@ -578,20 +553,20 @@ freshPredRef l g (PV _ _ t as)
 --------------------------------------------------------------------------------------
 freshTyWind :: (PP l, IsLocated l) => 
                CGEnv -> l -> RSubst RReft -> Id SourceSpan
-               -> CGM (RHeapEnv RReft, (F.Symbol, RefType), RefType, [Measure])
+               -> CGM (RefHeap, (F.Symbol, RefType), RefType, [Measure])
 ---------------------------------------------------------------------------------------
 freshTyWind g l θ ty
   = do (σ,s,t,vs,πs) <- envFindTyDef ty
        γ             <- getTDefs
        let (αs,ls)    = toLists θ
-       θ'            <- flip fromLists ls <$> mapM freshSubst αs
+       θ'            <- flip fromLists ls <$> (tracePP "FRESH ALPHAS" <$> mapM freshSubst (tracePP "ALPHAS" αs))
        let θα         = uncurry fromLists . fmap (const []) $ toLists θ'
-       (su,σ')       <- freshHeapEnv l $ apply θ' σ
+       (su,σ')       <- freshHeapEnv l $ tracePP "FRESH TY WIND SUB" $ apply θ' $ tracePP "FRESH TY WIND" σ
        ms            <- (instMeas su <$>) <$> getRMeasures ty
        πs'           <- mapM (freshPredRef l g) πs
        let tApp       = mkApp (apply θ' . tVar <$> vs) πs'
            psu        = zip πs (apply θ' πs')
-       return (expBi γ θα psu <$> σ',
+       return (mapLocTy (exp γ θα psu) <$> refHeap σ',
                (s, exp γ θα psu $ apply θ' $ F.subst su t),
                exp γ θα [] tApp,
                ms)
@@ -605,9 +580,14 @@ freshTyWind g l θ ty
       toIdTyPair b         = (toId b, b_type b)
       mkApp vs πs          = TApp (TDef ty) vs πs mempty
       freshSubst (α,τ)     = do τ <- freshTy "freshTyWind" τ
-                                _ <- wellFormed l g τ
+                                _ <- wellFormed l g $ stripSubsHack <$> τ
                                 return (α,τ)
       subPvs su t          = foldl' (flip substPred) t su 
+
+stripSubsHack (F.Reft (vv,refas) `U` p) = F.Reft (vv,refas') `U` p
+  where refas' = go <$> refas
+        go (F.RKvar k _) = F.RKvar k mempty
+        go p             = p
 
 -- | Instantiate Fresh Type (at Phi-site) 
 ---------------------------------------------------------------------------------------
@@ -664,11 +644,11 @@ updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
   l -> Location -> CGEnv -> f -> Id l -> CGM CGEnv
 ---------------------------------------------------------------------------------------
 updateFieldM l m g f y
-  = do let t_obj       = envFindTy x g
-           t_fld       = envFindTy y g
-           x           = heapRead "updateField" m $ rheap g
+  = do let t_obj        = envFindTy x g
+           t_fld        = envFindTy y g
+           x            = heapReadSym "updateField" m $ rheap g
        (y', g')        <- envAddFresh l t_fld g
-       let t_obj'      = updateField (envFindTy y' g') s t_obj
+       let t_obj'       = updateField (envFindTy y' g') s t_obj
        t_objm          <- addMeasObjBinds g' t_obj'
        (x', g'')       <- envFreshHeapBind l m g'
        (t_objm', g''') <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
@@ -711,7 +691,6 @@ subType :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 subType l g t1 t2 =
   do tt1   <- addInvariant t1
      tt2   <- addInvariant t2
-     -- B _ tt1m  <- addMeasuresM g (B (F.vv Nothing) tt1)
      tdefs <- getTDefs
      let s  = checkTypes tdefs tt1 tt2
      modify $ \st -> st {cs = c s : (cs st)}
@@ -727,13 +706,14 @@ subType' msg l g t1 t2 =
   subType l g (trace (printf "SubType[%s]:\n\t%s\n\t%s" msg (ppshow t1) (ppshow t2)) t1) t2
 
 -------------------------------------------------------------------------------
-subTypeHeaps :: AnnTypeR -> CGEnv -> Heap RefType -> Heap RefType -> CGM ()
+subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2
-  = do let (_,ls,l2s) = heapSplit σ1 σ2
-       mapM_ subTypeLoc ls
+  = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
     where 
-      subTypeLoc loc = subTypeField l g (heapRead "subTypeHeaps(a)" loc σ1) (heapRead "subTypeHeaps(b)" loc σ2)
+      subTypeLoc loc = subTypeField l g 
+                         (tracePP "subTypeHeap 1!!" (heapReadType g "subTypeHeaps(a)" loc σ1))
+                         (tracePP "subTypeHeap 2!!" (heapReadType g "subTypeHeaps(b)" loc σ2))
     
 subTypeField l g = withAlignedM doSubType
   where doSubType t1 t2 = subTypeContainers l g t1 t2 
@@ -773,19 +753,21 @@ subTypeRecursive :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeRecursive l g t1@(TApp d1@(TDef _) _ _ _) t2@(TApp d2@(TDef _) _ _ _)
     | d1 /= d2 = do γ <- getTDefs
-                    let ((σ1,b1,θ1),(σ2,b2,θ2)) = mapPair (unfoldSafeEnv γ) (t1,t2)
+                    let ((σ1',b1,θ1),(σ2',b2,θ2)) = mapPair (unfoldSafeEnv γ) (t1,t2)
+                        (σ1, σ2)                = mapPair refHeap (σ1', σ2')
                         (B x1 t1', B x2 t2')    = (apply θ1 b1, apply θ2 b2)
                         bsub                    = F.mkSubst [(x2, F.eVar x1)] -- x2 := x1
-                        (heapSub, σ2')          = renameHeapBinds ((fst . btop) <$> σ1) σ2
+                        (heapSub, σ2r)          = renameHeapBinds σ1 σ2
                         su                      = F.catSubst heapSub bsub
-                        xts                     = (Id (srcPos l) (F.symbolString x1),t1') : (map (btop . snd) $ heapBinds σ1)
+                        xts                     = toIdTy l x1 t1' : (map btop $ heapTypes σ1')
                     g_st                       <- envAdds xts g
                     subTypeContainers l g_st t1' (F.subst su t2')
-                    subTypeHeaps l g_st (b_type <$> σ1) (replaceC . b_type <$> σ2')
+                    subTypeHeaps l g_st σ1 (mapLocTy replaceC <$> σ2r)
     where
       replaceC t@(TApp d ts rs r) | d == d2   = TApp d1 ts rs r
       replaceC t                  | otherwise = t
-      btop (B x t)                            = (Id (srcPos l) (F.symbolString x), t)
+      btop (B x t)                            = toIdTy l x t
+      toIdTy l x t                            = (Id (srcPos l) (F.symbolString x), t)
 
 -------------------------------------------------------------------------------
 subTypeContainers :: AnnTypeR -> CGEnv -> RefType -> RefType -> CGM ()
@@ -852,7 +834,7 @@ alignAndStrengthen msg l g u1@(TApp TUn _ _ _) u2@(TApp TUn _ _ _) =
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
 ------------------------------------------------------------------------------------------
-renameHeapBinds :: RefHeap -> RHeapEnv RReft -> (F.Subst, RHeapEnv RReft)
+renameHeapBinds :: RefHeap -> RefHeap -> (F.Subst, RefHeap)
 ------------------------------------------------------------------------------------------
 renameHeapBinds σ1 σ2
   = (su, (F.subst su <$>) <$> σ2)
@@ -860,13 +842,11 @@ renameHeapBinds σ1 σ2
         l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
         nil = filter (`notElem` l1s) l2s
-        xIs = lx σ1 <$> ls
-        yIs = lx σ2 <$> ls
-        xs  = F.eVar <$> xIs
-        ys  = b_sym  <$> yIs
-        nys = map (b_sym <$> lx σ2) nil
+        xs  = F.eVar . lx σ1 <$> ls
+        ys  = lx σ2 <$> ls
+        nys = map (lx σ2) nil
         su  = F.mkSubst $ (zip ys xs ++ (zip nys (repeat (F.eVar nilSymbol))))
-        lx  = flip (heapRead "renameHeapBinds")
+        lx  = flip (heapReadSym "renameHeapBinds")
 
 ------------------------------------------------------------------------------------------
 strengthenUnion :: RefType -> RefType
@@ -977,17 +957,38 @@ instance Freshable RefType where
   true    = trueRefType 
 
 trueRefType    :: RefType -> CGM RefType
-trueRefType    = mapReftM true
+trueRefType    = mapReftM true true
 
 refreshRefType :: RefType -> CGM RefType
+refreshRefType (TAll α t)  = TAll α  <$> refresh t
+
+refreshRefType (TAllP π t) = TAllP π <$> refresh t
+
 refreshRefType t@(TApp _ _ _ _) 
   = do γ              <- getTDefs
-       TApp c ts rs r <- mapReftM refresh $ expandTApp γ t
-       let rπs         = safeZip "refreshRef" rs (typeRefArgs γ c)
-       TApp c ts <$> (mapM refreshRef rπs) <*> pure r
-            
+       TApp c ts rs r <- mapReftM refresh refresh $ expandTApp γ t
+       let πas         = typeRefArgs γ c
+       let (rs',rest)  = splitAt (length πas) rs
+       let rπs         = safeZip "refreshRef" rs' πas
+       let r'          = foldl go r rest
+       TApp c ts <$> (mapM refreshRef rπs) <*> pure r'
+  where
+    go r (PMono _ r') = r' `F.meet` r
+    go r _            = error "ASDF"
+
+refreshRefType t@(TFun _ _ _ _ _)
+  = mapReftM refresh return t
+
 refreshRefType t 
-  = mapReftM refresh t
+  = mapReftM refresh refresh t
+                  
+refreshHeapEnv h = do bs' <- mapM refreshBind bs
+                      return $ heapFromBinds "refreshHeapEnv "(zip ls bs')
+  where lbs = heapBinds h
+        bs  = snd <$> lbs
+        ls  = fst <$> lbs
+
+refreshBind (B x t) = refresh t >>= \t -> return $ B x t
 
 refreshRef (PPoly s t, π) = PPoly <$> (mapM freshSym (pv_as π)) <*> refreshRefType t
 refreshRef (PMono _ _, _) = errorstar "refreshRef: PMono unexpected"
@@ -1005,17 +1006,39 @@ splitC c = splitC' c
 ---------------------------------------------------------------------------------------
 -- | Function types
 ---------------------------------------------------------------------------------------
-splitC' (Sub g i tf1@(TFun xt1s t1 _ _ _) tf2@(TFun xt2s t2 _ _ _))
+splitC' (Sub g i tf1@(TFun xt1s t1 σi1 σo1 _) tf2@(TFun xt2s t2 σi2 σo2 _))
   = do let bcs    = bsplitC g i tf1 tf2
-       g'        <- envTyAdds i xt2s g 
+           tf2xts = xt2s ++ heapTypes σi2
+           tf1obs = heapTypes σo1
+       g'        <- envTyAdds i tf2xts g 
        cs        <- concatMapM splitC $ safeZipWith "splitC1" (Sub g' i) t2s t1s' 
-       cs'       <- splitC $ Sub g' i (F.subst su (b_type t1)) (b_type t2)      
-       return     $ bcs ++ cs ++ cs'
+       g''       <- envTyAdds i tf1obs g'
+       cs'       <- splitC $ Sub g'' i (F.subst su (b_type t1)) (b_type t2)      
+       cs''      <- concatMapM splitC $ safeZipWith "splitC2" (Sub g' i) σi2ts σi1ts
+       cs'''     <- concatMapM splitC $ safeZipWith "splitC3" (Sub g'' i) σo1ts σo2ts
+       return     $ bcs ++ cs ++ cs' ++ cs'' ++ cs'''
     where 
-       t2s        = b_type <$> xt2s
-       t1s'       = F.subst su (b_type <$> xt1s)
-       su         = F.mkSubst $ safeZipWith "splitC2" bSub xt1s xt2s
+       -- Stack Variables/Types
+       t2s        = tracePP "t2s" (b_type <$> xt2s)
+       t1s'       = tracePP "t1s'" $ F.subst su (b_type <$> xt1s)
+       -- Heap Variables/Types
+       σi2ts      = b_type . snd <$> σi2bs
+       σi1ts      = F.subst su (b_type . snd <$> σi1bs)
+       σi1bs      = sortHBs σi1
+       σi2bs      = sortHBs σi2
+
+       σo1ts      = b_type . snd <$> σo1bs
+       σo2ts      = F.subst su (b_type . snd <$> σo2bs)
+       σo1bs      = sortHBs σo1
+       σo2bs      = sortHBs σo2
+       -- Substitution Calculation
+       su         = asu `F.catSubst` hisu `F.catSubst` hosu
+       asu        = F.mkSubst $ safeZipWith "splitC4" bSub xt1s xt2s
+       hisu       = F.mkSubst $ safeZipWith "splitC5" hSub σi1bs σi2bs
+       hosu       = F.mkSubst $ safeZipWith "splitC5" hSub σo2bs σo1bs
        bSub b1 b2 = (b_sym b1, F.eVar $ b_sym b2)
+       hSub b1 b2 = bSub (snd b1) (snd b2)
+       sortHBs    = sortBy (compare `on` fst) . heapBinds
 
 ---------------------------------------------------------------------------------------
 -- | TAlls
@@ -1109,7 +1132,7 @@ rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   = do γ' <- envAdds ((ofType <$>) <$> s2) γ
        splitC $ Sub γ' i (F.subst su r1) r2
   where
-    su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
+    su = traceShow "RSPLITC" $ F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
 rsplitC _ i (ref1, ref2)
   = cgError (srcPos i) $ printf "Can't split:\n%s\n%s" (ppshow ref1) (ppshow ref2)
@@ -1161,7 +1184,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = {- tracePP msg () `seq` -} withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
@@ -1190,15 +1213,14 @@ subTypeWindHeaps seen l g σ t1@(TApp TUn _ _ _) t2@(TApp TUn _ _ _)
 subTypeWindHeaps seen l g σ t1@(TApp (TRef l1) _ _ _) t2@(TApp (TRef l2) _ _ _)
   | l1 /= l2       = error "BUG: Somehow subtyping different locations"
   | not (l2 `heapMem` σ) = return ()
-    -- subTypeContainers' "dead" l g tru fls
   | l1 `elem` seen = return ()
   | otherwise      = do (x,g') <- envAddFresh l t1 g
                         γ      <- getTDefs
-                        let th2 = snd $ safeRefReadHeap "subTypeWindHeaps(a)" g σ l2
-                            th1 = if heapMem l1 (rheap g') then 
-                                    snd $ safeRefReadHeap "subTypeWindHeaps(b)" g (rheap g') l1
+                        let th1 = if heapMem l1 (rheap g') then 
+                                    heapReadType g' "st_windHeap 2" l1 (rheap g')
                                   else
                                     expandTApp γ $ rType th2
+                            th2 = heapReadType g' "st_windHeap 1" l2 σ 
                         subTypeWind' (l1:seen) l g' σ th1 th2
                         return ()
   -- where 
@@ -1215,13 +1237,13 @@ subTypeWindHeaps _ _ _ _ _ _ = return ()
 splitW :: WfC -> CGM [FixWfC]
 ---------------------------------------------------------------------------------------
 splitW (W g i (TFun ts t h h' _)) 
-  = do let bws = bsplitW g (b_type t) i
-       g'     <- envTyAdds i ts g >>= envTyHeapAdds i h
+  = do g'     <- envTyAdds i ts g >>= envTyHeapAdds i h
        ws     <- concatMapM splitW [W g' i ti | B _ ti <- ts]
        ws'    <- concatMapM splitW $ W g' i <$> heapTypes (b_type <$> h)
        g''    <- envTyHeapAdds i h' g'
        ws''   <-            splitW (W g'' i (b_type t))
        ws'''  <- concatMapM splitW $ W g'' i <$> heapTypes (b_type <$> h')
+       let bws = bsplitW g'' (b_type t) i
        return  $ bws ++ ws ++ ws' ++ ws'' ++ ws'''
 
 splitW (W g i (TAll _ t)) 
@@ -1236,7 +1258,7 @@ splitW (W g i t@(TVar _ _))
 splitW (W g i t@(TApp _ ts rs _))
   =  do let ws = bsplitW g t i
         ws'   <- concatMapM splitW [W g i ti | ti <- ts]
-        ws''  <- concatMapM (rsplitW g i) rs
+        ws''  <- concatMapM (seq (tracePP "RSPLITW THINGIE" t) rsplitW g i) rs
         return $ ws ++ ws' ++ ws''
 
 splitW (W g i t@(TObj ts _ ))

@@ -16,7 +16,7 @@ type list[A]<p :: (A, A) => prop>
 /*@ measure keysp(p,x) = (if (p = null) then (Set_sng(0) ∩ Set_sng(1)) else keys(x)) */
 
 /*@ consSorted ::
-  (p:<p>, k:number)/p |-> ps:list[{number | v > k}]<{\h v -> h <= v}>
+  (p:<p>, k:number)/p |-> ps:list[{v:number | v > k}]<{\h v -> h <= v}>
    => {v:<l> | keysp(v,ls) = Set_cup(Set_sng(k), keysp(p,ps))} /l |-> ls:list[number]<{\h v -> h <= v}>*/
 function consSorted(p,k) {
   var y = {};
