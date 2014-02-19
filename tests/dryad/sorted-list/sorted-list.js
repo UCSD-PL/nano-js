@@ -18,7 +18,7 @@
 
 /*@
 type list[A]<p :: (A, A) => prop>
-        exists! l |-> tl:list[A<p (field t "data")>]<p>. 
+        exists! l |-> tl:list[A<p data>]<p>. 
           t:{ data : A, next : <l> + null }
 
      with len(x)   = 1 + lenp(field(t, "next"), tl)

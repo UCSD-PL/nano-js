@@ -662,16 +662,18 @@ consWind l g (m, wls, ty, θ)
            g'                = g { rheap =  heapDiff (rheap g) (m:wls) }
            r                 = instMeasures [F.vv Nothing] ms
        g_st                 <- envAdds xts g
+       (g_st, su)           <- envAddFieldBinders l x tw g_st
        (z, g'')             <- envFreshHeapBind l m g'
        g'''                 <- envAdds [(z, strengthen t r)]  g''
-       subTypeWind l (tracePP "g_st" g_st) σenv (hpRead g_st m (rheap g_st)) tw
+       subTypeWind l (tracePP "g_st" g_st) ((F.subst su <$>) <$> σenv) (hpRead g_st m (rheap g_st)) (F.subst su tw)
+       -- subTypeWind l (tracePP "g_st" g_st) σenv (hpRead g_st m (rheap g_st)) tw
        applyLocMeasEnv m g'''
        where
          hpRead g      = heapReadType g "consWind"
          s             = srcPos l
          toIdTyPair b  = (Id s (F.symbolString $ locSym b), locTy emptyCGEnv b)
          heapDiff σ ls = foldl (flip heapDel) σ ls
-
+                         
 freshConsWind g l θ ty m
     = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
          let xsu         = F.mkSubst [(x, F.eVar x')]
@@ -696,13 +698,16 @@ consUnwind l g (m, ty, θl) =
     g              <- if (isConc "consAccess" m $ rheap g) then
                          return g
                        else
-                         concretizeLoc "consAccess" m g
-    (σ',t',hsu)    <- unwindInst l (unwindTyApp l g m αs) θl πs (rs g) (σ,t)
+                         seq (tracePP "FIX ME" "sketchy") concretizeLoc "consAccess" m g
+    (σ',t',hsu)    <- unwindInst l (unwindTyApp l g m αs) θl πs (rs g) (σ, t)
     ms             <- getRMeasures ty
     (s',g')        <- envFreshHeapBind l m g
+                      
+    (g', bsu)      <- envAddFieldBinders l s' t' g'
+ 
     let r           = instRMeas su (F.symbol b) ms
         σ''         = tracePP "CONS UNWIND c" (instPropBind r . subst su <$> σ')
-        su          = hsu `F.catSubst` sub1 s s'
+        su          = bsu `F.catSubst` hsu `F.catSubst` sub1 s s'
     (_, g'')       <- envAddHeap l g' σ''
     g'''           <- envAdds [(s', mapTys (flip strengthen r) $ subst su $ strengthenObjBinds s' t')] g''
     gm             <- applyLocMeasEnv m g'''

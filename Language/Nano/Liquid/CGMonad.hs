@@ -47,6 +47,7 @@ module Language.Nano.Liquid.CGMonad (
 
   -- * Environment API
   , envAddFresh
+  , envAddFieldBinders
   , envAdds
   , envAddFreshHeap
   , envFreshHeapBind
@@ -292,7 +293,7 @@ envAdds xts' g
     where 
       (xs,ts)        = unzip xts'
       xtwrap m (x,t) = m (B (F.symbol x) t) >>= \(B _ t') -> return (x,t')
-
+                       
 ---------------------------------------------------------------------------------------
 envAddFreshHeap   :: (IsLocated l) => l -> (Location, RefType) -> CGEnv -> CGM (Id SourceSpan, CGEnv)
 ---------------------------------------------------------------------------------------
@@ -1130,7 +1131,7 @@ rsplitC γ i (PMono _ _, PMono _ _)
 
 rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   = do γ' <- envAdds ((ofType <$>) <$> s2) γ
-       splitC $ Sub γ' i (F.subst su r1) r2
+       splitC $ Sub γ' i (tracePP "THIS ONE OK" $ F.subst su r1) (tracePP "THAT ONE OK" r2)
   where
     su = traceShow "RSPLITC" $ F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
@@ -1358,3 +1359,12 @@ clearProp (sy, F.RR so re)
   = (sy, F.RR (F.FFunc 2 [F.FInt, F.FApp F.boolFTyCon []]) re)
   | otherwise                   
   = (clear sy, clear $ F.RR so re)
+
+envAddFieldBinders l b tObj@(TObj _ _) g
+  = do TObj bs _ <- strengthenObjBinds b <$> true tObj
+       foldM go (g, mempty) bs
+  where 
+    newSub su x x'    = F.catSubst su $ F.mkSubst [(x, F.eVar x')]
+    go (g,su) (B x t) = envAddFresh l t g >>= \(x', g) -> return (g, newSub su x x')
+
+envAddFieldBinders _ _ _ _       = error "BUG: Adding Field Binders NON object!"

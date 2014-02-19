@@ -34,8 +34,8 @@ function merge(x1, x2){
 
 /*@ split :: 
       (x:<l>+null)/l |-> ls:list[number]<{\h v -> true}>
-        => <r>/r |-> r:{x:<a>+null, y:<b>+null} * a |-> xs:list[number]<{\h v -> true}> 
-                                                * b |-> ys:list[number]<{\h v -> true}>      */
+        => <r>/r |-> r:{x:<a>+null, y:<b>+null} * a |-> xs:list[number]<{\h v -> h <= v}> 
+                                                * b |-> ys:list[number]<{\h v -> h <= v}>      */
 function split(x){
   if (x == null) {
     r = {x:null, y:null};
