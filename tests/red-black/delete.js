@@ -40,6 +40,15 @@ function deleteKey (x,t) {
 
 }
 
+function append(l, r) {
+  if (l == null) {
+    return r;
+  } else if (r == null) {
+    return l;
+  } else {
+  }
+}
+
 function del (x,k) {
   if (x == null) {
     return x;

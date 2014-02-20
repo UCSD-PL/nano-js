@@ -705,9 +705,10 @@ consUnwind l g (m, ty, θl) =
                       
     (g', bsu)      <- envAddFieldBinders l s' t' g'
  
-    let r           = instRMeas su (F.symbol b) ms
+    let r           = instRMeas su' (F.symbol b) ms
         σ''         = tracePP "CONS UNWIND c" (instPropBind r . subst su <$> σ')
-        su          = bsu `F.catSubst` hsu `F.catSubst` sub1 s s'
+        su'         = hsu `F.catSubst` sub1 s s'
+        su          = bsu `F.catSubst` su'
     (_, g'')       <- envAddHeap l g' σ''
     g'''           <- envAdds [(s', mapTys (flip strengthen r) $ subst su $ strengthenObjBinds s' t')] g''
     gm             <- applyLocMeasEnv m g'''
