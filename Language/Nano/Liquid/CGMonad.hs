@@ -508,7 +508,7 @@ freshTyFun g l f t = freshTyFun' g l f t . kVarInst . cg_opts =<< get
 -- A "trivial" type may nevertheless include abstract refinements. 
 -- Therefore, when creating a fresh fun type, let's first instantiate
 freshTyFun' g l _ t b
-  | isTrivialRefType t && b = freshTy "freshTyFun" t >>= \t -> wellFormed l g $ tracePP "FRESH TY FUN" t
+  | isTrivialRefType t && b = freshTy "freshTyFun" t >>= \t -> wellFormed l g t
   | otherwise = return t
 
 
@@ -528,7 +528,7 @@ freshTyInst l g αs τs tbody
        let su               = retsu `F.catSubst` hisu `F.catSubst` hosu
        ts                  <- mapM (freshTy "freshTyInst") (F.subst su <$> τs)
        _                   <- mapM (wellFormed l g . fmap stripSubsHack) ts
-       let θ                = tracePP "freshTyInst" $ fromLists (zip αs ts) []
+       let θ                = fromLists (zip αs ts) []
            rs'              = F.symbol xr
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
@@ -560,9 +560,9 @@ freshTyWind g l θ ty
   = do (σ,s,t,vs,πs) <- envFindTyDef ty
        γ             <- getTDefs
        let (αs,ls)    = toLists θ
-       θ'            <- flip fromLists ls <$> (tracePP "FRESH ALPHAS" <$> mapM freshSubst (tracePP "ALPHAS" αs))
+       θ'            <- flip fromLists ls <$> mapM freshSubst αs
        let θα         = uncurry fromLists . fmap (const []) $ toLists θ'
-       (su,σ')       <- freshHeapEnv l $ tracePP "FRESH TY WIND SUB" $ apply θ' $ tracePP "FRESH TY WIND" σ
+       (su,σ')       <- freshHeapEnv l $ apply θ' σ
        ms            <- (instMeas su <$>) <$> getRMeasures ty
        πs'           <- mapM (freshPredRef l g) πs
        let tApp       = mkApp (apply θ' . tVar <$> vs) πs'
@@ -713,8 +713,8 @@ subTypeHeaps l g σ1 σ2
   = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
     where 
       subTypeLoc loc = subTypeField l g 
-                         (tracePP "subTypeHeap 1!!" (heapReadType g "subTypeHeaps(a)" loc σ1))
-                         (tracePP "subTypeHeap 2!!" (heapReadType g "subTypeHeaps(b)" loc σ2))
+                         (heapReadType g "subTypeHeaps(a)" loc σ1)
+                         (heapReadType g "subTypeHeaps(b)" loc σ2)
     
 subTypeField l g = withAlignedM doSubType
   where doSubType t1 t2 = subTypeContainers l g t1 t2 
@@ -1020,8 +1020,8 @@ splitC' (Sub g i tf1@(TFun xt1s t1 σi1 σo1 _) tf2@(TFun xt2s t2 σi2 σo2 _))
        return     $ bcs ++ cs ++ cs' ++ cs'' ++ cs'''
     where 
        -- Stack Variables/Types
-       t2s        = tracePP "t2s" (b_type <$> xt2s)
-       t1s'       = tracePP "t1s'" $ F.subst su (b_type <$> xt1s)
+       t2s        = b_type <$> xt2s
+       t1s'       = F.subst su (b_type <$> xt1s)
        -- Heap Variables/Types
        σi2ts      = b_type . snd <$> σi2bs
        σi1ts      = F.subst su (b_type . snd <$> σi1bs)
@@ -1131,9 +1131,9 @@ rsplitC γ i (PMono _ _, PMono _ _)
 
 rsplitC γ i (t1@(PPoly s1 r1), t2@(PPoly s2 r2))
   = do γ' <- envAdds ((ofType <$>) <$> s2) γ
-       splitC $ Sub γ' i (tracePP "THIS ONE OK" $ F.subst su r1) (tracePP "THAT ONE OK" r2)
+       splitC $ Sub γ' i (F.subst su r1) r2
   where
-    su = traceShow "RSPLITC" $ F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
+    su = F.mkSubst [(x, F.eVar y) | ((x,_),(y,_)) <- zip s1 s2]
 
 rsplitC _ i (ref1, ref2)
   = cgError (srcPos i) $ printf "Can't split:\n%s\n%s" (ppshow ref1) (ppshow ref2)
@@ -1185,7 +1185,7 @@ subTypeWind :: AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 subTypeWind = subTypeWind' [] 
 
 subTypeWind' seen l g σ t1 t2
-    = tracePP msg () `seq` withAlignedM (subTypeWindTys seen l g σ) t1 t2
+    = {- tracePP msg () `seq` -} withAlignedM (subTypeWindTys seen l g σ) t1 t2
   where
     msg = printf "subTypeWind %s/%s <: %s/%s\n==\n%s <: %s" 
           (ppshow t1) (ppshow (rheap g)) (ppshow t2) (ppshow σ)
@@ -1259,7 +1259,7 @@ splitW (W g i t@(TVar _ _))
 splitW (W g i t@(TApp _ ts rs _))
   =  do let ws = bsplitW g t i
         ws'   <- concatMapM splitW [W g i ti | ti <- ts]
-        ws''  <- concatMapM (seq (tracePP "RSPLITW THINGIE" t) rsplitW g i) rs
+        ws''  <- concatMapM (rsplitW g i) rs
         return $ ws ++ ws' ++ ws''
 
 splitW (W g i t@(TObj ts _ ))

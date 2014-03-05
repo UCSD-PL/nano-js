@@ -27,7 +27,7 @@ function insert(x, k){
 
 /*@ insertion_sort ::  forall A.
   (x:<l>+null)/l |-> ls:list[A]<{\h v -> true}>
-    => {v:<k>+null | (lenp(v,ys) = lenp(x,ls)
+    => {v:<k>+null | (lenp(v,ys) = lenp(x,ls) 
                   && (keysp(v,ys) = keysp(x,ls))) }/k |-> ys:list[A]<{\h v -> h <= v}>  */
 function insertion_sort(x){
   if (x == null){
