@@ -38,7 +38,6 @@ import           Language.Nano.Typecheck.TCMonad
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Lower
 import           Language.Nano.SSA.SSA
-import           Language.Nano.Dominators
 --import           Language.Nano.HeapTypes.HeapTypes
 
 import qualified Language.Fixpoint.Types            as F

@@ -116,7 +116,6 @@ import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
 import           Language.Nano.Typecheck.Compare
 import           Language.Nano.Typecheck.Unify
-import           Language.Nano.Dominators
 import           Language.Nano.Errors
 import           Data.Function                  (on)                  
 import           Data.Monoid                  
