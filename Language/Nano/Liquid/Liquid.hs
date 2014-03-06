@@ -473,7 +473,7 @@ consAccess l x g i = do [(j,t)] <- dotAccessM l g i tp
                         g'      <- if (isConc "consAccess" j σ) then
                                      return g
                                    else
-                                     concretizeLoc "consAccess" j g
+                                     concretizeLoc l "consAccess" j g
                         envAddFresh l t g'
   where 
     tp  = envFindTy x g
@@ -580,12 +580,20 @@ consCall g l fn es ft
        (_,g'')              <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
        let lost  = deletedLocs σin $ rheap g''
            B rs rt = fmap (F.subst su) ot
+           σ     = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
            g'''  = g'' { renv  = renv g''
-                       , rheap = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
+                       , rheap = σ
                        }
        g_out                <- topMissingBinds g''' (rheap g') hi' >>= envAdds [(rs, rt)]
-       g_outms              <- foldM (flip applyLocMeasEnv) g_out $ heapLocs hi'
-       return (Id l $ F.symbolString rs, g_outms)
+       g_outms              <- foldM (flip applyLocMeasEnv) g_out $ nub $ (heapLocs hi' ++ heapLocs σ)
+       g_outmshp            <- applyMeasHeap g_outms
+       return (Id l $ F.symbolString rs, g_outmshp)
+              
+applyMeasHeap g = do
+  bs' <- mapM (\(l,b) -> (l,) <$> mapLocTyM (addMeasuresM g) b) bs
+  return $ g { rheap = heapFromBinds "applyMeasHeap" bs' }
+  where σ  = rheap g
+        bs = heapBinds σ
               
 {- 
 A binder may only be brought into the local context (i.e. gamma) under
@@ -698,7 +706,7 @@ consUnwind l g (m, ty, θl) =
     g              <- if (isConc "consAccess" m $ rheap g) then
                          return g
                        else
-                         seq (tracePP "FIX ME" "sketchy") concretizeLoc "consAccess" m g
+                         seq (tracePP "FIX ME" "sketchy") concretizeLoc l "consAccess" m g
     (σ',t',hsu)    <- unwindInst l (unwindTyApp l g m αs) θl πs (rs g) (σ, t)
     ms             <- getRMeasures ty
     (s',g')        <- envFreshHeapBind l m g
@@ -760,7 +768,7 @@ applyLocMeasEnv l g
          envAdds xts' g
     where
       debind (B x t) = (x, t)
-      xts    = [ B (F.symbol x) t | (x, t) <- e, l `elem` locs t ]
+      xts    = [ B (F.symbol x) t | (x, t) <- e, F.symbol x /= returnSymbol, l `elem` locs t ]
       e      = envToList g
 
 deleteLoc l g ls t = do

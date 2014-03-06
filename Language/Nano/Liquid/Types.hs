@@ -52,6 +52,7 @@ module Language.Nano.Liquid.Types (
   , heapReadType
   , heapReadSym
   , mapLocTy
+  , mapLocTyM
   , refHeap
   , refHeapFromBinds
   , refHeapFromTyBinds
@@ -108,6 +109,9 @@ locSym (LocX x)       = x
                         
 mapLocTy f (LocB (B x t)) = LocB . B x $ f t
 mapLocTy _ l              = l
+
+mapLocTyM m (LocB (B x t)) = LocB <$> m (B x t)
+mapLocTyM _ l              = return l
 
 instance (F.Reftable a) => PP (Loc a) where
   pp (LocB b) = pp b

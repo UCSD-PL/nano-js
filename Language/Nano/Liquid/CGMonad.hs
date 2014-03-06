@@ -283,7 +283,7 @@ envAddFresh l t g
 envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv -> CGM CGEnv
 ---------------------------------------------------------------------------------------
 envAdds xts' g
-  = do xts    <- zip xs  <$> mapM addInvariant ts
+  = do xts    <- zipWith (\x t -> (x, strengthenObjBinds x t)) xs  <$> mapM addInvariant ts
        let g' =  g { renv = E.envAdds xts        (renv g) } 
        xts'   <- mapM (xtwrap $ addMeasuresM g') xts
        is     <- forM xts' $  addFixpointBind 
@@ -466,7 +466,7 @@ joinHeaps l γ g g1 g2
        -- Subtype the common heap locations
        subTypeHeaps l g1 σ1 ((F.subst su1 <$>) <$> σj)
        subTypeHeaps l g2 σ2 ((F.subst su2 <$>) <$> σj)
-       g'' <- foldM (\g l-> concretizeLoc "joinHeaps" l g) (g' { rheap = σj }) both
+       g'' <- foldM (\g j -> concretizeLoc l "joinHeaps" j g) (g' { rheap = σj }) both
        -- zipWithM_ (subType l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        -- zipWithM_ (subType l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        -- zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
@@ -482,10 +482,11 @@ joinHeaps l γ g g1 g2
       str x t            = (x, strengthenObjBinds x t)
       rdHeap             = heapRead "joinHeaps"
           
-concretizeLoc msg l g = 
-  envAdds [(x, xt `eSingleton` x)] $ g { rheap = σ' }
+concretizeLoc l msg loc g = do
+  (xt', g') <- freshObjBinds l g $ strengthenObjBinds x xt
+  envAdds [(x, xt' `eSingleton` x)] $ g' { rheap = σ' }
   where
-    (x, xt, σ') = refHeapMakeConc msg l (rheap g)
+    (x, xt, σ') = refHeapMakeConc msg loc (rheap g)
 
 
 -- freshSubHeap l σ g_wf g locs
@@ -713,11 +714,13 @@ subTypeHeaps l g σ1 σ2
   = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
     where 
       subTypeLoc loc = subTypeField l g 
-                         (heapReadType g "subTypeHeaps(a)" loc σ1)
+                         (heapReadSym "subTypeHeaps(a)" loc σ1, heapReadType g "subTypeHeaps(a)" loc σ1)
                          (heapReadType g "subTypeHeaps(b)" loc σ2)
     
-subTypeField l g = withAlignedM doSubType
-  where doSubType t1 t2 = subTypeContainers l g t1 t2 
+subTypeField l g (x1,t1) t2 = do 
+  (t1', g_st) <- freshObjBinds l g t1
+  withAlignedM (doSubType g_st) t1' t2
+  where doSubType g_st t1 t2 = subTypeContainers l g_st t1 t2 
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -1196,7 +1199,8 @@ subTypeWind' seen l g σ t1 t2
 subTypeWindTys :: [Location] -> AnnTypeR -> CGEnv -> RefHeap -> RefType -> RefType -> CGM ()
 -------------------------------------------------------------------------------
 subTypeWindTys seen l g σ t1@(TObj _ _) t2@(TObj _ _)
-  = do (t1', t2') <- alignTsM t1 t2 
+  = do (t1', t2')  <- alignTsM t1 t2 
+       -- (t1', g_st) <- freshObjBinds l g t1'
        subTypeContainers l g t1' t2'
        mapM_ (uncurry $ subTypeWindHeaps seen l g σ) $ bkPaddedObject t1 t2
        return ()
