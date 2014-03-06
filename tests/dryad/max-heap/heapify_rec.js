@@ -1,7 +1,7 @@
 /*@ include max-heaps.js */
 
 /*@ qualif FldGt(v:a, y:b, x:c): ((y != null) =>  (v <= (field x "key")))    */
-/*@ qualif RApp(v:a): papp1(r,v)                                             */
+/*@ qualif RApp(v:a): papp1(r,v)                                            */
 
 /*@ heapify :: forall < r :: (number) => prop >.
  ({v:<x> | true})/x |-> bs:{left:<l>+null, key:number<r>, right:<r>+null}
@@ -24,33 +24,39 @@ function heapify(x) {
         r.key = xk;
         x.key = rk;
         heapify(r);
-      }
-    }
-  } else if (r == null) {
-    if (l != null) {
-      var xk = x.key;
-      var lk = l.key;
-      if (xk < lk) {
-        l.key = xk;
-        x.key = lk;
-        heapify(l);
+        return;
       }
     }
   } else {
-    var xk = x.key;
-    var lk = l.key;
-    var rk = r.key;
-    if (lk < rk) { //bug here?
-      if (xk < rk) {
-        x.key = rk;
-        r.key = xk;
-        heapify(r);
+    if (r == null) {
+      if (l != null) {
+      var xk = x.key;
+        var lk = l.key;
+        if (xk < lk) {
+          l.key = xk;
+          x.key = lk;
+          heapify(l);
+          return;
+        }
       }
-    } else if (xk < lk) {
-      x.key = lk;
-      l.key = xk;
-      heapify(l);
+    } else {
+      var xk = x.key;
+      var lk = l.key;
+      var rk = r.key;
+      if (lk < rk) { //bug here?
+        if (xk < rk) {
+          x.key = rk;
+          r.key = xk;
+          heapify(r);
+          return;
+        }
+      } else if (xk < lk) {
+        x.key = lk;
+        l.key = xk;
+        heapify(l);
+        return;
+      }
     }
+    return;
   }
-  return;
 }

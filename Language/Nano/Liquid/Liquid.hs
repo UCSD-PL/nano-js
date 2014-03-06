@@ -72,7 +72,7 @@ solveConstraints :: FilePath -> CGInfo -> IO (F.FixResult SourceSpan)
 solveConstraints f cgi 
   = do (r, sol) <- solve def f [] $ cgi_finfo cgi
        let r'    = fmap (srcPos . F.sinfo) r
-       renderAnnotations f sol r' $ cgi_annot cgi
+       -- renderAnnotations f sol r' $ cgi_annot cgi
        donePhase (F.colorResult r) (F.showFix r) 
        return r'
 
@@ -585,15 +585,18 @@ consCall g l fn es ft
                        , rheap = σ
                        }
        g_out                <- topMissingBinds g''' (rheap g') hi' >>= envAdds [(rs, rt)]
-       g_outms              <- foldM (flip applyLocMeasEnv) g_out $ nub $ (heapLocs hi' ++ heapLocs σ)
+       g_outconc           <- concretizeHeapSet l g_out
+       g_outms              <- foldM (flip applyLocMeasEnv) g_outconc $ nub $ (heapLocs hi' ++ heapLocs σ)
        g_outmshp            <- applyMeasHeap g_outms
        return (Id l $ F.symbolString rs, g_outmshp)
               
-applyMeasHeap g = do
-  bs' <- mapM (\(l,b) -> (l,) <$> mapLocTyM (addMeasuresM g) b) bs
-  return $ g { rheap = heapFromBinds "applyMeasHeap" bs' }
-  where σ  = rheap g
-        bs = heapBinds σ
+              
+applyMeasHeap g 
+  = do bs' <- mapM (\(l,b) -> (l,) <$> mapLocTyM (addMeasuresM g) b) bs
+       return $ g { rheap = heapFromBinds "applyMeasHeap" bs' }
+  where 
+    σ  = rheap g
+    bs = heapBinds σ
               
 {- 
 A binder may only be brought into the local context (i.e. gamma) under
@@ -777,3 +780,31 @@ deleteLoc l g ls t = do
   return t'
   where constrain t t' | isUnion t = subTypeContainers l g (setRTypeR t mempty) t'
         constrain t t' | otherwise = subTypeContainers l g t t'
+
+--------------------------------------------------------------------------------
+concretizeHeapSet :: AnnTypeR -> CGEnv -> CGM CGEnv
+--------------------------------------------------------------------------------
+-- all references that are not null, we can immediately concretify them
+-- furthermore this does not need to go through the SMT solver
+concretizeHeapSet l g
+  = do loop =<< concretizeHeapSetFP l (absLocs σ) g
+    where 
+      σ         = rheap g
+      absLocs σ = filter (isAbs σ) $ heapLocs σ
+      isAbs σ l = not $ isConc "concretize" l σ
+      loop g' 
+        | absLocs σ == absLocs (rheap g') = return g'
+        | otherwise                       = concretizeHeapSet l g'
+              
+concretizeHeapSetFP l (j:absLocs) g
+  = if hasRef then
+      conc >>= concretizeHeapSetFP l absLocs
+    else
+      concretizeHeapSetFP l absLocs g
+    where 
+      σ          = rheap g
+      ts         = [ t | (x, t) <- envToList g, F.symbol x /= returnSymbol ]
+      hasRef     = any ((tRef j ==) . toType) ts
+      conc       = concretizeLoc l "concretizeHeapSet" j g
+
+concretizeHeapSetFP _ [] g = return g
