@@ -1,7 +1,60 @@
 Benchmarks
 ----------
 
-  - [DONE] tests/strobe/gadgets/resistor-00.js
+We should aim at features like the following:
+
+- Check overloaded signatures against implementation. Imagine being able to check all signatures of createElement (provided we have an implementation for it) - not just the last one - which is done now in TypeScript.
+
+```js
+createElement(tagName: "div"): HTMLDivElement; 
+createElement(tagName: "span"): HTMLSpanElement; 
+createElement(tagName: "canvas"): HTMLCanvasElement; 
+createElement(tagName: string): HTMLElement;             //  <--- Actually checked by TS 
+```
+
+- Verify the logical connection between a specific "tag" field of an object and the functionality of the object itself (where in other languages you would have used a type constructor). This is very pervasive in the TS compiler. E.g.:
+
+```js
+[...] if (cur.nodeType() === NodeType.VariableDeclarator) {
+  declarationInitASTs[declarationInitASTs.length] = <VariableDeclarator>cur;
+}
+```
+
+The cast to VariableDeclarator succeeds in TS due to the unsound rule for downcast (for S <: T, if e :: T then <S>e succeeds).
+
+To tackle this soundly, if the general AST node has a type:
+```js
+{
+  _nodetype: number;
+  ...
+}
+```
+   
+then the VariableDeclarator could have
+```js
+{
+  _nodetype: { number | v = 39};    <----- a unique number that corresponds to NodeType.VariableDeclarator
+  ...
+}
+```
+
+And hence the structural check at the cast should succeed.
+
+
+- Use of "any" where a union could have been more appropriate (the one we discussed on Monday). Taken from the TS compiler:
+
+```js
+private _textOrWidth: any;
+public width(): number { return typeof this._textOrWidth === 'number' ? this._textOrWidth : this._textOrWidth.length; }
+public text(): string {
+  if (typeof this._textOrWidth === 'number') {
+    this._textOrWidth = "some string..."; [...]
+  }
+  return this._textOrWidth;
+}
+```
+    
+
 
 
 JS Features
