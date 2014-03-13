@@ -68,6 +68,79 @@ function is_red(x)
 /*@ qualif Foo(v:a): (v < field(lbl,"key")) */
 
 /*@
+  lbal :: forall A.
+    (t:{v:<t> | true})/
+            lr |-> blr:rbtree[{v:A | (v > field(bl,"key") && v < field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * ll |-> bll:rbtree[{v:A | (v < field(bl,"key") && v < field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * r  |-> br:rbtree[{v:A | v > field(bt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
+          * l  |-> bl:{ color:number 
+                      , key:{v:A | v < field(bt, "key")}
+                      , left:{v:<ll>+null | (bheightp(v,bll)  = bheightp(field(bl,"right"),blr)) }
+                      , right:{v:<lr>+null | (bheightp(v,blr) = bheightp(field(bl,"left"),bll)) }
+                     }
+          * t |-> bt:{ color:number
+                     , key:{v:A | v > field(bl, "key")}
+                     , left:{v:<l>+null | (bheightp(field(bt,"right"),br) = (if (v = null) then 1 else (bheightp(field(bl,"left"),bll) + (if (field(bl,"color") = 0) then 1 else 0)))) }
+                     , right:{v:<r>+null | (bheightp(v,br) = (if (field(bt,"left") = null) then 1 else (bheightp(field(bl,"right"),blr) + (if (field(bl,"color") = 0) then 1 else 0)))) }
+                     }
+         => {v:<x> | ((((field(bl,"color") != 0) && (field(bt, "left") != null))
+                      && (keysp(v,out) = 
+                           (keysp(field(bl,"right"),blr) ∪ keysp(field(bl,"left"),bll) ∪ keysp(field(bt,"right"),br) ∪1 field(bt,"key") ∪1 field(bl,"key"))
+                      && ((colorp(field(bl,"right"),blr) != 0 || colorp(field(bl,"left"),bll) != 0))) <=> 
+                        (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field(bt, "right"), br)))}
+            /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+*/
+
+         // => {v:<x> | (((field(bl,"color") = 0) => (colorp(v,out) = 0))
+         //            && (bheightp(v,out) = 1 + bheightp(field(bt,"right"),br)))}
+         //    /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+         // => {v:<x> | (((field(br,"color") != 0) 
+         //              && (keysp(v,out) = 
+         //                   (keysp(field(br,"left"),brl) ∪ keysp(field(br,"right"),brr) ∪ keysp(field(bt,"left"),bl) ∪1 field(bt,"key") ∪1 field(br,"key"))
+         //              && ((colorp(field(br,"left"),brl) != 0 || colorp(field(br,"right"),brr) != 0))) <=> 
+         //                (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field(bt, "left"), bl)))}
+// function lbal(t)  {
+//   var tc = t.color;
+//   var l  = t.left;
+//   var r  = t.right;
+//   if (l != null) {
+//     var lc = l.color;
+//     if (lc != 0) {
+//       var ll = l.left;
+//       var lr = l.right;
+//       if (is_red(ll)) {
+//         t.left   = l.right;
+//         l.right  = t;
+//         t.color  = 0;
+//         ll.color = 0;
+//         l.color  = 1;
+//         return l;
+//       } else {
+//         if (is_red(lr)) {
+//           l.right = lr.left;
+//           lr.left = l;
+//           t.left = lr.right;
+//           lr.right = t;
+//           l.color  = 0;
+//           t.color  = 0;
+//           lr.color = 1;
+//           return lr;
+//         } else {
+//           t.color = 0;
+//           return t;
+//         }
+//       }
+//     } else {
+//       t.color = 0;
+//       return t;
+//     }
+//   } else {
+//     t.left = null;
+//     t.color = 0;
+//     return t;
+//   }
+// }
+/*@
   rbal :: forall A.
     (t:{v:<t> | true})/
             rr |-> brr:rbtree[{v:A | (v > field(br,"key") && v > field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
@@ -84,7 +157,7 @@ function is_red(x)
                      (bheightp(field(br,"right"),brr) + (if (field(br,"color") = 0) then 1 else 0))))) }
                      , right:{v:<r>+null | (bheightp(field(bt,"left"),bl) = (if (v = null) then 1 else (bheightp(field(br,"left"),brl) + (if (field(br,"color") = 0) then 1 else 0)))) }
                      }
-         => {v:<x> | (((field(br,"color") != 0) 
+         => {v:<x> | ((((field(br,"color") != 0) && (field(bt,"right") != null))
                       && (keysp(v,out) = 
                            (keysp(field(br,"left"),brl) ∪ keysp(field(br,"right"),brr) ∪ keysp(field(bt,"left"),bl) ∪1 field(bt,"key") ∪1 field(br,"key"))
                       && ((colorp(field(br,"left"),brl) != 0 || colorp(field(br,"right"),brr) != 0))) <=> 
@@ -92,6 +165,47 @@ function is_red(x)
             /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 
 */
+// function rbal(t) {
+//   var tc = t.color;
+//   var l  = t.left;
+//   var r  = t.right;
+//   if (r != null) {
+//     var rc = r.color;
+//     if (rc != 0) {
+//       var rl = r.left;
+//       var rr = r.right;
+//       if (is_red(rr)) {
+//         t.right  = r.left;
+//         r.left  = t;
+//         t.color  = 0;
+//         rr.color = 0;
+//         r.color  = 1;
+//         return r;
+//       } else {
+//         if (is_red(rl)) {
+//           r.left = rl.right;
+//           rl.right = r;
+//           t.right = rl.left;
+//           rl.left = t;
+//           r.color  = 0;
+//           t.color  = 0;
+//           rl.color = 1;
+//           return rl;
+//         } else {
+//           t.color = 0;
+//           return t;
+//         }
+//       }
+//     } else {
+//       t.color = 0;
+//       return t;
+//     }
+//   } else {
+//     t.right = null;
+//     t.color = 0;
+//     return t;
+//   }
+// }
 
 
 /*@
@@ -119,6 +233,40 @@ function is_red(x)
                         }
             /x |-> out:rbtree[A<p>]<{\x y -> x > y},{\x y -> x < y}>
 */
+// function rbalS(t) 
+// {
+//   var l = t.left;
+//   var r = t.right;
+//   if (is_red(r)) {
+//     if (is_red(l)) {
+//       r.color = 0;
+//       t.color = 0;
+//       return t;
+//     } else {
+//       t.color = 1;
+//       r.color = 0;
+//       return t;
+//     }
+//   } else {
+//     if (is_red(l)) {
+//       var lc = l.color;
+//       var ll = l.left;
+//       var lr = l.right;
+//       t.color = 0;
+//       t.left = lr.right;
+//       l.right  = lr.left;
+//       lr.right = t;
+//       lr.left = l;
+//       ll.color = 1;
+//       lr.left = lbal(l);
+//       return lr;
+//     } else {
+//       l.color = 1;
+//       t = lbal(t);
+//       return t;
+//     }
+//   }
+// }
 
 /*@ qualif LbalS(v:a):(if (colorp(field(lbt,"left"),lbl) != 0) then
                          (if (colorp(field(lbt,"right"),lbr) != 0) then

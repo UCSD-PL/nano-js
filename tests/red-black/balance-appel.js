@@ -45,7 +45,7 @@ function is_red(x)
                     && (bheightp(v,out) = 1 + bheightp(field(bt,"right"),br)))}
             /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 */
-// function lbal(t) {
+// function lbal(t)  {
 //   var tc = t.color;
 //   var l  = t.left;
 //   var r  = t.right;
@@ -114,6 +114,47 @@ function is_red(x)
             /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 
 */
+// function rbal(t) {
+//   var tc = t.color;
+//   var l  = t.left;
+//   var r  = t.right;
+//   if (r != null) {
+//     var rc = r.color;
+//     if (rc != 0) {
+//       var rl = r.left;
+//       var rr = r.right;
+//       if (is_red(rr)) {
+//         t.right  = r.left;
+//         r.left  = t;
+//         t.color  = 0;
+//         rr.color = 0;
+//         r.color  = 1;
+//         return r;
+//       } else {
+//         if (is_red(rl)) {
+//           r.left = rl.right;
+//           rl.right = r;
+//           t.right = rl.left;
+//           rl.left = t;
+//           r.color  = 0;
+//           t.color  = 0;
+//           rl.color = 1;
+//           return rl;
+//         } else {
+//           t.color = 0;
+//           return t;
+//         }
+//       }
+//     } else {
+//       t.color = 0;
+//       return t;
+//     }
+//   } else {
+//     t.right = null;
+//     t.color = 0;
+//     return t;
+//   }
+// }
 
 
 /*@
@@ -182,7 +223,77 @@ function is_red(x)
 //   }
 // }
 
-/*@ append :: forall A.
+/*@
+  rbalS :: forall A <p :: (A) => prop>.
+    (t:{v:<t> | true})/
+            r  |-> lbr:rbtree[{v:A<p> | v > field(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
+          * l  |-> lbl:rbtree[{v:A<p> | v < field(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}> 
+          * t  |-> lbt:{ color:number
+                       , key:A<p>
+                       , left:{v:<l>  | ((bheightp(v,lbl) = (1 + bheightp(field(lbt,"right"),lbr)))
+                                      && (bheightp(v,lbl) > 1))                                  }
+                       , right:{v:<r> | ((bheightp(v,lbr) + 1) = bheightp(field(lbt,"left"),lbl)) }
+                       }
+         => {v:<x> | ((if (colorp(field(lbt,"right"),lbr) != 0) then
+                         (if (colorp(field(lbt,"left"),lbl) != 0) then
+                            ((bheightp(v,out) = bheightp(field(lbt,"left"),lbl) + 1) && (colorp(v,out) = 0))
+                         else
+                            ((bheightp(v,out) = bheightp(field(lbt,"left"),lbl)) && (colorp(v,out) != 0)))
+                     else (if (colorp(field(lbt,"left"),lbl) != 0) then
+                        ((bheightp(v,out) = bheightp(field(lbt,"left"),lbl) + 1) && (colorp(v,out) = 0))
+                     else
+                        (((bheightp(v,out) = bheightp(field(lbt,"left"),lbl))))))
+
+                     && (keysp(v,out) = keysp(field(lbt,"left"),lbl) ∪ keysp(field(lbt,"right"),lbr) ∪1 field(lbt,"key")))
+                        }
+            /x |-> out:rbtree[A<p>]<{\x y -> x > y},{\x y -> x < y}>
+*/
+function rbalS(t) {
+  var l  = t.left;
+  var r  = t.right;
+  var rc = r.color;
+  if (rc != 0) {
+    r.color = 0;
+    t.color = 1;
+    return t;
+  } else {
+    var lc = l.color;
+    if (lc == 0) {
+      l.color = 1;
+      t = lbal(t);
+      return t;
+    } else {
+      assume(false);
+      var rl = r.left;
+      var rr = r.right;
+      if (rl != null) {
+        var rlr = rl.right;
+        var rlc = rl.color;
+        if (rlc == 0) {
+          t.right  = rl.left;
+          r.left   = rl.right;
+          rl.left  = t;
+          rl.color = 1;
+          t.color  = 0;
+          assert (rr != null);
+          rr.color = 1;
+          r = rbal(r);
+          rl.right = r;
+          rl.color = 0;
+          return rl;
+        } else { 
+          t.color = 1; 
+          return t; 
+        }
+      } else {
+        t.color = 1;
+        return t;
+      }
+    }
+  }
+}
+
+/* append :: forall A.
       (l:<l>+null, k:A, r:{v:<r>+null | bheightp(v,inr) = bheightp(l,inl)})
       /l |-> inl:rbtree[{v:A | v < k}]<{\h v -> h > v},{\h v -> h < v}>
      * r |-> inr:rbtree[{v:A | v > k}]<{\h v -> h > v},{\h v -> h < v}>
@@ -192,18 +303,19 @@ function is_red(x)
                       && (r = null => bheightp(v,outt) = bheightp(l,inl))
                       && (l = null => bheightp(v,outt) = bheightp(r,inr))
                       && ((v = null) <=> (l = null && r = null)))}
-           /t |-> outt:rbtree[A]<{\h v -> h > v},{\h v -> h < v}>                            */
-function append(l,k,r)
-{
-  if (l == null)
-    return r;
+           /t |-> outt:rbtree[A]<{\h v -> h > v},{\h v -> h < v}>                            
+*/
+// function append(l,k,r)
+// {
+//   if (l == null)
+//     return r;
 
-  if (r == null)
-    return l;
+//   if (r == null)
+//     return l;
 
-  if (is_red(r)) {
-    assume(false);
-    return l;
+//   if (is_red(r)) {
+//     assume(false);
+//     return l;
     // if (is_red(l)) {
     //   var lk = l.key;
     //   var rk = r.key;
@@ -231,37 +343,37 @@ function append(l,k,r)
     //   r.color = 0;
     //   return r;
     // }
-  } else {
-    if (is_red(l)) {
-      assume(false);
-      return l;
-      // var lk = l.key
-      // var lr = l.right;
-      // var t  = append(lr, k, r);
-      // l.right = t;
-      // l.color = 0;
-      // return l;
-    } else {
-      var lk = l.key
-      var rk = r.key
-      var lr = l.right;
-      var rl = r.left;
-      var t =  append(lr, k, rl);
-      if (is_red(t)) {
-        l.right = t.left;
-        r.left  = t.right;
-        t.left  = l;
-        t.right = r;
-        t.color = 1;
-        return t;
-      } else {
-        var lc = l.color;
-        l.right = r;
-        r.left  = t;
-        r.color = 0;
-        var ret = lbalS(l);
-        return ret;
-      }
-    }
-  }
-}
+//   } else {
+//     if (is_red(l)) {
+//       assume(false);
+//       return l;
+//       // var lk = l.key
+//       // var lr = l.right;
+//       // var t  = append(lr, k, r);
+//       // l.right = t;
+//       // l.color = 0;
+//       // return l;
+//     } else {
+//       var lk = l.key
+//       var rk = r.key
+//       var lr = l.right;
+//       var rl = r.left;
+//       var t =  append(lr, k, rl);
+//       if (is_red(t)) {
+//         l.right = t.left;
+//         r.left  = t.right;
+//         t.left  = l;
+//         t.right = r;
+//         t.color = 1;
+//         return t;
+//       } else {
+//         var lc = l.color;
+//         l.right = r;
+//         r.left  = t;
+//         r.color = 0;
+//         var ret = lbalS(l);
+//         return ret;
+//       }
+//     }
+//   }
+// }

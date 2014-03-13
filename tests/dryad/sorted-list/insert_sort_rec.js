@@ -27,15 +27,14 @@ function insert(x, k){
 
 /*@ insertion_sort ::  forall A.
   (x:<l>+null)/l |-> ls:list[A]<{\h v -> true}>
-    => {v:<k>+null | (lenp(v,ys) = lenp(x,ls) 
+    => {v:<k>+null | (((v != null) => (len(ys) = len(ls)))
+                  &&  ((v = null) <=> (x = null))
                   && (keysp(v,ys) = keysp(x,ls))) }/k |-> ys:list[A]<{\h v -> h <= v}>  */
 function insertion_sort(x){
-  if (x == null){
-    return null;
-  } else {
-    var xn = x.next;
-    var xk = x.data;
-    var t  = insertion_sort(xn);
-    return insert(t, xk);
-  }
+  if (x == null) return null;
+
+  var xn = x.next;
+  var xk = x.data;
+  var t  = insertion_sort(xn);
+  return insert(t, xk);
 }
