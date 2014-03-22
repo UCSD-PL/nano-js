@@ -2,6 +2,9 @@
 /*@ qualif UnionKeys(v:a): ((keysp(v,ms) = (keysp(x1,x1s) ∪ keysp(x2,x2s)))) */
 /*@ qualif SplitKeys(v:a): ((keysp(x,ls) = (keysp(field(r,"x"),xs) ∪ keysp(field(r,"y"),ys)))) */
 
+/*@ qualif LenSum(v:a): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
+/*@ qualif SplitLen(v:a): ((lenp(x,ls) = (lenp(field(r,"x"),xs) + lenp(field(r,"y"),ys)))) */
+
 /*@ merge :: forall A.
   (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[A]<{\h v -> h <= v}> 
                            * b |-> x2s:list[A]<{\h v -> h <= v}>
@@ -61,7 +64,7 @@ function split(x){
 
 /*@ sortList ::
       (x:<l>+null)/l |-> xs:list[number]<{\h v -> true}>
-         => {v:<k>+null | keysp(v,ks) = keysp(x,xs)}/k |-> ks:list[number]<{\h v -> h <= v}> */
+         => {v:<k>+null | (lenp(v,ks) = lenp(x,xs) && keysp(v,ks) = keysp(x,xs))}/k |-> ks:list[number]<{\h v -> h <= v}> */
 function sortList(x) {
   if (x == null){
     return null;
