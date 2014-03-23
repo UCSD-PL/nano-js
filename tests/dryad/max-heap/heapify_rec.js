@@ -1,6 +1,7 @@
 /*@ include max-heaps.js */
 
-/*@ qualif FldGt(v:a, y:b, x:c): ((y != null) =>  (v <= (field x "key")))    */
+/*@ qualif FldGt(v:a, a:c): ((a != null) =>  (v <= (field x "key")))    */
+/*@ qualif FldGt(v:a, a:c): ((a != null) =>  (v <= (field x "key")))    */
 /*@ qualif RApp(v:a): papp1(r,v)                                            */
 
 /*@ heapify :: forall < r :: (number) => prop >.
@@ -26,19 +27,19 @@ function heapify(x) {
         heapify(r);
         return;
       }
-    }
+      return;
+    } 
   } else {
     if (r == null) {
-      if (l != null) {
       var xk = x.key;
-        var lk = l.key;
-        if (xk < lk) {
-          l.key = xk;
-          x.key = lk;
-          heapify(l);
-          return;
-        }
-      }
+      var lk = l.key;
+      if (xk < lk) {
+        l.key = xk;
+        x.key = lk;
+        heapify(l);
+        return;
+      } 
+      return;
     } else {
       var xk = x.key;
       var lk = l.key;
@@ -50,13 +51,17 @@ function heapify(x) {
           heapify(r);
           return;
         }
-      } else if (xk < lk) {
-        x.key = lk;
-        l.key = xk;
-        heapify(l);
+        return;
+      } else {
+        if (xk < lk) {
+          x.key = lk;
+          l.key = xk;
+          heapify(l);
+          return;
+        }
         return;
       }
     }
-    return;
   }
+  return;
 }

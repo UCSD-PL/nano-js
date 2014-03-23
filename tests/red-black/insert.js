@@ -82,69 +82,67 @@ function insert (p,k) {
   if (pk == k) {
     var pl = p.left;
     return p;
-  } else {
-    if (k < pk) {
-      p.left = insert(p.left, k);
-      var pl  = p.left;
-      var plc = pl.color;
-      if (plc != 0) { // RED
-        var pr = p.right;
-        if (is_red(pr)) {
-          pl.color = 0; 
-          pr.color = 0; 
-          p.color  = 1;
+  }
+
+  if (k < pk) {
+    p.left = insert(p.left, k);
+    var pl  = p.left;
+    var plc = pl.color;
+    if (plc != 0) { // RED
+      var pr = p.right;
+      if (is_red(pr)) {
+        pl.color = 0; 
+        pr.color = 0; 
+        p.color  = 1;
+        return p;
+      } else {
+        var pll = pl.left;
+        if (is_red(pll)) {
+          var p = rotate_right(p);
           return p;
         } else {
-          var pll = pl.left;
-          if (is_red(pll)) {
+          var plr = pl.right;
+          if (is_red(plr)) {
+            plr.color = 0;
+            p.left = rotate_left(pl);
             var p = rotate_right(p);
-            return p;
-          } else {
-            var plr = pl.right;
-            if (is_red(plr)) {
-              plr.color = 0;
-              p.left = rotate_left(pl);
-              var p = rotate_right(p);
-              return p; 
-            }  else {
-              return p;
+            return p; 
             }
+          return p;
+        }
+      }
+    }
+    return p;
+  } else {
+    p.right = insert(p.right, k);
+    var pr  = p.right;
+    var prc = pr.color;
+    if (prc != 0) { // RED
+      var pl = p.left;
+      if (is_red(pl)) {
+        pr.color = 0; 
+        pl.color = 0; 
+        p.color  = 1;
+        return p;
+      } else {
+        var prr = pr.right;
+        if (is_red(prr)) {
+          var p = rotate_left(p);
+          return p;
+        } else {
+          var prl = pr.left;
+          if (is_red(prl)) {
+            prl.color = 0;
+            p.right = rotate_right(pr);
+            var p = rotate_left(p);
+            return p; 
+          }  else {
+            return p;
           }
         }
-      } else {
-        return p;
       }
     } else {
-      p.right = insert(p.right, k);
-      var pr  = p.right;
-      var prc = pr.color;
-      if (prc != 0) { // RED
-        var pl = p.left;
-        if (is_red(pl)) {
-          pr.color = 0; 
-          pl.color = 0; 
-          p.color  = 1;
-          return p;
-        } else {
-          var prr = pr.right;
-          if (is_red(prr)) {
-            var p = rotate_left(p);
-            return p;
-          } else {
-            var prl = pr.left;
-            if (is_red(prl)) {
-              prl.color = 0;
-              p.right = rotate_right(pr);
-              var p = rotate_left(p);
-              return p; 
-            }  else {
-              return p;
-            }
-          }
-        }
-      } else {
-        return p;
-      }
+      return p;
     }
   }
 }
