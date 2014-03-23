@@ -23,11 +23,14 @@ function insert(x, k) {
   var xl = x.left;
   var xr = x.right;
 
+  if (xk == k)
+    return x;
+
   if (xk < k) {
     x.right = insert(xr, k);
-  } else if (k < xk) {
+    return x;
+  } else {
     x.left  = insert(xl, k);
+    return x;
   }
-
-  return x;
 }

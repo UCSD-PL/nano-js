@@ -12,7 +12,6 @@ function insert(x, k){
   var y  = {data:k, next:x, prev:null};
 
   if (x != null) {
-    y.next = x;
     x.prev = y;
   }
 

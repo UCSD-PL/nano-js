@@ -227,6 +227,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
          do q <- withFun (F.symbol f) $ tcStmts (γ'', b_type <$> σ) body
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid (b_type t)
        clearSubstM γ'
+       setUnwound []
        return $ Just (γ', heapEmpty)
 
     
@@ -355,7 +356,9 @@ tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
         unifyTypeM l "If condition" e t tBool
         uw <- getUnwound
         e1 <- preWind uw s1 $ tcStmt (γ, σe) s1
+        setUnwound uw
         e2 <- preWind uw s2 $ tcStmt (γ, σe) s2
+        setUnwound uw
         envJoin l (γ,σe) e1 e2
     where
       msg s = printf "Unwound in IfStatement %s on statement %s"
@@ -363,7 +366,14 @@ tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
       lastStmtAnn (BlockStmt l _) = l
       lastStmtAnn s               = getAnnotation s
       maybeWind l r               = maybe (return r) (fmap Just . flip windLocations l) r
-      preWind uw s m              = setUnwound uw >> m >>= maybeWind (lastStmtAnn s)
+      preWind uw s m              = do
+        g <- m
+        uw' <- getUnwound
+        let todo = filter (\(l,_,_) -> l `notElem` map fst3 uw) uw'
+        setUnwound todo >> return g >>= maybeWind (lastStmtAnn s)
+        -- setUnwound todo >> m >>= maybeWind (lastStmtAnn s)
+        -- setUnwound uw
+        
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
 tcStmt' (γ,σ) (VarDeclStmt _ ds)

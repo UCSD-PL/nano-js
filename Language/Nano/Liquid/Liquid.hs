@@ -722,9 +722,10 @@ consUnwind l g (m, ty, θl) =
         su          = bsu `F.catSubst` su'
     (_, g'')       <- envAddHeap l g' σ''
     g'''           <- envAdds [(s', mapTys (flip strengthen r) $ subst su $ strengthenObjBinds s' t')] g''
-    gm             <- applyLocMeasEnv m g'''
+    applyLocMeasEnv m g'''
+    -- gm             <- applyLocMeasEnv m g'''
     -- Add "witness" for each type variable??
-    foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
+    -- foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
   where
     envAdd l g t = snd <$> envAddFresh l t g
     rs g         = unwindTyRefs $ envFindTy b g

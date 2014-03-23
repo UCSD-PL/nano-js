@@ -14,10 +14,11 @@ function remove(p,q){
     pn = remove(ppn,q);
     if (pn != null) {
       p.next = inL(pn);
+      return p;
     } else {
       p.next = inR(q);
+      return p;
     }
-    return p;
   }
   return null;
 }

@@ -9,7 +9,7 @@ module Language.Nano.Typecheck.Parse (
   ) where
 
 import           System.FilePath
-import           Data.List (sort)
+import           Data.List (nub, sort)
 import           Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict            as M
 import           Data.Generics.Aliases
@@ -476,7 +476,8 @@ parseSpecFromFile f = do pspecs <- parseFromFile (specWraps specP) f
                          return (mconcat pgms `mappend` mkSpec pspecs)
     where
       dir         = takeDirectory f
-      incs pspecs = [ combine dir path | Include path <- pspecs ]
+      paths pspecs= nub [ path | Include path <- pspecs ]
+      incs pspecs = combine dir <$> paths pspecs
 
 -- mkSpecRec ::  (PP t, IsLocated l) => FilePath -> [PSpec l t] -> IO (Nano SourceSpan t)
 -- mkSpecRec dir xs
