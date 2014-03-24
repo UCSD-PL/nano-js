@@ -17,12 +17,12 @@
   type clist[A,H] exists! l |-> rest:clist[A,H]
                         . me:{data:A, next:either[<l>,H]}
 
-       with keys(x) = (if (ttag(field(me, "next")) = "inl") then
-                           Set_cup(Set_sng(field(me, "data")), keys(rest))
+       with keys(x) = (if (ttag(field_T(me, "next")) = "inl") then
+                           Set_cup(Set_sng(field_int(me, "data")), keys(rest))
                         else
-                           Set_sng(field(me, "data")))
+                           Set_sng(field_int(me, "data")))
 
-       and len(x) = (if (ttag(field(me, "next")) = "inl")
+       and len(x) = (if (ttag(field_T(me, "next")) = "inl")
                           then (1 + len(rest))
                           else 1)
 */

@@ -1,5 +1,5 @@
 /*@ include doubly-linked-list.js */
-/*@ qualif EqMeas(v:a, vs:b): ((dlenp(v,vs) = dlenp(x,xs))
+/*@ qualif EqMeas(v:Ref, vs:T): ((dlenp(v,vs) = dlenp(x,xs))
                               && (dkeysp(v,vs) = dkeysp(x,xs))) */
 /*@
   insert ::

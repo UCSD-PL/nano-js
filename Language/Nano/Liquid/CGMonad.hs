@@ -172,11 +172,11 @@ getDefType f
 -- cgStateFInfo :: Nano a1 (RType F.Reft)-> (([F.SubC Cinfo], [F.WfC Cinfo]), CGState) -> CGInfo
 cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
   where 
-    fiQs = inferQuals fi
+    fiQs = {- inferQuals -} fi
     fi   = F.FI { F.cm    = M.fromList $ F.addIds fcs  
                 , F.ws    = fws
                 , F.bs    = binds cg
-                , F.gs    = consFPBinds pgm 
+                , F.gs    = consFPBinds (count cg) pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
                 , F.quals = quals pgm 
@@ -232,11 +232,23 @@ withFun f m = do fOld <- cg_fun <$> get
 ---------------------------------------------------------------------------------------
 -- measureBinds   ::  Nano a (RType RReft) -> F.SEnv F.SortedReft
 ---------------------------------------------------------------------------------------
+-- nilB n      = [(nilSymbol, F.RR (F.FVar $ fromIntegral $ n + 1) mempty)]
+
+-- Oh the horrors REMOVE ME!!!!
+strSort = F.FApp (F.strFTyCon) []
+fieldFuns = [(F.val $ fieldSym (tInt :: Type), F.RR (F.FFunc 1 [F.FVar 0, strSort, F.FInt]) mempty)
+            ,(F.val $ fieldSym (tRef "l" :: Type),F.RR (F.FFunc 1 [F.FVar 0, strSort, rawStr "Ref"]) mempty)
+            ,(F.symbol "field_T",F.RR (F.FFunc 1 [F.FVar 0, strSort, rawStr "T"]) mempty)]
+nilB n      = [(nilSymbol, F.RR (rawStr "T") mempty)]
+              
+rawStr s = F.FApp (F.stringFTycon . F.Loc F.dummyPos $ s) []
+
 measureBinds   = map tx . E.envToList . consts 
   where tx (id, t) = (F.symbol id, rTypeSortedReft t)
-predicateBinds = pappSymSorts               
 
-consFPBinds pgm = F.fromListSEnv (measureBinds pgm ++ predicateBinds)
+predicateBinds = pappSymSorts
+
+consFPBinds n pgm = F.fromListSEnv (fieldFuns ++ nilB n ++ measureBinds pgm ++ predicateBinds)
                  
 ---------------------------------------------------------------------------------------
 -- | Constraint Generation Monad ------------------------------------------------------
@@ -636,7 +648,7 @@ freshHeapEnv l σ
 strengthenObjBinds x (TObj bs r)
   = TObj (f <$> bs) r
   where
-    f (B b t) = B b $ eSingleton t (field x b)
+    f (B b t) = B b $ eSingleton t (field x b t)
 
 strengthenObjBinds _ t = t
 
@@ -657,16 +669,19 @@ updateFieldM l m g f y
        envAdds [(x',  t_objm')] g'''
     where   
       s           = F.symbol f
-      deref x t b = t `eSingleton` (field x b)
+      deref x t b = t `eSingleton` (field x b t)
 
 addMeasObjBinds g (TObj bs r)                    
     = mapM (addMeasuresM g) bs >>= \bs' -> return (TObj bs' r)
 
 -- HACK
-field x y = F.EApp fieldSym [F.expr $ F.symbol x, bind2sym y]
+field x y t = F.EApp (fieldSym t) [F.expr $ F.symbol x, bind2sym y]
   where bind2sym = F.ESym . F.SL . F.symbolString
+        
 
-fieldSym = F.dummyLoc $ F.symbol "field"
+fieldSym t = F.dummyLoc $ F.symbol ("field_" ++ tname t)
+  where
+    tname = render . F.toFix . clear . rTypeSort
   
 ---------------------------------------------------------------------------------------
 -- | Adding Subtyping Constraints -----------------------------------------------------
@@ -1330,7 +1345,11 @@ instance ClearSorts F.Sort where
       | F.val (F.fTyconString c) == "set" = F.FApp setSym (clear <$> ss)
       | c == F.propFTyCon         = s
       | c == F.boolFTyCon         = s
-      | otherwise                 = F.FInt -- F.FApp  c $ clear s
+      | s == rTypeSort (tBool :: Type) = F.FInt
+      | otherwise                 = F.FApp c (clear <$> ss)
+      -- | otherwise                 = s 
+      -- | otherwise                 = F.FInt -- F.FApp  c $ clear s
+  clear s = s
                                     
 setSym = F.stringFTycon . F.dummyLoc $ "Set_Set"
 

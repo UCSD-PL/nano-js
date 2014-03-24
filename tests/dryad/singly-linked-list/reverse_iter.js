@@ -10,7 +10,8 @@ function reverseLoop(i, j){
   if (i != null) {
     var temp = i.next;
     i.next   = j;
-    var r    = reverseLoop(temp, i);
+    var z = i; // hehehe bug otherwise :(
+    var r    = reverseLoop(temp, z);
     return r;
   } else {
     return j;

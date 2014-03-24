@@ -53,18 +53,18 @@ function is_red(x) {
    insert :: forall A.
      (p:<t>+null, k:A)/t |-> in:rbtree[A]<{\h v -> v < h},{\h v -> v > h}>
           => {v:<u>+null | v != null}
-             / a |-> lft:rbtree[{v:A | v < field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
-             * b |-> rgt:rbtree[{v:A | v > field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
-             * u |-> out:{ color : { v:number | (((v != 0) => (bheightp(p,in) =     bheightp(field(out,"left"),lft))) &&
-                                                 ((v != 0) => (bheightp(p,in) =     bheightp(field(out,"right"),rgt))) &&
-                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field(out,"left"),lft))) &&
-                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field(out,"right"),rgt))) &&
-                                                 ((v = 0) || (((colorp(field(out,"left"),lft) = 0) || (colorp(field(out,"right"),rgt) = 0)) 
-                                                           && ((colorp(p,in) != 0) || ((colorp(field(out,"left"),lft) = 0) && (colorp(field(out,"right"),rgt) = 0))))))
+             / a |-> lft:rbtree[{v:A | v < field_int(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+             * b |-> rgt:rbtree[{v:A | v > field_int(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+             * u |-> out:{ color : { v:number | (((v != 0) => (bheightp(p,in) =     bheightp(field_Ref(out,"left"),lft))) &&
+                                                 ((v != 0) => (bheightp(p,in) =     bheightp(field_Ref(out,"right"),rgt))) &&
+                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field_Ref(out,"left"),lft))) &&
+                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field_Ref(out,"right"),rgt))) &&
+                                                 ((v = 0) || (((colorp(field_Ref(out,"left"),lft) = 0) || (colorp(field_Ref(out,"right"),rgt) = 0)) 
+                                                           && ((colorp(p,in) != 0) || ((colorp(field_Ref(out,"left"),lft) = 0) && (colorp(field_Ref(out,"right"),rgt) = 0))))))
                                                 }
                          , key:   A
-                         , left:  {v:<a>+null  | (v = v && bheightp(v,lft) = bheightp(field(out,"right"),rgt)) }
-                         , right: {v:<b>+null  | (v = v && bheightp(v,rgt) = bheightp(field(out,"left"),lft))  }
+                         , left:  {v:<a>+null  | (v = v && bheightp(v,lft) = bheightp(field_Ref(out,"right"),rgt)) }
+                         , right: {v:<b>+null  | (v = v && bheightp(v,rgt) = bheightp(field_Ref(out,"left"),lft))  }
                          }
 
 */

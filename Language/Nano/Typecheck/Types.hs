@@ -472,11 +472,20 @@ rTypeSort (TVar α _)           = F.FObj $ F.symbol α
 rTypeSort t@(TAll _ _)         = rTypeSortForAll t 
 rTypeSort t@(TAllP _ _)        = rTypeSortForAll t 
 rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> (xts ++ [t]))
+rTypeSort (TApp (TDef (Id _ c)) _ _ _)
+  | c /= "set" = F.FApp (rawStringFTycon "T") []
+rTypeSort (TApp TUn ts _ _)    
+  | length (L.nub (toType <$> ts)) == 1 = rTypeSort (head ts)
+  | rTypePtrUnion ts           = F.FApp (rawStringFTycon "Ref") []
 rTypeSort (TApp c ts _ _)      = rTypeSortApp c ts 
-rTypeSort (TObj _ _)           = F.FApp (rawStringFTycon "object") []
+rTypeSort (TObj _ _)           = F.FApp (rawStringFTycon "Rec") []
 rTypeSort t                    = error ("Type: " ++ ppshow t ++ 
                                     " is not supported in rTypeSort")
-
+rTypePtrUnion ts = all isPtr ts
+  where
+   isPtr (TApp TNull _ _ _)    = True
+   isPtr (TApp (TRef _) _ _ _) = True
+   isPtr _                     = False                          
 
 rTypeSortApp TInt [] = F.FInt
 rTypeSortApp TUn  _  = F.FApp (tconFTycon TUn) [] -- simplifying union sorts, the checks will have been done earlier
@@ -486,12 +495,12 @@ tconFTycon TInt      = F.intFTyCon
 tconFTycon TBool     = rawStringFTycon "boolean"
 tconFTycon TVoid     = rawStringFTycon "void"
 tconFTycon (TDef s)  = F.stringFTycon $ F.Loc (sourcePos s) (unId s)
-tconFTycon TUn       = rawStringFTycon "union"
+tconFTycon TUn       = F.intFTyCon -- rawStringFTycon "union"
 tconFTycon TString   = F.strFTyCon -- F.stringFTycon "string"
 tconFTycon TTop      = rawStringFTycon "top"
-tconFTycon TNull     = rawStringFTycon "null"
-tconFTycon TUndef    = rawStringFTycon "undefined"
-tconFTycon (TRef l)  = rawStringFTycon ("ref("++l++")")
+tconFTycon TNull     = rawStringFTycon "Ref"
+tconFTycon TUndef    = F.intFTyCon
+tconFTycon (TRef l)  = rawStringFTycon "Ref"
 
 
 rTypeSortForAll t    = genSort n θ $ rTypeSort tbody

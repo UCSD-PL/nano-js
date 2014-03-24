@@ -1,10 +1,12 @@
 /*@ include bst.js */
 
 /*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
-/*@ qualif RootKeys(v:a):((keysp(v,ks) = keysp(field(ts,"left"),ls) ∪ keysp(field(ts,"right"),rs))
-                        && (~Set_mem(field(ts, "data"),keysp(v,ks)))) */
-/*@ qualif RootInput(v:a): v < field(ts, "data") */
-/*@ qualif RootInput(v:a): v > field(ts, "data") */
+
+/*@ qualif RootKeys(v:Ref):((keysp(v,ks) = keysp(field_Ref(ts,"left"),ls) ∪ keysp(field_Ref(ts,"right"),rs))
+                        && (~Set_mem(field_int(ts, "data"),keysp(v,ks)))) */
+
+/*@ qualif RootInput(v:int, x:Rec): v < field_int(x, "data") */
+/*@ qualif RootInput(v:int, x:Rec): v > field_int(x, "data") */
 /*@ qualif PApp(v:a): (papp1 p v) */
 
 /*@ lemma_nonMem :: forall A B.

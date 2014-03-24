@@ -1,6 +1,6 @@
 /*@ include max-heaps.js */
 
-/*@ qualif FldGt(v:a, y:b, x:c): ((y != null) =>  (v <= (field x "key")))    */
+/*@ qualif FldGt(v:a, y:Ref, x:Rec): ((y != null) =>  (v <= (field_int x "key")))    */
 /*@ qualif RApp(v:a): papp1(r,v)                                            */
 
 /*@ heapify :: forall < r :: (number) => prop >.

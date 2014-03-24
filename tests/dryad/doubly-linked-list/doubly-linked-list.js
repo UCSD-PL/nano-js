@@ -13,7 +13,7 @@
 /*@
   type dlist[A,S,P] exists! l |-> tl:dlist[A, <l>, S]
                                 . me:{ data: A, next:<l>+null, prev:P }
-    with len(x) = (1 + dlenp(field(me, "next"), tl))
-    and keys(x) = Set_cup(Set_sng(field(me, "data")), dkeysp(field(me, "next"), tl))
+    with len(x) = (1 + dlenp(field_Ref(me, "next"), tl))
+    and keys(x) = Set_cup(Set_sng(field_int(me, "data")), dkeysp(field_Ref(me, "next"), tl))
 
 */

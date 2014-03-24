@@ -1,9 +1,9 @@
 /*@ include sorted-list.js */
-/*@ qualif UnionKeys(v:a): ((keysp(v,ms) = (keysp(x1,x1s) ∪ keysp(x2,x2s)))) */
-/*@ qualif SplitKeys(v:a): ((keysp(x,ls) = (keysp(field(r,"x"),xs) ∪ keysp(field(r,"y"),ys)))) */
+/*@ qualif UnionKeys(v:Ref): ((keysp(v,ms) = (Set_cup(keysp(x1,x1s), keysp(x2,x2s))))) */
+/*@ qualif SplitKeys(v:Rec): ((keysp(x,ls) = (Set_cup(keysp(field_Ref(r,"x"),xs), keysp(field_Ref(r,"y"),ys))))) */
 
-/*@ qualif LenSum(v:a): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
-/*@ qualif SplitLen(v:a): ((lenp(x,ls) = (lenp(field(r,"x"),xs) + lenp(field(r,"y"),ys)))) */
+/*@ qualif LenSum(v:Ref): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
+/*@ qualif SplitLen(v:Rec): ((lenp(x,ls) = (lenp(field_Ref(r,"x"),xs) + lenp(field_Ref(r,"y"),ys)))) */
 
 /*@ merge :: forall A.
   (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[A]<{\h v -> h <= v}> 
@@ -13,6 +13,7 @@
 */
 function merge(x1, x2){
   if (x1 == null) {
+    assume(0 == 1);
     return x2;
   }
 

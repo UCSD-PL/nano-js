@@ -1,6 +1,6 @@
 /*@ include bst.js */
 
-/*@ qualif EqKeys(v:a,h:b): keys(v) = keysp(x,h) ∪1 k         */
+/*@ qualif EqKeys(v:T,h:T): keys(v) = keysp(x,h) ∪1 k         */
 /*@ qualif RApp(v:a): papp1(r, v)                             */
 
 /*@ 

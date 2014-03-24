@@ -1,6 +1,6 @@
 /*@ include doubly-linked-list.js */
 
-/* qualif LLen(v:a):
+/* qualif LLen(v:T):
       (keys(v) = (Set_cup(Set_sng(field(y, "data")),
                           dkeysp(field(y, "next"), ys)))) */
 

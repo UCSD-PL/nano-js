@@ -17,22 +17,22 @@
       exists! l |-> lt:rbtree[A<p key>]<p,q>
             * r |-> rt:rbtree[A<q key>]<p,q>.
         root: { color : { v:number | ((v != 0) => 
-                                         ((colorp(field(root,"right"),rt)  = 0) &&
-                                         ((colorp(field(root,"left"),lt)   = 0)))) }
+                                         ((colorp(field_Ref(root,"right"),rt)  = 0) &&
+                                         ((colorp(field_Ref(root,"left"),lt)   = 0)))) }
               , key   : A
-              , left  : {v:<l>+null | (bheightp(v,lt) = bheightp(field(root,"right"),rt))}
-              , right : {v:<r>+null | (bheightp(v,rt) = bheightp(field(root,"left"),lt))}
+              , left  : {v:<l>+null | (bheightp(v,lt) = bheightp(field_Ref(root,"right"),rt))}
+              , right : {v:<r>+null | (bheightp(v,rt) = bheightp(field_Ref(root,"left"),lt))}
               }                                              
               
-      with color(x)   = field(root, "color")
+      with color(x)   = field_int(root, "color")
       
-      and  keys(x)    = keysp(field(root,"left"),lt) ∪ keysp(field(root,"right"),rt) ∪1 field(root, "key")
+      and  keys(x)    = keysp(field_Ref(root,"left"),lt) ∪ keysp(field_Ref(root,"right"),rt) ∪1 field_int(root, "key")
 
-      and  bheight(x) = ((if (field(root,"color") = 0) then 1 else 0)
-                        +(if (bheightp(field(root,"left"), lt)
-                               <= bheightp(field(root,"right"), rt)) then
-                            bheightp(field(root,"right"),rt)
+      and  bheight(x) = ((if (field_int(root,"color") = 0) then 1 else 0)
+                        +(if (bheightp(field_Ref(root,"left"), lt)
+                               <= bheightp(field_Ref(root,"right"), rt)) then
+                            bheightp(field_Ref(root,"right"),rt)
                           else
-                            bheightp(field(root,"left"),lt)))
+                            bheightp(field_Ref(root,"left"),lt)))
 */
  

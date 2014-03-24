@@ -1,5 +1,5 @@
 /*@ type list[A]<p :: (A, A) => prop>
-        exists! l |-> tl:list[A<p (field r "data")>]<p>. 
+        exists! l |-> tl:list[A<p data>]<p>. 
           r:{ data : A, next : <l>+null } */
 
 /*@ consSorted ::

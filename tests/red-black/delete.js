@@ -64,32 +64,32 @@
 //   }
 // }
 
-/*@ qualif Foo(v:a, x:b): (v > field(x,"key")) */
-/*@ qualif Foo(v:a, x:b): (v < field(x,"key")) */
+/*@ qualif Foo(v:a, x:Rec): (v > field_int(x,"key")) */
+/*@ qualif Foo(v:a, x:Rec): (v < field_int(x,"key")) */
 //qualif foo(v:a, x:b): (v > field(lbl,"key"))
 //@ qualif Foo(v:a, x:b): (v < field(lbl,"key"))
 
 /*@
   lbal :: forall A.
     (t:{v:<t> | true})/
-            lr |-> blr:rbtree[{v:A | (v > field(bl,"key") && v < field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
-          * ll |-> bll:rbtree[{v:A | (v < field(bl,"key") && v < field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
-          * r  |-> br:rbtree[{v:A | v > field(bt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
+            lr |-> blr:rbtree[{v:A | (v > field_int(bl,"key") && v < field_int(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * ll |-> bll:rbtree[{v:A | (v < field_int(bl,"key") && v < field_int(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * r  |-> br:rbtree[{v:A | v > field_int(bt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
           * l  |-> bl:{ color:number 
-                      , key:{v:A | v < field(bt, "key")}
-                      , left:{v:<ll>+null | (bheightp(v,bll)  = bheightp(field(bl,"right"),blr)) }
-                      , right:{v:<lr>+null | (bheightp(v,blr) = bheightp(field(bl,"left"),bll)) }
+                      , key:{v:A | v < field_int(bt, "key")}
+                      , left:{v:<ll>+null | (bheightp(v,bll)  = bheightp(field_Ref(bl,"right"),blr)) }
+                      , right:{v:<lr>+null | (bheightp(v,blr) = bheightp(field_Ref(bl,"left"),bll)) }
                      }
           * t |-> bt:{ color:number
-                     , key:{v:A | v > field(bl, "key")}
-                     , left:{v:<l>+null | (bheightp(field(bt,"right"),br) = (if (v = null) then 1 else (bheightp(field(bl,"left"),bll) + (if (field(bl,"color") = 0) then 1 else 0)))) }
-                     , right:{v:<r>+null | (bheightp(v,br) = (if (field(bt,"left") = null) then 1 else (bheightp(field(bl,"right"),blr) + (if (field(bl,"color") = 0) then 1 else 0)))) }
+                     , key:{v:A | v > field_int(bl, "key")}
+                     , left:{v:<l>+null | (bheightp(field_Ref(bt,"right"),br) = (if (v = null) then 1 else (bheightp(field_Ref(bl,"left"),bll) + (if (field_int(bl,"color") = 0) then 1 else 0)))) }
+                     , right:{v:<r>+null | (bheightp(v,br) = (if (field_Ref(bt,"left") = null) then 1 else (bheightp(field_Ref(bl,"right"),blr) + (if (field_int(bl,"color") = 0) then 1 else 0)))) }
                      }
-         => {v:<x> | ((((field(bl,"color") != 0) && (field(bt, "left") != null))
+         => {v:<x> | ((((field_int(bl,"color") != 0) && (field_Ref(bt, "left") != null))
                       && (keysp(v,out) = 
-                           (keysp(field(bl,"right"),blr) ∪ keysp(field(bl,"left"),bll) ∪ keysp(field(bt,"right"),br) ∪1 field(bt,"key") ∪1 field(bl,"key"))
-                      && ((colorp(field(bl,"right"),blr) != 0 || colorp(field(bl,"left"),bll) != 0))) <=> 
-                        (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field(bt, "right"), br)))}
+                           (keysp(field_Ref(bl,"right"),blr) ∪ keysp(field_Ref(bl,"left"),bll) ∪ keysp(field_Ref(bt,"right"),br) ∪1 field_int(bt,"key") ∪1 field_int(bl,"key"))
+                      && ((colorp(field_Ref(bl,"right"),blr) != 0 || colorp(field_Ref(bl,"left"),bll) != 0))) <=> 
+                        (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field_Ref(bt, "right"), br)))}
             /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 */
 
@@ -145,25 +145,25 @@
 /*@
   rbal :: forall A.
     (t:{v:<t> | true})/
-            rr |-> brr:rbtree[{v:A | (v > field(br,"key") && v > field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
-          * rl |-> brl:rbtree[{v:A | (v < field(br,"key") && v > field(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
-          * l  |-> bl: rbtree[{v:A | v < field(bt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
+            rr |-> brr:rbtree[{v:A | (v > field_int(br,"key") && v > field_int(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * rl |-> brl:rbtree[{v:A | (v < field_int(br,"key") && v > field_int(bt,"key"))}]<{\x y -> x > y},{\x y -> x < y}>
+          * l  |-> bl: rbtree[{v:A | v < field_int(bt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
           * r  |-> br: { color:number
-                       , key:  {v:A | v > field(bt, "key")}
-                       , left: {v:<rl>+null | (bheightp(v,brl)  = bheightp(field(br,"right"),brr)) }
-                       , right:{v:<rr>+null | (bheightp(v,brr) = bheightp(field(br,"left"),brl)) }
+                       , key:  {v:A | v > field_int(bt, "key")}
+                       , left: {v:<rl>+null | (bheightp(v,brl)  = bheightp(field_Ref(br,"right"),brr)) }
+                       , right:{v:<rr>+null | (bheightp(v,brr) = bheightp(field_Ref(br,"left"),brl)) }
                        }
           * t |-> bt:{ color:number
                      , key:A
-                     , left:{v:<l>+null | (bheightp(v,bl) = (if (field(bt,"right") = null) then 1 else (
-                     (bheightp(field(br,"right"),brr) + (if (field(br,"color") = 0) then 1 else 0))))) }
-                     , right:{v:<r>+null | (bheightp(field(bt,"left"),bl) = (if (v = null) then 1 else (bheightp(field(br,"left"),brl) + (if (field(br,"color") = 0) then 1 else 0)))) }
+                     , left:{v:<l>+null | (bheightp(v,bl) = (if (field_Ref(bt,"right") = null) then 1 else (
+                     (bheightp(field_Ref(br,"right"),brr) + (if (field_int(br,"color") = 0) then 1 else 0))))) }
+                     , right:{v:<r>+null | (bheightp(field_Ref(bt,"left"),bl) = (if (v = null) then 1 else (bheightp(field_Ref(br,"left"),brl) + (if (field_int(br,"color") = 0) then 1 else 0)))) }
                      }
-         => {v:<x> | ((((field(br,"color") != 0) && (field(bt,"right") != null))
+         => {v:<x> | ((((field_int(br,"color") != 0) && (field_Ref(bt,"right") != null))
                       && (keysp(v,out) = 
-                           (keysp(field(br,"left"),brl) ∪ keysp(field(br,"right"),brr) ∪ keysp(field(bt,"left"),bl) ∪1 field(bt,"key") ∪1 field(br,"key"))
-                      && ((colorp(field(br,"left"),brl) != 0 || colorp(field(br,"right"),brr) != 0))) <=> 
-                        (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field(bt, "left"), bl)))}
+                           (keysp(field_Ref(br,"left"),brl) ∪ keysp(field_Ref(br,"right"),brr) ∪ keysp(field_Ref(bt,"left"),bl) ∪1 field_int(bt,"key") ∪1 field_int(br,"key"))
+                      && ((colorp(field_Ref(br,"left"),brl) != 0 || colorp(field_Ref(br,"right"),brr) != 0))) <=> 
+                        (colorp(v,out) != 0)) && (bheightp(v,out) = 1 + bheightp(field_Ref(bt, "left"), bl)))}
             /x |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 
 */
@@ -212,13 +212,13 @@
 /*
   rbalS :: forall A <p :: (A) => prop>.
     (t:{v:<t> | true})/
-            r  |-> lbr:rbtree[{v:A<p> | v > field(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
-          * l  |-> lbl:rbtree[{v:A<p> | v < field(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}> 
+            r  |-> lbr:rbtree[{v:A<p> | v > field_int(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}>
+          * l  |-> lbl:rbtree[{v:A<p> | v < field_int(lbt, "key")}]<{\x y -> x > y},{\x y -> x < y}> 
           * t  |-> lbt:{ color:number
                        , key:A<p>
-                       , left:{v:<l>       | ((bheightp(v,lbl) = (1 + bheightp(field(lbt,"right"),lbr)))
+                       , left:{v:<l>       | ((bheightp(v,lbl) = (1 + bheightp(field_Ref(lbt,"right"),lbr)))
                                            && (bheightp(v,lbl) > 1))                                  }
-                       , right:{v:<r>+null | ((bheightp(v,lbr) + 1) = bheightp(field(lbt,"left"),lbl)) }
+                       , right:{v:<r>+null | ((bheightp(v,lbr) + 1) = bheightp(field_Ref(lbt,"left"),lbl)) }
                        }
          => {v:<x> | ((if (colorp(field(lbt,"right"),lbr) != 0) then
                          (if (colorp(field(lbt,"left"),lbl) != 0) then

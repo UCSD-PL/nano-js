@@ -1,4 +1,8 @@
 /*@ include tree-traversals.js */
+
+/*@ qualif Foo(v:int, y:Ref, a:T, b:T): ((y != null) => (v = (1 + order(a) + rsize(b)))) */
+/*@ qualif Foo(v:int, y:Ref, a:T, b:T): ((y != null) => (order(a) = v + 1 + lsize(b))) */
+
 /*@ inorder :: 
       (x:<l>+null, n:number)/l |-> in:tree[number]<{\pl l pr r v -> true},{\pl l pr r v -> true}>
         => {v:number | ((v = (sizep(x,out) + n)
@@ -13,16 +17,15 @@
                                            ((order(r) = (v + lsize(r) + 1))))}>
 */
 function inorder(x, n) {
-  if (x == null) {
+  if (x == null)
     return n;
-  } else {
-    var xl = x.left;
-    var xr = x.right;
-    var n1 = inorder(xl, n);
-    x.key  = n1;
-    var n2 = n1 + 1;
-    var xr = x.right
-    var n3 = inorder(xr, n2);
-    return n3;
-  }
+  
+  var xl = x.left;
+  var xr = x.right;
+  var n1 = inorder(xl, n);
+  x.key  = n1;
+  var n2 = n1 + 1;
+  var xr = x.right
+  var n3 = inorder(xr, n2);
+  return n3;
 }

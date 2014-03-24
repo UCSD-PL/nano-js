@@ -83,7 +83,6 @@ function unwind(x) {
 /*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
 
 /*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
-/*@ nil   :: () => null                                                                           */
 /*@ head  :: forall A. (xs:<l>)/l |-> list [A] => A/same                                          */
 /*@ tail  :: forall A. (xs:<l>)/l |-> list [A] => <m>+null/l |-> { data : A, next :<m>+null} * m |-> list[A] */ 
 /*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
@@ -147,7 +146,9 @@ function unwind(x) {
 
 
 /*@ measure prop        :: (boolean) => bool                              */
-/*@ measure field       :: forall A. (A, string) => number              */
+/* measure field_Ref   :: forall A. (A, string) => <l>                */
+/* measure field_int   :: forall A. (A, string) => number             */
+/* measure field_A     :: forall A. (A, string) => number             */
 
 /*************************************************************************/
 /************** Run-Time Tags ********************************************/
@@ -159,16 +160,16 @@ function unwind(x) {
 
 /*@ measure null :: null */
 
-/*@ invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {e:null      | ((e = null) && (ttag(e) = "null")) } */  //TODO: this is not very precise
-/*@ invariant {v:boolean   | ttag(v) = "boolean"  } */ 
-/*@ invariant {v:number    | ttag(v) = "number"   } */
-/*@ invariant {v:string    | ttag(v) = "string"   } */
+/* invariant {v:undefined | ttag(v) = "undefined"} */
+/*@ invariant {e:null      | ((e = null)) } */  //TODO: this is not very precise
+/* invariant {v:boolean   | ttag(v) = "boolean"  } */ 
+/* invariant {v:number    | ttag(v) = "number"   } */
+/* invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
-/*@ invariant {e:<l>       | ((ttag(e) = "ref") && (e != null))    } */
-/*@ invariant {v:<u>       | ttag(v) = "ref(u)"} */
-/*@ invariant {v:<v>       | ttag(v) = "ref(v)"} */
-/*@ invariant {v:<r>       | ttag(v) = "ref(r)"} */
+/*@ invariant {e:<l>       | ((e != null))    } */
+/* invariant {v:<u>       | ttag(v) = "ref(u)"} */
+/* invariant {v:<v>       | ttag(v) = "ref(v)"} */
+/* invariant {v:<r>       | ttag(v) = "ref(r)"} */
 
 
 /*************************************************************************/
@@ -178,7 +179,10 @@ function unwind(x) {
 /*@ qualif Bot(v:a)       : 0 = 1                               */
 /*@ qualif Bot(v:obj)     : 0 = 1                               */
 /*@ qualif Bot(v:bool)    : 0 = 1                               */
-/*@ qualif Bot(v:number)     : 0 = 1                            */
+/*@ qualif Bot(v:number)  : 0 = 1                               */
+/*@ qualif Bot(v:Ref)     : 0 = 1                               */
+/*@ qualif Bot(v:Rec)     : 0 = 1                               */
+/*@ qualif Bot(v:T)     : 0 = 1                               */
 /*@ qualif CmpZ(v:number)    : v < 0                            */
 /*@ qualif CmpZ(v:number)    : v <= 0                           */
 /*@ qualif CmpZ(v:number)    : v >  0                           */
@@ -193,7 +197,7 @@ function unwind(x) {
 
 /*@ qualif Cmp(v:a,x:a)   : v =  x                              */
 /*@ qualif Cmp(v:a,x:a)   : v != x                              */
-/*@ qualif One(v:number)     : v = 1                            */
+/*@ qualif One(v:a)       : v = 1                            */
 /*@ qualif True(v:bool)   : (? v)                               */
 /*@ qualif False(v:bool)  : not (? v)                           */
 /*@ qualif True1(v:Bool)  : (Prop v)                            */

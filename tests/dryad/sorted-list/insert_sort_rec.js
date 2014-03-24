@@ -1,7 +1,7 @@
 /*@ include sorted-list.js */
 
-/*@ qualif Ret(v:a): (lenp(v,ys) = 1 + lenp(x,xs)) */
-/*@ qualif Ret(v:a): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
+/*@ qualif Ret(v:ref): (lenp(v,ys) = 1 + lenp(x,xs)) */
+/*@ qualif Ret(v:ref): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
 
 /*@ insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> true}>

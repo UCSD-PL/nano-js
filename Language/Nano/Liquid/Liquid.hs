@@ -204,7 +204,7 @@ applyPreds πs t
       mkSub p         = (fmap (const ()) p, pVartoRConc p)
       replacePred t p = replacePredsWithRefs (mkSub p) <$>  t
 
-envAddNil l g = snd <$> envAddHeap l g nilHeap
+envAddNil l g = return g -- snd <$> envAddHeap l g nilHeap
     where
       nilHeap = heapAdd "envAddNil" nilLoc nilBind heapEmpty
 
@@ -694,7 +694,7 @@ freshConsWind g l θ ty m
              tw'         = F.subst su tw
              t'          = F.subst su t
              ms'         = subMeas su <$> ms 
-         return (σenv'', (x',tw'), t', ms')
+         return (σenv'', (x', tw'), t', ms')
     where
       x'                  = hpRead m (rheap g)
       subMeas su (f,as,e) = (f, as, F.subst su e)
@@ -723,8 +723,9 @@ consUnwind l g (m, ty, θl) =
     (_, g'')       <- envAddHeap l g' σ''
     g'''           <- envAdds [(s', mapTys (flip strengthen r) $ subst su $ strengthenObjBinds s' t')] g''
     gm             <- applyLocMeasEnv m g'''
+    return gm
     -- Add "witness" for each type variable??
-    foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
+    -- foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
   where
     envAdd l g t = snd <$> envAddFresh l t g
     rs g         = unwindTyRefs $ envFindTy b g

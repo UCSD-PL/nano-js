@@ -1,11 +1,11 @@
 /*@ include sorted-list.js */
 
 /*@ qualif Ret(v:a): (lenp(v,ys) = 1 + lenp(x,xs)) */
-/*@ qualif Ret(v:a): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
+/* qualif Ret(v:a): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
 
 /*@ insert :: forall A.
-  (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> true}>
-             => <k>/k |-> ys:list[A]<{\h v -> true}>
+  (x:<l>+null, k:{v:A | true})/l |-> xs:list[A]<{\h v -> h <= v}>
+             => <k>/k |-> ys:list[A]<{\h v -> h <= v}>
 */
 function insert(x, k){
   if (x == null){

@@ -1,9 +1,9 @@
 /*@ include doubly-linked-list.js */
 
-/*@ qualif LLen(v:a, y:c, ys:d):
-    ((len(v)  = 1 + dlenp(field(y, "next"), ys))
-  && (keys(v) = Set_cup(Set_sng(field(y, "data")),
-                        dkeysp(field(y, "next"), ys)))) */
+/*@ qualif LLen(v:T, y:Rec, ys:T):
+    ((len(v)  = 1 + dlenp(field_Ref(y, "next"), ys))
+  && (keys(v) = Set_cup(Set_sng(field_int(y, "data")),
+                        dkeysp(field_Ref(y, "next"), ys)))) */
 
 /*@ append :: forall P.
   (x1:<r>+null, x2:<m>+null)/r |-> x1s:dlist[number,<r>,P]

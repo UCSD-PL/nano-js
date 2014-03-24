@@ -1,12 +1,12 @@
 /*@ include sorted-list.js */
 
-/*@ qualif AppKeys(v:a) : keys(v)     = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif AppKeys(v:a) : keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif PartKey(v:a) : keysp(x,xs) = Set_cup(keysp(field(r,"x"),as),keysp(field(r,"y"),bs)) */
+/*@ qualif AppKeys(v:T) : keys(v)     = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
+/*@ qualif AppKeys(v:Ref) : keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
+/*@ qualif PartKey(v:a) : keysp(x,xs) = Set_cup(keysp(field_Ref(r,"x"),as),keysp(field_Ref(r,"y"),bs)) */
 
-/*@ qualif AppLen(v:a) : len(v)     = lenp(ls,ll)+lenp(gs,gg) */
-/*@ qualif AppLen(v:a) : lenp(v,kk) = lenp(ls,ll)+lenp(gs,gg) */
-/*@ qualif PartLen(v:a) : lenp(x,xs) = lenp(field(r,"x"),as)+lenp(field(r,"y"),bs) */
+/*@ qualif AppLen(v:T) : len(v)     = lenp(ls,ll)+lenp(gs,gg) */
+/*@ qualif AppLen(v:Ref) : lenp(v,kk) = lenp(ls,ll)+lenp(gs,gg) */
+/*@ qualif PartLen(v:a) : lenp(x,xs) = lenp(field_Ref(r,"x"),as)+lenp(field_Ref(r,"y"),bs) */
 
 /*@ append :: forall A.
   (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h v -> true }>

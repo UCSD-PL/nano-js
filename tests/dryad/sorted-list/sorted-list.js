@@ -1,6 +1,6 @@
 /*@ qualif PApp(v:a) : papp1(p, v) */
 
-/*@ measure setok :: forall A. set[A] */
+/* measure setok :: forall A. set[A] */
 
 /*@ measure keys  :: forall A. (list[A]) => set[number]  */
 /*@ measure keysp :: forall A. (<l> + null, list[A]) => set[number]  */
@@ -19,8 +19,8 @@
 /*@
 type list[A]<p :: (A, A) => prop>
         exists! l |-> tl:list[A<p data>]<p>. 
-          t:{ data : A, next : <l> + null }
+          me:{ data : A, next : <l> + null }
 
-     with len(x)   = 1 + lenp(field(t, "next"), tl)
-     and keys(x)   = Set_cup(Set_sng(field(t, "data")), keysp(field(t, "next"), tl))
+     with len(x)   = 1 + lenp(field_Ref(me, "next"), tl)
+     and keys(x)   = Set_cup(Set_sng(field_int(me, "data")), keysp(field_Ref(me, "next"), tl))
 */

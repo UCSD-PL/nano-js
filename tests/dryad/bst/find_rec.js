@@ -2,6 +2,7 @@
 
 /*@ qualif RApp(v:a): papp1(r, v)                                             */
 /*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
+
 /*@ lemma_nonMem :: forall A B.
       (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> true}, {\x y -> true}>
               => number/x |-> ots:tree[B]<{\x y -> true}, {\x y -> true}>   */
