@@ -1,7 +1,7 @@
 /*@ include max-heaps.js */
 
 /*@ qualif FldGt(v:a, y:Ref, x:Rec): ((y != null) =>  (v <= (field_int x "key")))    */
-/*@ qualif RApp(v:a): papp1(r,v)                                            */
+/*@ qualif RApp(v:a): papp1(r,v)                                                     */
 
 /*@ heapify :: forall < r :: (number) => prop >.
  ({v:<x> | true})/x |-> bs:{left:<l>+null, key:number<r>, right:<r>+null}
@@ -57,6 +57,6 @@ function heapify(x) {
         return;
       }
     }
-    return;
   }
+  return;
 }

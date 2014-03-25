@@ -227,6 +227,7 @@ tcFun (γ,_) (FunctionStmt l f xs body)
          do q <- withFun (F.symbol f) $ tcStmts (γ'', b_type <$> σ) body
             when (isJust q) $ void $ unifyTypeM l "Missing return" f tVoid (b_type t)
        clearSubstM γ'
+       setUnwound []
        return $ Just (γ', heapEmpty)
 
     
@@ -355,15 +356,24 @@ tcStmt' (γ,σ) ifstmt@(IfStmt l e s1 s2)
         unifyTypeM l "If condition" e t tBool
         uw <- getUnwound
         e1 <- preWind uw s1 $ tcStmt (γ, σe) s1
+        setUnwound uw
         e2 <- preWind uw s2 $ tcStmt (γ, σe) s2
-        envJoin l (γ,σe) e1 e2
+        setUnwound uw
+        envJoin l (lastStmtAnn s1) (lastStmtAnn s2) (γ,σe) e1 e2
     where
       msg s = printf "Unwound in IfStatement %s on statement %s"
                 (ppshow ifstmt) (ppshow s)
       lastStmtAnn (BlockStmt l _) = l
       lastStmtAnn s               = getAnnotation s
       maybeWind l r               = maybe (return r) (fmap Just . flip windLocations l) r
-      preWind uw s m              = setUnwound uw >> m >>= maybeWind (lastStmtAnn s)
+      preWind uw s m              = do
+        g <- m
+        uw' <- getUnwound
+        let todo = filter (\(l,_,_) -> l `notElem` map fst3 uw) uw'
+        setUnwound todo >> return g >>= maybeWind (lastStmtAnn s)
+        -- setUnwound todo >> m >>= maybeWind (lastStmtAnn s)
+        -- setUnwound uw
+        
 
 -- var x1 [ = e1 ]; ... ; var xn [= en];
 tcStmt' (γ,σ) (VarDeclStmt _ ds)
@@ -727,17 +737,26 @@ ckSameUnfolds ufs
 
 ----------------------------------------------------------------------------------
 envJoin :: (Ord r, F.Reftable r, PP r) =>
-  (AnnSSA_ r) -> (Env (RType r), RHeap r) -> TCEnv r -> TCEnv r -> TCM r (TCEnv r)
+  (AnnSSA_ r) -> (AnnSSA_ r) -> (AnnSSA_ r) -> (Env (RType r), RHeap r) -> TCEnv r -> TCEnv r -> TCM r (TCEnv r)
 ----------------------------------------------------------------------------------
-envJoin _ _ Nothing x           = return x
-envJoin _ _ x Nothing           = return x
-envJoin l (γ,σ) (Just (γ1,σ1)) (Just (γ2,σ2)) = envJoin' l (γ,σ) (γ1,σ1) (γ2,σ2) 
+envJoin _ _ _ _ Nothing x           = return x
+envJoin _ _ _ _ x Nothing           = return x
+envJoin l l1 l2 (γ,σ) (Just (γ1,σ1)) (Just (γ2,σ2)) = envJoin' l l1 l2 (γ,σ) (γ1,σ1) (γ2,σ2) 
 
-envJoin' l (γ,_) (γ1,σ1) (γ2,σ2)
+envJoin' l l1 l2 (γ,_) (γ1,σ1) (γ2,σ2)
   = do let xs = [x | PhiVar x <- ann_fact l]
+       uw    <- getUnwound
+       let todo  = tracePP "HEY HEY" $ filter (\(l,_,_) -> l `elem` alocs) uw
+           rest  = filter (\(l,_,_) -> l `notElem` map fst3 todo) uw
+           alocs =  tracePP "ALIASING:" $ aliasingLocs σ1 σ2
+       setUnwound todo
+       (γ1, σ1) <- windLocations (γ1,σ1) l1
+       setUnwound todo
+       (γ2, σ2) <- windLocations (γ2,σ2) l2
+       setUnwound rest
        ts    <- mapM (getPhiType l (γ1,σ1) (γ2,σ2)) xs
        env   <- getTDefs
-       return $ Just $ (envAdds (zip xs ts) γ, heapCombineWith (combine env) [σ1,σ2])
+       return $ Just $ (envAdds (zip xs ts) γ, heapCombineWith (combine env) [tracePP "EH???" σ1,σ2])
        where
          combine e t1 t2 = fst4 $ compareTs e t1 t2
   
@@ -764,3 +783,25 @@ varLookup γ l x
   = case envFindTy x γ of 
       Nothing -> logError (ann l) (errorUnboundIdEnv x γ) tErr
       Just z  -> return z
+
+aliasingLocs σ1 σ2 = 
+  tracePP "HEY HEY" $ catMaybes $ zipWith aliasingLocsTy ls (zip t1s t2s)
+  where l1  = heapLocs σ1
+        l2  = heapLocs σ2
+        ls  = filter (`elem` l2) l1
+        t1s = map (flip (heapRead "aliasedLocs") σ1) ls
+        t2s = map (flip (heapRead "aliasedLocs") σ2) ls
+              
+aliasingLocsTy l (t1, t2) = if null $ tracePP "ALIASED: " $ aliasedLocsTy t1 t2 then
+                              Nothing
+                            else
+                              Just l
+ 
+aliasedLocsTy (TObj bs1 _) (TObj bs2 _) = 
+  concat $ zipWith aliasedLocsTy (b_type <$> bs1) (b_type <$> bs2)
+
+aliasedLocsTy t1 (TApp TNull _ _ _) = []
+aliasedLocsTy (TApp TNull _ _ _) t2 = []
+
+aliasedLocsTy t1 t2                 = filter (`notElem` locs t2) $ locs t1
+aliasedLocsTy _  _                  = []
