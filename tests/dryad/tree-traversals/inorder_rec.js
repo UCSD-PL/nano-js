@@ -1,21 +1,12 @@
 /*@ include tree-traversals.js */
 
-/*@ qualif Foo(v:int, y:Ref, a:T, b:T): ((y != null) => (v = (1 + order(a) + rsize(b)))) */
-/*@ qualif Foo(v:int, y:Ref, a:T, b:T): ((y != null) => (order(a) = v + 1 + lsize(b))) */
-
 /*@ inorder :: 
-      (x:<l>+null, n:number)/l |-> in:tree[number]<{\pl l pr r v -> true},{\pl l pr r v -> true}>
+      (x:<l>+null, n:number)/l |-> in:tree[number]
         => {v:number | ((v = (sizep(x,out) + n)
                      && sizep(x,out) = sizep(x,in) 
                      && ((x = null) => order(in) = order(out)))
-                     && ((x != null) => ((order(out) = (n + lsize(out))) && (size(out) = 1 + lsize(out) + rsize(out)))))}
-           /l |-> out:tree[number]<{\pl l pr r v -> 
-                                        ((x != null && pl != null) => 
-                                           (v = (1 + order(l) + rsize(l))))},
-                                      {\pl l pr r v -> 
-                                         ((x != null && pr != null) => 
-                                           ((order(r) = (v + lsize(r) + 1))))}>
-*/
+                     && ((x != null) =>((inorderTree(out) = 1)&& ((order(out) = (n + lsize(out))) && (size(out) = 1 + lsize(out) + rsize(out))))))}
+           /l |-> out:tree[number]*/
 function inorder(x, n) {
   if (x == null)
     return n;

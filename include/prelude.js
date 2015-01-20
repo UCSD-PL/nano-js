@@ -134,7 +134,7 @@ function unwind(x) {
 
 /*@ builtin_OpAdd       :: ({x:number | true}, {y:number | true})  => {v:number | v = x + y}              */
 /*@ builtin_OpSub       :: ({x:number | true}, {y:number | true})  => {v:number | v = x - y}              */
-/*@ builtin_OpMul       :: (number,  number)  => number                                                   */
+/*@ builtin_OpMul       :: (x:number,  y:number)  => {v:number | v = (x*y)}                               */ 
 /*@ builtin_OpDiv       :: (number,  number)  => number                                                   */
 /*@ builtin_OpMod       :: (number,  number)  => number                                                   */
 /*@ builtin_PrefixMinus :: ({x:number | true}) => {v:number | v = (0 - x)}                                */
@@ -176,6 +176,8 @@ function unwind(x) {
 /************** Pre-Loaded Qualifiers ************************************/
 /*************************************************************************/
 
+/*@ qualif RApp(v:a): papp1(r, v)                                             */
+/*@ qualif PApp(v:a): (papp1 p v) */
 /*@ qualif Bot(v:a)       : 0 = 1                               */
 /*@ qualif Bot(v:obj)     : 0 = 1                               */
 /*@ qualif Bot(v:bool)    : 0 = 1                               */
@@ -244,3 +246,4 @@ G' = G;z:Tf
 G,H |- fold l : G'/H'
 
 */
+

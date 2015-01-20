@@ -30,9 +30,6 @@ function rotate_right(p) {
   return pl;
 }
 
-/* qualif DooHickey(v:a,x:b): v < field(x,"key") */
-/* qualif DooHickey(v:a,x:b): v > field(x,"key") */
-
 /*@ qualif IsRed(v:a): (((Prop v) <=> (colorp(x,in) != 0))
                       && (colorp(x,out) = colorp(x,in))
                       && (bheightp(x,out) = bheightp(x,in))) */
@@ -63,8 +60,8 @@ function is_red(x) {
                                                            && ((colorp(p,in) != 0) || ((colorp(field_Ref(out,"left"),lft) = 0) && (colorp(field_Ref(out,"right"),rgt) = 0))))))
                                                 }
                          , key:   A
-                         , left:  {v:<a>+null  | (v = v && bheightp(v,lft) = bheightp(field_Ref(out,"right"),rgt)) }
-                         , right: {v:<b>+null  | (v = v && bheightp(v,rgt) = bheightp(field_Ref(out,"left"),lft))  }
+                         , left:  {v:<a>+null  | (bheightp(v,lft) = bheightp(field_Ref(out,"right"),rgt)) }
+                         , right: {v:<b>+null  | (bheightp(v,rgt) = bheightp(field_Ref(out,"left"),lft))  }
                          }
 
 */

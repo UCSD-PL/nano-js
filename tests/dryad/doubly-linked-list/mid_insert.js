@@ -5,6 +5,16 @@
 /*@ qualif Field(v:a): v = field_int(us, "data") */
 
 
+// /*@ insert_at_middle2 ::
+//   (u:{v:<a> | true},k:number,t:<b>)/a |-> as:dlist[number,<a>,<b>] * b |-> bs:dlist[number,<b>,<a>]
+//   => <r>/r |-> dlist[number,<r>,<a>] * a |-> as:dlist[number,<a>,<r>] */
+// function insert_at_middle2(u,k,t) {
+//   ret = { data:k, next:t, prev:u };
+//   u.prev = ret;
+//   t.prev = ret;
+//   return ret;
+// }
+
 /*@ insert_at_middle ::
       (u:<a>+null, k:number, t:<b>+null)/a |-> us:{ data:number, next:<b>+null, prev:null }
                                        * b |-> ts:dlist[number,<b>,null]

@@ -2,6 +2,7 @@ module Language.Nano.Liquid.Qualifiers (inferQuals) where
 
 import           Language.Fixpoint.Types
 import           Language.Fixpoint.Misc
+-- import           Language.Nano.Liquid.Types
 import qualified Data.HashMap.Strict            as M
 import            Data.List
   

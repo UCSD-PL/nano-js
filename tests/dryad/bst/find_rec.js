@@ -1,6 +1,5 @@
 /*@ include bst.js */
 
-/*@ qualif RApp(v:a): papp1(r, v)                                             */
 /*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
 
 /*@ lemma_nonMem :: forall A B.
@@ -20,8 +19,7 @@ function lemma_nonMem(k, x) {
 }
 /*@ search :: forall < r :: (number) => prop >.
      (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>
-        => {v:boolean | ((true || keysp(x,ts) = keysp(x,tss)) 
-                      && (Prop(v) <=> Set_mem(k, keysp(x,ts))))}
+        => {v:boolean | (Prop(v) <=> Set_mem(k, keysp(x,ts)))}
            /t |-> tss:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>       */
 function search(x, k){
   if (x == null){

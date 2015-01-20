@@ -1,18 +1,20 @@
 /*@ measure color    :: forall A. (rbtree[A]) => number                        */
 /*@ measure colorp   :: forall A. (<l>+null,rbtree[A]) => number               */
-/*@ measure colorp(p,x) = (if (p = null) then 0 else color(x))     */
+/*@ measure colorp(p,x) = (if (p = null) then 0 else color(x))     */ //9
 
 /*@ measure bheight  :: forall A. (rbtree[A]) => number                        */
 /*@ measure bheightp :: forall A. (<l>+null,rbtree[A]) => number               */
-/*@ measure bheightp(p,x) = (if (p = null) then 1 else bheight(x)) */
+/*@ measure bheightp(p,x) = (if (p = null) then 1 else bheight(x)) */ //9
 
 /*@ measure keys  :: forall A. (rbtree[A]) => set[number] */
 /*@ measure keysp :: forall A. (<l>+null, rbtree[A]) => set[number] */
-/*@ measure keysp(p,x) = (if p = null then (Set_sng(0) ∩ Set_sng(1)) else keys(x)) */
+/*@ measure keysp(p,x) = (if p = null then (Set_sng(0) ∩ Set_sng(1)) else keys(x)) */ // 13
 
-/* measure preKey :: forall A. (rbtree[A]) => number */
-/* measure postKey :: forall A. (rbtree[A]) => number */
-
+//12 absref
+//19 hp
+//22 col
+//50 ptrs
+//53
 /*@ type rbtree [A] < p :: (A,A) => prop, q :: (A,A) => prop >
       exists! l |-> lt:rbtree[A<p key>]<p,q>
             * r |-> rt:rbtree[A<q key>]<p,q>.

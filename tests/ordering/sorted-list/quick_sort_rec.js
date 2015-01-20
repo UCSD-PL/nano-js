@@ -1,12 +1,5 @@
 /*@ include sorted-list.js */
 
-/* qualif AppKeys(v:T) : keys(v)     = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif AppKeys(v:Ref) : keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif PartKey(v:a) : keysp(x,xs) = Set_cup(keysp(field_Ref(r,"x"),as),keysp(field_Ref(r,"y"),bs)) */
-
-/*@ qualif AppLen(v:Ref) : lenp(v,kk) = lenp(ls,ll)+lenp(gs,gg) */
-/*@ qualif PartLen(v:a) : lenp(x,xs) = lenp(field_Ref(r,"x"),as)+lenp(field_Ref(r,"y"),bs) */
-
 /*@ append :: forall A.
   (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h v -> true }>
                                  * g |-> gg:list[A]<{\h v -> true }>
@@ -21,14 +14,12 @@ function append(xk, ls, gs) {
 
   if (n == null) {
     ls.next = gs;
-    return ls;
   } else {
     zzz = n.data;
     n = append(xk, n, gs);
     ls.next = n;
-    return ls;
   }
-  // return ls;
+  return ls;
 }
 
 /*@ partition :: forall A.
@@ -67,8 +58,7 @@ function partition(piv, x){
 
 /*@ quickSort :: forall A.
       (x:<x>+null)/x |-> in:list[A]<{\h v -> true}>
-        => {v:<o>+null | (keysp(v,out) = keysp(x,in) && lenp(v,out) = lenp(x,in)) }
-          /o |-> out:list[A]<{\h v -> h <= v}> */
+        => {v:<o>+null | true }/o |-> out:list[A]<{\h v -> h <= v}> */
 function quickSort(x) {
   if (x == null){
     return null;
