@@ -8,8 +8,8 @@ insert :: forall <r :: (number) => prop>.
 insert :: forall <r :: (number) => prop>.
   (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\p v -> p > v},
                                                      {\p v -> p < v}>
-      => {v:<r> | true }/r |-> rs:tree[number<r>]<{\p v -> p > v},
-                                                                             {\p v -> p < v}> */
+      => {v:<r> | true }/r |-> rs:tree[number<r>]<{\p v -> p > v},{\p v -> p < v}> 
+*/
 function insert(x, k) {
   if (x == null)
   {

@@ -179,8 +179,9 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
                 , F.gs    = consFPBinds (count cg) pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
-                , F.quals = quals pgm 
+                , F.quals = quals . inferQualsFromTypes (F.fromListSEnv fieldFuns) . inferQualsFromSpec $ pgm 
                 }
+
 
 patchSymLits fi = fi { F.lits = F.symConstLits fi ++ F.lits fi }
     
@@ -1289,10 +1290,11 @@ splitW (W g i t@(TObj ts _ ))
 
 splitW (W _ _ _ ) = error "Not supported in splitW"
 
-rsplitW _ _ (PMono _ _)  = error "PMono in splitW"
+-- rsplitW _ _ (PMono _ _)  = error "PMono in splitW"
 rsplitW g i (PPoly xs t)
     =  do g' <- envAdds [ (x, ofType t) | (x,t) <- xs ] g
           splitW $ W g' i t
+rsplitW _ _ _ = return [] -- (PMono _ _)  = error "PMono in splitW"
 
 bsplitW g t i 
   | F.isNonTrivialSortedReft r'

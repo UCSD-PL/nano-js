@@ -43,6 +43,7 @@ module Language.Nano.Typecheck.Types (
   -- * Manipulating RefType
   , rTypeReft
   , rTypeSort
+  , refSort, recSort, tdefSort
   , rTypeSortedReft
   , rTypeValueVar
 
@@ -473,14 +474,19 @@ rTypeSort t@(TAll _ _)         = rTypeSortForAll t
 rTypeSort t@(TAllP _ _)        = rTypeSortForAll t 
 rTypeSort (TFun xts t _ _ _)   = F.FFunc 0 $ rTypeSort <$> (b_type <$> (xts ++ [t]))
 rTypeSort (TApp (TDef (Id _ c)) _ _ _)
-  | c /= "set" = F.FApp (rawStringFTycon "T") []
+  | c /= "set" = tdefSort
 rTypeSort (TApp TUn ts _ _)    
   | length (L.nub (toType <$> ts)) == 1 = rTypeSort (head ts)
-  | rTypePtrUnion ts           = F.FApp (rawStringFTycon "Ref") []
+  | rTypePtrUnion ts           = refSort
 rTypeSort (TApp c ts _ _)      = rTypeSortApp c ts 
-rTypeSort (TObj _ _)           = F.FApp (rawStringFTycon "Rec") []
+rTypeSort (TObj _ _)           = recSort
 rTypeSort t                    = error ("Type: " ++ ppshow t ++ 
                                     " is not supported in rTypeSort")
+
+refSort = F.FApp (rawStringFTycon "Ref") []
+recSort = F.FApp (rawStringFTycon "Rec") []
+tdefSort = F.FApp (rawStringFTycon "T") []
+
 rTypePtrUnion ts = all isPtr ts
   where
    isPtr (TApp TNull _ _ _)    = True

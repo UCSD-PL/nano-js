@@ -24,3 +24,5 @@ type list[A]<p :: (A, A) => prop>
      with len(x)   = 1 + lenp(field_Ref(me, "next"), tl)
      and keys(x)   = Set_cup(Set_sng(field_int(me, "data")), keysp(field_Ref(me, "next"), tl))
 */
+
+/*@ qualif RevLen(v:Ref, j:Ref, i:Ref, ii:T, jj:T, ks:T): lenp(v,ks) = lenp(i,ii) + lenp(j,jj) */

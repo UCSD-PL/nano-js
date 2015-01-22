@@ -3,8 +3,6 @@
 /*@ qualif RootInput(v:int, x:Rec): v < field_int(x, "data") */
 /*@ qualif RootInput(v:int, x:Rec): v > field_int(x, "data") */
 
-/* qualif RootInput(v:int, x:Rec): v [ < ; > ] field_int(x, "data") */
-
 /*@
   removeRoot :: forall A B. 
     (t:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null }

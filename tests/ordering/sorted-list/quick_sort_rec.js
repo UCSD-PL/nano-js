@@ -58,7 +58,7 @@ function partition(piv, x){
 
 /*@ quickSort :: forall A.
       (x:<x>+null)/x |-> in:list[A]<{\h v -> true}>
-        => {v:<o>+null | true }/o |-> out:list[A]<{\h v -> h <= v}> */
+        => {v:<o>+null | lenp(v,out) = lenp(x,in) }/o |-> out:list[A]<{\h v -> h <= v}> */
 function quickSort(x) {
   if (x == null){
     return null;

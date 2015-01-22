@@ -46,6 +46,7 @@ module Language.Nano.Liquid.Types (
 
   -- * Useful Operations
   , foldReft
+  , efoldRType
   , expandTApp
   
   -- * RefHeaps
@@ -330,3 +331,21 @@ isConc m l σ =
   case heapRead m l σ of
     LocX _ -> True
     _      -> False
+
+efoldExt g xt γ             = F.insertSEnv (b_sym xt) (g $ b_type xt) γ
+
+efoldRType :: (F.Reftable r) => (RType r -> b) -> (F.SEnv b -> RType r -> a -> a) -> F.SEnv b -> a -> RType r -> a
+efoldRType g f = go
+  where
+    go γ z t@(TVar _ _) = f γ t z
+    go γ z t@(TApp _ ts _ r) = f γ t $ gos (efoldExt g (B (rTypeValueVar t) t) γ) z ts
+    go γ z t@(TAll _ t1) = f γ t $ go γ z t1
+    go γ z t@(TAllP _ t1) = f γ t $ go γ z t1
+    go γ z t@(TFun xts rt h h' r) = f γ t $ gos γ' z ts
+      where 
+        γ' = foldr (efoldExt g) γ (rt:xts ++ heapTypes h ++ heapTypes h')
+        ts = (b_type <$> (rt:xts)) ++ heapTypes (b_type <$> h) ++ heapTypes (b_type <$> h')
+    go γ z t@(TObj xts r) = f γ t $ gos γ' z (b_type <$> xts)
+      where
+        γ' = foldr (efoldExt g) γ xts
+    gos γ z ts                = L.foldl' (go γ) z ts
