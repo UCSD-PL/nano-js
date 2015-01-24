@@ -112,7 +112,7 @@ addRefSorts :: REnv -> RefType -> RefType
 addRefSorts γ t@(TApp c ts rs r)
   = TApp c ts rs' r'
   where
-    rs'               = addRefSortsRef <$> (tracePP ("THIS ONE " ++ ppshow t) (zip ps trs))
+    rs'               = addRefSortsRef <$> zip ps trs
     ps                = typeRefArgs γ c
     (trs, rest)       = splitAt (length ps) rs
     r'                = foldl go r rest

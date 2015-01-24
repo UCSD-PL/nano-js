@@ -1,18 +1,15 @@
 /*@ include bst.js */
 
-/*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
-
-/*@ qualif RootKeys(v:Ref):((keysp(v,ks) = keysp(field_Ref(ts,"left"),ls) ∪ keysp(field_Ref(ts,"right"),rs))
-                        && (~Set_mem(field_int(ts, "data"),keysp(v,ks)))) */
-
+/*@ qualif KeysEqThinger(v:T,xs:T,ys:T): (keys(v) = keys(xs) ∪ keys(ys)) */
+/*@ qualif KeysEqThinger(v:T,x:Rec): (~Set_mem(field_int(x,"data"),keys(v))) */
+/*@ qualif KeysEqThing(v:T,x:T): keys(x) = keys(v) */
 /*@ qualif RootInput(v:int, x:Rec): v < field_int(x, "data") */
 /*@ qualif RootInput(v:int, x:Rec): v > field_int(x, "data") */
-
-/* qualif RootInput(v:int, x:Rec): v [ < ; > ] field_int(x, "data") */
+/*@ qualif Nullll(v:T,x:T): (Prop(nil(v)) <=> Prop(nil(x))) */
 
 /*@ lemma_nonMem :: forall A B.
-      (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
-              => number/x |-> ots:tree[B]<{\x y -> x > y}, {\x y -> x < y}> */
+      (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> true }, {\x y -> true }>
+              => number/x |-> ots:tree[B]<{\x y -> true }, {\x y -> true }> */
 function lemma_nonMem(k, x) {
   if (x == null){
     return 0;
@@ -29,9 +26,9 @@ function lemma_nonMem(k, x) {
 /*@
   removeRoot :: forall A B. 
     (t:<t>)/t |-> ts:{ data:A, left:<l>+null, right:<r>+null }
-          * l |-> ls:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
-          * r |-> rs:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
-      => v:<k>+null/k |-> ks:tree[B]<{\x y -> x > y}, {\x y -> x < y}>
+          * l |-> ls:tree[B]<{\x y -> true }, {\x y -> true }>
+          * r |-> rs:tree[B]<{\x y -> true }, {\x y -> true }>
+      => <k>+null/k |-> ks:tree[B]<{\x y -> true }, {\x y -> true }>
 */
 function removeRoot(t){
   var tl = t.left;
@@ -60,8 +57,8 @@ function removeRoot(t){
 
 /*@ remove :: forall < p :: (number) => prop >.
 (t:<t>+null, k:number<p>)/t |-> in:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}> =>
-                                 {v:<r>+null | (v = null || ~Set_mem(k,keys(out)))}
-                                 /r |-> out:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}>
+                                 <r>+null
+                                 /r |-> out:{v:tree[number<p>]<{\x y -> x > y}, {\x y -> x < y}> | (~(Set_mem(k,keys(v))))}
                                  */
 function remove(x, k){
   if (x == null){

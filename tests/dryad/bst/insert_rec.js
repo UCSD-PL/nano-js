@@ -1,13 +1,11 @@
 /*@ include bst.js */
 
-/*@ qualif EqKeys(v:T,h:T): keys(v) = keysp(x,h) ∪1 k         */
-
 /*@ 
 insert :: forall <r :: (number) => prop>.
   (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\p v -> p > v},
                                                      {\p v -> p < v}>
-      => {v:<r> | (keysp v rs) = (keysp x ts) ∪1 k}/r |-> rs:tree[number<r>]<{\p v -> p > v},
-                                                                             {\p v -> p < v}> */
+      => <r>/r |-> rs:{v:tree[number<r>]<{\p v -> p > v},{\p v -> p < v}> | (keys(v) = Set_cup(Set_sng(k),keys(ts)))}
+*/
 function insert(x, k) {
   if (x == null)
   {
