@@ -178,6 +178,7 @@ function unwind(x) {
 /************** Pre-Loaded Qualifiers ************************************/
 /*************************************************************************/
 
+/*@ qualif Null(v:T,x:T): (Prop(nil(v)) <=> Prop(nil(x))) */
 /*@ qualif RApp(v:a): papp1(r, v)                                             */
 /*@ qualif PApp(v:a): (papp1 p v) */
 /*@ qualif Bot(v:a)       : 0 = 1                               */

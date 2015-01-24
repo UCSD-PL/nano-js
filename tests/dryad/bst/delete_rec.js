@@ -1,12 +1,5 @@
 /*@ include bst.js */
 
-/*@ qualif KeysEqThinger(v:T,xs:T,ys:T): (keys(v) = keys(xs) ∪ keys(ys)) */
-/*@ qualif KeysEqThinger(v:T,x:Rec): (~Set_mem(field_int(x,"data"),keys(v))) */
-/*@ qualif KeysEqThing(v:T,x:T): keys(x) = keys(v) */
-/*@ qualif RootInput(v:int, x:Rec): v < field_int(x, "data") */
-/*@ qualif RootInput(v:int, x:Rec): v > field_int(x, "data") */
-/*@ qualif Nullll(v:T,x:T): (Prop(nil(v)) <=> Prop(nil(x))) */
-
 /*@ lemma_nonMem :: forall A B.
       (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> true }, {\x y -> true }>
               => number/x |-> ots:tree[B]<{\x y -> true }, {\x y -> true }> */

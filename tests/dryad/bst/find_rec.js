@@ -1,7 +1,5 @@
 /*@ include bst.js */
 
-/*@ qualif NonMem(v:a):(~Set_mem(k,keysp(x,its)) && (keys(its) = keys(ots)))  */
-
 /*@ lemma_nonMem :: forall A B.
       (k:A, x:<x>+null)/x |-> its:tree[B]<{\x y -> true}, {\x y -> true}>
               => number/x |-> ots:tree[B]<{\x y -> true}, {\x y -> true}>   */
@@ -19,8 +17,7 @@ function lemma_nonMem(k, x) {
 }
 /*@ search :: forall < r :: (number) => prop >.
      (x:<t>+null, k:number<r>)/t |-> ts:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>
-        => {v:boolean | (Prop(v) <=> Set_mem(k, keysp(x,ts)))}
-           /t |-> tss:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}>       */
+        => {v:boolean | (Prop(v) <=> Set_mem(k, keys(ts)))}/t |-> tss:{v:tree[number<r>]<{\x y -> x > y}, {\x y -> x < y}> | ((keys(v) = keys(ts)) && (Prop(nil(v)) <=> Prop(nil(ts)))) }       */
 function search(x, k){
   if (x == null){
     return false;

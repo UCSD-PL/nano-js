@@ -16,3 +16,9 @@
 */
 
 /*@ invariant {v:tree[A] | (Prop(nil(v)) => (keys(v) = Set_cap(Set_sng(0),Set_sng(1))))} */
+
+/*@ qualif KeysEqThinger(v:T,x:Rec): (~Set_mem(field_int(x,"data"),keys(v))) */
+/*@ qualif KeysEqThinger(v:T,x:a): (~Set_mem(x,keys(v))) */
+/*@ qualif KeysEqThing(v:T,x:T): keys(x) = keys(v) */
+/*@ qualif RootInput(v:int, x:Rec): v < field_int(x, "data") */
+/*@ qualif RootInput(v:int, x:Rec): v > field_int(x, "data") */
