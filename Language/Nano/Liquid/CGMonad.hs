@@ -111,6 +111,7 @@ import           Language.Nano.Liquid.Predicates
 import           Language.Nano.Liquid.Qualifiers
 
 import qualified Language.Fixpoint.Types as F
+import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.Misc
 import           Control.Applicative 
 
@@ -179,7 +180,7 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
                 , F.gs    = consFPBinds (count cg) pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
-                , F.quals = quals . inferQualsFromTypes (F.fromListSEnv fieldFuns) . inferQualsFromSpec $ pgm 
+                , F.quals = quals . {- inferQualsFromTypes (F.fromListSEnv fieldFuns) .-} inferQualsFromSpec $ pgm 
                 }
 
 
@@ -293,10 +294,10 @@ envAddFresh l t g
        return (x, g')
 
 ---------------------------------------------------------------------------------------
-envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv -> CGM CGEnv
+envAdds      :: (F.Symbolic x, IsLocated x) => [(x, RefType)] -> CGEnv ->CGM CGEnv
 ---------------------------------------------------------------------------------------
 envAdds xts' g
-  = do xts    <- zipWith (\x t -> (x, strengthenObjBinds x t)) xs  <$> mapM addInvariant ts
+  = do xts    <- zipWith (\x t -> (x, strengthenObjBinds x (tyAddNNInv g t))) xs <$> mapM addInvariant ts
        let g' =  g { renv = E.envAdds xts        (renv g) } 
        xts'   <- mapM (xtwrap $ addMeasuresM g') xts
        is     <- forM xts' $  addFixpointBind 
@@ -306,6 +307,22 @@ envAdds xts' g
     where 
       (xs,ts)        = unzip xts'
       xtwrap m (x,t) = m (B (F.symbol x) t) >>= \(B _ t') -> return (x,t')
+                       
+tyAddNNInv g t 
+  = case locs t of
+      [l] -> if heapMem l h then 
+               t `strengthen` (ureft $ F.predReft (F.pOr [veq, heq l]))
+             else t
+      _ -> t
+    where
+      h   = rheap g
+      -- veq = mkProp $ F.EApp (F.Loc F.dummyPos $ F.symbol "nil") [F.eVar (F.vv Nothing)]
+      veq = isNil (F.vv Nothing)
+      heq l = F.PNot (isNil (heapReadSym "tyAddNNInv" l h))
+      -- heq l = F.PNot (mkProp (F.EApp (F.Loc F.dummyPos $ F.symbol "nil") [F.eVar (heapReadSym "tyAddNNInv" l h)]))
+              
+      -- veq = F.PAtom F.Eq (F.eVar (F.vv Nothing)) (F.expr (F.symbol "null"))
+      -- heq l = F.PAtom F.Ne (F.eVar (heapReadSym "tyAddNNInv" l h)) (F.expr (F.symbol "null"))
                        
 ---------------------------------------------------------------------------------------
 envAddFreshHeap   :: (IsLocated l) => l -> (Location, RefType) -> CGEnv -> CGM (Id SourceSpan, CGEnv)
@@ -727,16 +744,58 @@ subType' msg l g t1 t2 =
 subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2
-  = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
+  -- = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
+  = mapM_ subTypeLoc (s ++ s2)
     where 
-      subTypeLoc loc = subTypeField l g 
-                         (heapReadSym "subTypeHeaps(a)" loc σ1, heapReadType g "subTypeHeaps(a)" loc σ1)
-                         (heapReadType g "subTypeHeaps(b)" loc σ2)
+      -- Add locs from σ2 to σ1 but with reft (v = null)
+      -- ss             = heapCombine "subTypeHeaps" s $ fmap ((`eSingleton` (F.expr "null")) . rType) s2
+      (s1, s, s2)    = heapSplit σ1 σ2
+      -- subTypeLoc loc = subTypeField l g 
+      --                    (heapReadSym "subTypeHeaps(a)" loc σ1, heapReadType g "subTypeHeaps(a)" loc σ1)
+      --                    (heapReadType g "subTypeHeaps(b)" loc σ2)
+      -- veq = mkProp $ F.EApp (F.Loc F.dummyPos $ F.symbol "nil") [F.eVar (F.vv Nothing)]
+      subTypeLoc loc = if heapMem loc σ1 then
+                         subTypeField l g True
+                                (heapReadSym "subTypeHeaps(a)" loc σ1, 
+                                             heapReadType g "subTypeHeaps(a)" loc σ1)
+                                            (heapReadType g "subTypeHeaps(b)" loc σ2)
+                       else do
+                         let t = heapReadType g "subTypeHeaps(b)" loc σ2
+                         x <- freshId (srcPos l)
+                         -- tnull <- addInvariant (rType t `strengthen` (ureft $ F.predReft veq))
+                         tnull <- nullTypeOfType x t
+                         g <- envAdds [(x,tnull)] g
+                         subTypeField l g True
+                                (x, tracePP "LEFT" tnull) (tracePP "RIGHT" t)
+                                      -- ((`strengthen` (ureft $ F.predReft veq)) . rType) $ 
+                                      --        heapReadType g "subTypeHeaps(b)" loc σ2)
+                                      --       (heapReadType g "subTypeHeaps(b)" loc σ2)
     
-subTypeField l g (x1,t1) t2 = do 
+subTypeField l g b (x1,t1) t2 = do 
   (t1', g_st) <- freshObjBinds l g t1
   withAlignedM (doSubType g_st) t1' t2
-  where doSubType g_st t1 t2 = subTypeContainers l g_st t1 t2 
+  where doSubType g_st t1 t2 = subTypeContainers l g_st (if b then (eSingleton t1 x1) else t1) t2 
+
+nullTypeOfType :: (IsLocated l) => Id l -> RefType -> CGM RefType
+nullTypeOfType x t = predsNullType x t'
+  where
+    vNew = F.vv Nothing
+    t' = setRTypeR t (ureft $ F.predReft (isNil vNew))
+    r  = rTypeR $ rType t
+        
+predsNullType x (TApp c@(TDef _) ts rs r) 
+  = do γ <- cg_tdefs <$> get 
+       let as = typeRefArgs γ c
+       let rs = map go as 
+           θ  = fromLists (safeZip "predNull" (typeVarArgs γ c) (map (F.top <$>) ts)) []
+       return (TApp c ts (apply θ rs) r) :: CGM RefType
+  where
+    go v = PPoly [] $ tNNull $ ofType $ pv_ty v
+    go v = PPoly [(s, t) | (t, s, _) <- pv_as v] $ tNNull $ ofType $ pv_ty v
+    tNNull t = t `strengthen` (ureft $ F.predReft (F.PNot (isNil x))) :: RefType
+
+predsNullType _ t = return t
+                        
 
 -------------------------------------------------------------------------------
 equivWUnions :: E.Env RefType -> RefType -> RefType -> Bool
@@ -777,8 +836,8 @@ subTypeRecursive l g t1@(TApp d1@(TDef _) _ _ _) t2@(TApp d2@(TDef _) _ _ _)
                         (σ1, σ2)                = mapPair refHeap (σ1', σ2')
                         (B x1 t1', B x2 t2')    = (apply θ1 b1, apply θ2 b2)
                         bsub                    = F.mkSubst [(x2, F.eVar x1)] -- x2 := x1
-                        (heapSub, σ2r)          = renameHeapBinds σ1 σ2
-                        su                      = F.catSubst heapSub bsub
+                    (g, heapSub, σ2r)           <- renameHeapBinds l g σ1 σ2
+                    let su                      = F.catSubst heapSub bsub
                         xts                     = toIdTy l x1 t1' : (map btop $ heapTypes σ1')
                     g_st                       <- envAdds xts g
                     subTypeContainers l g_st t1' (F.subst su t2')
@@ -854,10 +913,15 @@ alignAndStrengthen msg l g u1@(TApp TUn _ _ _) u2@(TApp TUn _ _ _) =
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
 ------------------------------------------------------------------------------------------
-renameHeapBinds :: RefHeap -> RefHeap -> (F.Subst, RefHeap)
+renameHeapBinds :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM (CGEnv, F.Subst, RefHeap)
 ------------------------------------------------------------------------------------------
-renameHeapBinds σ1 σ2
-  = (su, (F.subst su <$>) <$> σ2)
+renameHeapBinds l g σ1 σ2
+  = do -- reshYs <- mapM (refreshId l) nys
+       let nilYTs = map (str . rType) nyts 
+       (nxs, g') <- foldM go ([], g) nilYTs
+       let su     = F.mkSubst (zip ys xs ++ zip nys (F.eVar . F.symbol <$> nxs))
+       -- g' <- envAdds (zip freshYs nilYTs) g 
+       return (g', su, (F.subst su <$>) <$> σ2)
   where l1s = heapLocs σ1
         l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
@@ -865,9 +929,12 @@ renameHeapBinds σ1 σ2
         xs  = F.eVar . lx σ1 <$> ls
         ys  = lx σ2 <$> ls
         nys = map (lx σ2) nil
-        su  = F.mkSubst $ (zip ys xs ++ (zip nys (repeat (F.eVar nilSymbol))))
+        nyts= map (flip (heapReadType g "renameHeapBinds(a)") σ2) nil
+        -- su  = F.mkSubst $ (zip ys xs ++ (zip nys (repeat (F.eVar nilSymbol))))
+        str t = t `strengthen` (ureft $ F.predReft (isNil (F.vv Nothing)))
         lx  = flip (heapReadSym "renameHeapBinds")
-
+        go (xs, g) t = do (x', g') <- envAddFresh l (str $ rType t) g
+                          return ((x':xs), g')
 ------------------------------------------------------------------------------------------
 strengthenUnion :: RefType -> RefType
 ------------------------------------------------------------------------------------------

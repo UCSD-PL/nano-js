@@ -1025,7 +1025,7 @@ instance Hashable TCon where
   hashWithSalt s TUn         = hashWithSalt s (5 :: Int)
   hashWithSalt s TNull       = hashWithSalt s (6 :: Int)
   hashWithSalt s TUndef      = hashWithSalt s (7 :: Int)
-  hashWithSalt s (TDef z)    = hashWithSalt s (8 :: Int) + hashWithSalt s z
+  hashWithSalt s (TDef z)    = hashWithSalt s (8 :: Int) + hashWithSalt s (F.symbol z)
   hashWithSalt s (TRef l)    = hashWithSalt s (9 :: Int) + hashWithSalt s l
 
 instance F.Reftable r => PP (Bind r) where 

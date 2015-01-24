@@ -2,8 +2,7 @@
 
 /*@ insert :: 
   (x:<l>+null, k:number)/l |-> xs:list[number]
-    => {v:<m> | ((lenp(v,ys) = 1 + lenp(x,xs)) && (keysp(v,ys) = keysp(x,xs) ∪1 k))}
-      /m |-> ys:list[number]
+    => <m>/m |-> ys:{v:list[number] | ((len(v) = 1 + len(xs)) && (keys(v) = Set_cup(Set_sng(k),keys(xs))))}
 */
 function insert(x, k){
  if (x != null){
@@ -12,6 +11,7 @@ function insert(x, k){
     x.next = t;
     return x;
  }
+
  var y  = {data:k, next:x};
  return y;
 }

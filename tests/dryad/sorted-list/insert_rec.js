@@ -1,15 +1,12 @@
 /*@ include sorted-list.js */
 
-/* qualif Ret(v:a): (lenp(v,ys) = 1 + lenp(x,xs)) */
-/* qualif Ret(v:a): (keysp(v,ys) = (Set_cup(keysp(x,xs), Set_sng(k)))) */
-
 /*@ insert :: forall A.
-  (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> h <= v}>
-             => {v:<k> | lenp(v,ys) = 1 + lenp(x,xs)} /k |-> ys:list[A]<{\h v -> h <= v}>
+  (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> h <= v}> =>
+             <k>/k |-> ys:{v:list[A]<{\h v -> h <= v}> | len(v) = len(xs) + 1}
 */
 function insert(x, k){
   if (x == null){
-    var y  = { data:k, next: null };
+    var y = { data:k, next:null };
     return y;
   } else {
     var xk = x.data;

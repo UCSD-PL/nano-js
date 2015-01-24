@@ -30,7 +30,9 @@ module Language.Nano.Liquid.Types (
   -- * Conversions
   , RefTypable (..)
   , eSingleton
+  , mkProp
   , pSingleton
+  , isNil
   -- , shiftVVs
 
   -- * Predicates On RefType 
@@ -80,6 +82,7 @@ import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Typecheck.Subst
 import qualified Language.Fixpoint.Types as F
+import           Language.Fixpoint.Names (propConName)
 import           Language.Fixpoint.PrettyPrint
 import           Language.Fixpoint.Misc
 import           Text.PrettyPrint.HughesPJ
@@ -222,6 +225,8 @@ instance RefTypable Type where
 instance RefTypable RefType where
   rType = ofType . toType            -- removes all refinements
 
+mkProp = F.PBexp . F.EApp (F.Loc F.dummyPos $ F.symbol propConName) . (: [])
+
 eSingleton      :: (F.Expression e) => RefType -> e -> RefType 
 eSingleton t e  = t `strengthen` (ureft $ F.exprReft e)
 
@@ -349,3 +354,6 @@ efoldRType g f = go
       where
         γ' = foldr (efoldExt g) γ xts
     gos γ z ts                = L.foldl' (go γ) z ts
+
+isNil x =
+  mkProp $ F.EApp (F.Loc F.dummyPos $ F.symbol "nil") [F.eVar x] :: F.Pred

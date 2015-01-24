@@ -41,12 +41,12 @@ function pos(){
   }
 }
 
-/*@ wind :: (<l>) => <l> */
+/* wind :: (<l>) => <l> */
 function wind(x) {
     return x;
 }
 
-/*@ unwind :: (<l>) => <l> */
+/* unwind :: (<l>) => <l> */
 function unwind(x) {
     return x;
 }
@@ -76,24 +76,24 @@ function unwind(x) {
 /*************************************************************************/
 /***************** Types for list Operators ******************************/
 /*************************************************************************/
-/*@ measure min :: forall A. (sList[A]) => A */
+/* measure min :: forall A. (sList[A]) => A */
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
-/*@ type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
+/* type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
 
-/*@ cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
-/*@ head  :: forall A. (xs:<l>)/l |-> list [A] => A/same                                          */
-/*@ tail  :: forall A. (xs:<l>)/l |-> list [A] => <m>+null/l |-> { data : A, next :<m>+null} * m |-> list[A] */ 
-/*@ nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
-/*@ empty :: forall A. (xango:<l> + null)/l |-> list[A] => 
+/* cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
+/* head  :: forall A. (xs:<l>)/l |-> list [A] => A/same                                          */
+/* tail  :: forall A. (xs:<l>)/l |-> list [A] => <m>+null/l |-> { data : A, next :<m>+null} * m |-> list[A] */ 
+/* nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
+/* empty :: forall A. (xango:<l> + null)/l |-> list[A] => 
                         {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}/same                 */
-/*@ emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
+/* emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
 
 
-/*@ length   :: forall A. (xs:list [A]) => {v:number | ((v >= 0) && v = (len xs))}                */
-/*@ safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
-/*@ safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
+/* length   :: forall A. (xs:list [A]) => {v:number | ((v >= 0) && v = (len xs))}                */
+/* safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
+/* safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
 
 
 
@@ -159,14 +159,16 @@ function unwind(x) {
 /*@ builtin_PrefixTypeof:: forall A. (x:A) => {v:string | (ttag x) = v }  */
 
 /*@ measure null :: null */
+/*@ measure nil :: forall A. (A) => number */
 
 /* invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {e:null      | ((e = null)) } */  //TODO: this is not very precise
+/*@ invariant {e:null      | (Prop(nil(e)) && e = null) } */  //TODO: this is not very precise
 /* invariant {v:boolean   | ttag(v) = "boolean"  } */ 
 /* invariant {v:number    | ttag(v) = "number"   } */
 /* invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
-/*@ invariant {e:<l>       | ((e != null))    } */
+/*@ invariant {e:<l>       | ((~Prop(nil(e))) && (e != null))  } */ 
+/*@ invariant {e:<l>+null       | ((Prop(nil(e)) <=> (e = null)))  } */ 
 /* invariant {v:<u>       | ttag(v) = "ref(u)"} */
 /* invariant {v:<v>       | ttag(v) = "ref(v)"} */
 /* invariant {v:<r>       | ttag(v) = "ref(r)"} */

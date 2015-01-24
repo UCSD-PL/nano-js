@@ -112,7 +112,7 @@ addRefSorts :: REnv -> RefType -> RefType
 addRefSorts γ t@(TApp c ts rs r)
   = TApp c ts rs' r'
   where
-    rs'               = addRefSortsRef <$> zip ps trs
+    rs'               = addRefSortsRef <$> (tracePP ("THIS ONE " ++ ppshow t) (zip ps trs))
     ps                = typeRefArgs γ c
     (trs, rest)       = splitAt (length ps) rs
     r'                = foldl go r rest
@@ -204,9 +204,10 @@ applyPreds πs t
       mkSub p         = (fmap (const ()) p, pVartoRConc p)
       replacePred t p = replacePredsWithRefs (mkSub p) <$>  t
 
-envAddNil l g = return g -- snd <$> envAddHeap l g nilHeap
+envAddNil l g = return g
     where
-      nilHeap = heapAdd "envAddNil" nilLoc nilBind heapEmpty
+      nilHeap = heapAdd "envAddNil" nilLoc (strNil nilBind) heapEmpty
+      strNil (B x t) = B x $ t `strengthen` (ureft . F.predReft $ isNil (F.vv Nothing))
 
 envAddHeap l g σ
   = do let xs           = b_sym <$> bs
@@ -215,7 +216,8 @@ envAddHeap l g σ
            σ'           = refHeapFromTyBinds "envAddHeap" (zip ls $ mkHeapBinds xs ts)
        -- (ts',g')        <- foldM foldFresh ([],g) ts
        let g'           = g { rheap = heapCombine "envAddHeap" [σ', rheap g] }
-       g''            <- envAdds (varBinds xs ({- reverse $ -} (fmap F.top) <$> ts)) g'
+       -- g''            <- envAdds (varBinds xs ({- reverse $ -} (fmap F.top) <$> ts)) g'
+       g''              <- foldM (\g j -> concretizeLoc l "consAccess" j g) g' (heapLocs σ)
        return (su, g'')
   where
     (ls,bs)            = unzip $ heapBinds σ
@@ -304,9 +306,9 @@ consStmt g (VarDeclStmt _ ds)
 
 -- return e 
 consStmt g r@(ReturnStmt l (Just e))
-  = do  b        <- getFunRetBinder g l
-        (xe, g') <- consExpr g e
-        (su, θi) <- consReturnHeap g' (Just (b, xe)) r
+  = do  b            <- getFunRetBinder g l
+        (xe, g')     <- consExpr g e
+        (g', su, θi) <- consReturnHeap g' (Just (b, xe)) r
         let te    = F.subst su $ envFindTy xe g'
             rt    = F.subst su . apply θi $ envFindReturn g'
         g' <- envAdds [(xe, te)] g'
@@ -356,17 +358,17 @@ consStmt _ s
 consReturnHeap :: CGEnv 
                -> Maybe (F.Symbol, Id AnnTypeR) 
                -> Statement AnnTypeR 
-               -> CGM (F.Subst, RSubst RReft)
+               -> CGM (CGEnv, F.Subst, RSubst RReft)
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
-       let (su,σ')   = renameHeapBinds (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
+       (g,su,σ')    <- renameHeapBinds l g (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
        let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
        subTypeHeaps l g' (rheap g') (fmap (F.subst su) <$> σ')
-       return (rsu `F.catSubst` su, θi)
+       return (g', rsu `F.catSubst` su, θi)
     where
       θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
 
@@ -565,13 +567,12 @@ consCall :: (PP a)
 --   2. Use @consExpr@ to determine types for arguments @es@
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
-
 consCall g l fn es ft 
   = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
        let (argSu, ts')      = renameBinds its xes
-           (heapSu, hi'')    = renameHeapBinds (rheap g') (refHeap hi')
-           su                = heapSu `F.catSubst` argSu
+       (g', heapSu, hi'')   <- renameHeapBinds l g' (rheap g') (refHeap hi')
+       let su                = heapSu `F.catSubst` argSu
            σin               = rheap g'
        -- Substitute binders in spec with binders in actual heap
        zipWithM_ (withAlignedM $ subTypeContainers l g') [envFindTy x g' | x <- xes] (F.subst su ts')
@@ -585,7 +586,7 @@ consCall g l fn es ft
                        , rheap = σ
                        }
        g_out                <- topMissingBinds g''' (rheap g') hi' >>= envAdds [(rs, rt)]
-       g_outconc           <- concretizeHeapSet l g_out
+       g_outconc            <- concretizeHeapSet l g_out
        g_outms              <- foldM (flip applyLocMeasEnv) g_outconc $ nub $ (heapLocs hi' ++ heapLocs σ)
        g_outmshp            <- applyMeasHeap g_outms
        return (Id l $ F.symbolString rs, g_outmshp)
@@ -668,7 +669,7 @@ consWind l g (m, wls, ty, θ)
   -- What needs to be done here:
   -- Given the instantiation θ:
   -- Instantiate C[α] and add a new binder. oh wait, that is fairly easy...
-  = do (σenv, (x,tw), t, ms) <- freshConsWind g l θ ty m
+  = do (g, σenv, (x,tw), t, ms) <- freshConsWind g l θ ty m
        let xts               = toIdTyPair <$> heapTypes σenv
            g'                = g { rheap =  heapDiff (rheap g) (m:wls) }
            r                 = instMeasures [F.vv Nothing] ms
@@ -688,13 +689,13 @@ consWind l g (m, wls, ty, θ)
 freshConsWind g l θ ty m
     = do (σenv, (x,tw), t, ms) <- freshTyWind g l θ ty
          let xsu         = F.mkSubst [(x, F.eVar x')]
-             (hsu,σenv') = renameHeapBinds (rheap g) σenv
-             su          = F.catSubst xsu hsu
+         (g, hsu,σenv')  <- renameHeapBinds l g (rheap g) σenv
+         let su          = F.catSubst xsu hsu
              σenv''      = fmap (F.subst su) <$> σenv'
              tw'         = F.subst su tw
              t'          = F.subst su t
              ms'         = subMeas su <$> ms 
-         return (σenv'', (x', tw'), t', ms')
+         return (g, σenv'', (x', tw'), t', ms')
     where
       x'                  = hpRead m (rheap g)
       subMeas su (f,as,e) = (f, as, F.subst su e)
@@ -805,7 +806,8 @@ concretizeHeapSetFP l (j:absLocs) g
     where 
       σ          = rheap g
       ts         = [ t | (x, t) <- envToList g, F.symbol x /= returnSymbol ]
-      hasRef     = any ((tRef j ==) . toType) ts
+      -- hasRef     = any ((tRef j ==) . toType) ts
+      hasRef     = True
       conc       = concretizeLoc l "concretizeHeapSet" j g
 
 concretizeHeapSetFP _ [] g = return g

@@ -2,9 +2,8 @@
 
 /*@
   remove ::
-    (x:<l>+null, k:number)/l |-> xs:list[number]
-     => {v:<m>+null | (keysp(v,ms) = Set_dif(keysp(x,xs),Set_sng(k)))}
-        /m |-> ms:list[number]
+    (x:<l>+null, k:number)/l |-> xs:list[number] => 
+    <m>+null/m |-> ms:{v:list[number] | (keys(v) = Set_dif(keys(xs),Set_sng(k)))}
 */
 function remove(x, k){
   if (x != null) {
@@ -18,6 +17,5 @@ function remove(x, k){
       return x;
     }
   }
-
   return null;
 }

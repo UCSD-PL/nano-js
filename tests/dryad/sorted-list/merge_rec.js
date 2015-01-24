@@ -1,19 +1,16 @@
 /*@ include sorted-list.js */
-/*@ qualif UnionKeys(v:Ref): ((keysp(v,ms) = (Set_cup(keysp(x1,x1s), keysp(x2,x2s))))) */
-/*@ qualif SplitKeys(v:Rec): ((keysp(x,ls) = (Set_cup(keysp(field_Ref(r,"x"),xs), keysp(field_Ref(r,"y"),ys))))) */
+/* qualif UnionKeys(v:Ref): ((keysp(v,ms) = (Set_cup(keysp(x1,x1s), keysp(x2,x2s))))) */
+/* qualif SplitKeys(v:Rec): ((keysp(x,ls) = (Set_cup(keysp(field_Ref(r,"x"),xs), keysp(field_Ref(r,"y"),ys))))) */
 
-/*@ qualif LenSum(v:Ref): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
-/*@ qualif SplitLen(v:Rec): ((lenp(x,ls) = (lenp(field_Ref(r,"x"),xs) + lenp(field_Ref(r,"y"),ys)))) */
+/* qualif LenSum(v:Ref): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
+/* qualif SplitLen(v:Rec): ((lenp(x,ls) = (lenp(field_Ref(r,"x"),xs) + lenp(field_Ref(r,"y"),ys)))) */
 
 /*@ merge :: forall A.
-  (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[A]<{\h v -> true}> 
-                           * b |-> x2s:list[A]<{\h v -> true}>
-    => <m>+null
-       /m |-> ms:list[A]<{\h v -> h <= v}>
+  (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[A]<{\h v -> true}> * b |-> x2s:list[A]<{\h v -> true}>
+    => <m>+null/m |-> ms:list[A]<{\h v -> true}>
 */
 function merge(x1, x2){
   if (x1 == null) {
-    assume(0 == 1);
     return x2;
   }
 
@@ -38,8 +35,8 @@ function merge(x1, x2){
 
 /*@ split :: 
       (x:<l>+null)/l |-> ls:list[number]<{\h v -> true}>
-        => <r>/r |-> r:{x:<a>+null, y:<b>+null} * a |-> xs:list[number]<{\h v -> h <= v}> 
-                                                * b |-> ys:list[number]<{\h v -> h <= v}>      */
+        => <r>/r |-> r:{x:<a>+null, y:<b>+null} * a |-> xs:list[number]<{\h v -> true}> 
+                                                * b |-> ys:list[number]<{\h v -> true }>      */
 function split(x){
   if (x == null) {
     r = {x:null, y:null};
@@ -65,7 +62,8 @@ function split(x){
 
 /*@ sortList ::
       (x:<l>+null)/l |-> xs:list[number]<{\h v -> true}>
-         => {v:<k>+null | (lenp(v,ks) = lenp(x,xs) && keysp(v,ks) = keysp(x,xs))}/k |-> ks:list[number]<{\h v -> h <= v}> */
+         => {v:<k>+null | (Prop(nil(v)) => Prop(nil(x)))}/
+            k |-> ks:{v:list[number]<{\h v -> h <= v}> | ((keys(v) = keys(xs)) && (len(v) = len(xs)))} */
 function sortList(x) {
   if (x == null){
     return null;

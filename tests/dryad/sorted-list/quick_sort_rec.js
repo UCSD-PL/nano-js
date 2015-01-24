@@ -1,17 +1,8 @@
 /*@ include sorted-list.js */
 
-/* qualif AppKeys(v:T) : keys(v)     = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif AppKeys(v:Ref) : keysp(v,kk) = Set_cup(keysp(ls,ll),keysp(gs,gg)) */
-/*@ qualif PartKey(v:a) : keysp(x,xs) = Set_cup(keysp(field_Ref(r,"x"),as),keysp(field_Ref(r,"y"),bs)) */
-
-/*@ qualif AppLen(v:Ref) : lenp(v,kk) = lenp(ls,ll)+lenp(gs,gg) */
-/*@ qualif PartLen(v:a) : lenp(x,xs) = lenp(field_Ref(r,"x"),as)+lenp(field_Ref(r,"y"),bs) */
-
 /*@ append :: forall A.
-  (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h v -> true }>
-                                 * g |-> gg:list[A]<{\h v -> true }>
-    => v:<k>+null
-       /k |-> kk:list[A]<{\h v -> true }>                                             */
+  (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h e -> true }>* g |-> gg:list[A]<{\h e -> true }>
+    => <k>+null/k |-> kk:list[A]<{\h e -> true }>                                             */
 function append(xk, ls, gs) {
   if (ls == null) {
     return gs;
@@ -28,7 +19,6 @@ function append(xk, ls, gs) {
     ls.next = n;
     return ls;
   }
-  // return ls;
 }
 
 /*@ partition :: forall A.
@@ -58,17 +48,15 @@ function partition(piv, x){
     return ret;
   } else {
     x.next = b;
-    var ret = {};
-    ret.x = a;
-    ret.y = x;
+    var ret = {x:a, y:x};
     return ret;
   }
 }
 
 /*@ quickSort :: forall A.
-      (x:<x>+null)/x |-> in:list[A]<{\h v -> true}>
-        => {v:<o>+null | (keysp(v,out) = keysp(x,in) && lenp(v,out) = lenp(x,in)) }
-          /o |-> out:list[A]<{\h v -> h <= v}> */
+      (x:<x>+null)/x |-> in:list[A]<{\h e -> true}>
+        => r:{e:<o>+null | (Prop(nil(e)) => Prop(nil(x)))}/
+           o |-> out:{v:list[A]<{\h e -> h <= e }> | ((len(v) = len(in)) && (keys(v) = keys(in)))}*/ 
 function quickSort(x) {
   if (x == null){
     return null;

@@ -1,13 +1,9 @@
 /*@ include singly-linked-list.js */
 
 /*@ insert ::
-  (x:<l>+null, k:number)/l |-> xs:list[number] =>
-                   {v:<m> | ((lenp(v,ys) = lenp(x,xs) + 1)
-                          && (keysp(v,ys) = keysp(x,xs) ∪1 k)) }
-                   /m |-> ys:list[number] */
+  (x:{v:<l>+null | (Prop(nil(v)) => Prop(nil(xs)))}, k:number)/l |-> xs:list[number] =>
+                    <m>/m |-> ys:{v:list[number] | len(v) = len(xs) + 1} */
 function insert(x, k) {
-  var y = {};
-  y.data = k;
-  y.next = x;
+  var y = {data:k, next:x};
   return y;
 }

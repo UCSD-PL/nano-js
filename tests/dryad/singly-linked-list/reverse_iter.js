@@ -1,10 +1,9 @@
 /*@ include singly-linked-list.js */
 
 /*@ reverseLoop :: 
-  (i:<i>+null, j:<j>+null)/i |-> is:list[number] * j |-> js:list[number]
-    => {v:<k>+null | ((lenp(v,ks) = lenp(i,is) + lenp(j,js))
-                   && (keysp(v,ks) =keysp(i,is) ∪ keysp(j,js))) }
-    /k |-> ks:list[number]
+  (i:<i>+null, j:<j>+null)
+           /i |-> is:list[number] * j |-> js:list[number]
+    => <k>+null/k |-> ks:list[number]
 */
 function reverseLoop(i, j){
   if (i != null) {
@@ -19,9 +18,7 @@ function reverseLoop(i, j){
 }
 
 /*@ reverse ::
-  (x:<x>)/x |-> xs:list[number] => {v:<y>+null | ((lenp(v,ys) = lenp(x,xs))
-                                               && (keysp(v,ys) = keysp(x,xs))) }
-                              /y |-> ys:list[number]*/
+  (x:<x>)/x |-> xs:list[number] => <y>/y |-> ys:{v:list[number] | ((len(v) = len(xs)) && keys(v) = keys(xs))} */
 function reverse(x){
   var r = reverseLoop(x,null);
   return r;

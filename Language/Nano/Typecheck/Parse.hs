@@ -446,7 +446,7 @@ specP
     <|> (reserved "type"      >> (Type <$> tBodyP     )) 
     <|> (reserved "invariant" >> (withSpan Invt bareTypeP))
     <|> (reserved "include"   >> (Include <$> filePathP))
-    <|> ({- DEFAULT -}           (Bind <$> idBindP    ))
+    <|> ({- DEFAULT -}           (Bind . (strengthenSingletons <$>) <$> idBindP  ))
 
 filePathP :: Parser (FilePath)         
 filePathP
@@ -465,7 +465,32 @@ measureImpP
        spaces
        e  <- exprP
        return (m, args, e)
+             
+ 
+strengthenSingletons :: RefType -> RefType
+strengthenSingletons (TAll as t) = TAll as $ strengthenSingletons t
+strengthenSingletons (TAllP ps t) = TAllP ps $ strengthenSingletons t
+strengthenSingletons t | isTrivialRefType t = t
+strengthenSingletons (TFun xts rt hi ho r) = TFun xts' rt' hi ho r
+  where                  
+    sings = buildMap (rt:xts)
+    xts'  = map (go hi) xts
+    rt'   = maybe rt (str ho rt) (lookup (b_sym rt) sings)
+    -- go :: RHeapEnv RReft -> Bind RReft -> Bind RReft
+    go h xt    = maybe xt (maybeStr h xt) (lookup (b_sym xt) sings)
+    -- str :: RHeapEnv -> Bind RReft -> Location -> Bind RReft
+    maybeStr h xt l = if isTauto . rTypeReft $ b_type xt then str h xt l else xt
+    str h xt l = B (b_sym xt) (b_type xt `strengthen` p (b_sym $ heapRead "strSingletons" l h))
+    p :: Symbol -> RReft
+    p x     = ureft $ predReft (PImp (isNil (vv Nothing)) (isNil (symbol x)))
+strengthenSingletons t = t
 
+buildMap :: [Bind RReft] -> [(Symbol, Location)] 
+buildMap xts = ss
+  where 
+    lxs = concatMap (\xt -> [(l, [b_sym xt]) | l <- locs $ b_type xt]) xts
+    m   = M.toList $ foldr (uncurry $ M.insertWith (++)) M.empty lxs
+    ss  = [ (x, l) | (l, [x]) <- m ]
        
 
 --------------------------------------------------------------------------------------
@@ -500,7 +525,6 @@ mkSpec xs = Nano { code   = Src []
 switchProp i@(Id l x) 
   | x == (toLower <$> propConName) = Id l propConName
   | otherwise                      = i
-
 
 --------------------------------------------------------------------------------------
 parseCodeFromFile :: FilePath -> IO (Nano SourceSpan a) 

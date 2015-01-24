@@ -3,17 +3,15 @@
 /*@
   copy ::
     (x:<l>+null)/l |-> xs:list[number]
-      => {v:<m>+null | ((lenp(v,ms) = lenp(x,xs))
-                     && (keysp(v,ms) = keysp(x,xs)))}
-        /l |-> xss:list[number] * m |-> ms:list[number]
+      => {v:<m>+null | (((Prop(nil(v)) <=> (Prop(nil(x))))))}/l |-> xss:{v:list[number] | ((Prop(nil(v)) <=> Prop(nil(xs))) && (len(v) = len(xs)))} * m |-> ms:{v:list[number] | len(v) = len(xs)}
 */
 function copy(x){
   if (x == null){
-    var ret = null;
-    return ret;
+    return null;
   }
   var u  = copy(x.next);
-  var t  = {data: x.data, next: u};
+  var d  = x.data;
+  var t  = {data: d, next: u};
   return t;
 }
 
