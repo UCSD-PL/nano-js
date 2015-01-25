@@ -49,6 +49,7 @@ module Language.Nano.Liquid.CGMonad (
   , envAddFresh
   , envAddFieldBinders
   , envAdds
+  , tyAddNNInv
   , envAddFreshHeap
   , envFreshHeapBind
   , envAddReturn
@@ -250,7 +251,7 @@ measureBinds   = map tx . E.envToList . consts
 
 predicateBinds = pappSymSorts
 
-consFPBinds n pgm = F.fromListSEnv (fieldFuns ++ nilB n ++ measureBinds pgm ++ predicateBinds)
+consFPBinds n pgm = F.fromListSEnv (fieldFuns ++ {- nilB n ++ -} measureBinds pgm ++ predicateBinds)
                  
 ---------------------------------------------------------------------------------------
 -- | Constraint Generation Monad ------------------------------------------------------

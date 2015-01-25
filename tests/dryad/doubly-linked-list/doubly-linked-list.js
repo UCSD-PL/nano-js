@@ -1,19 +1,12 @@
 /*@ measure len  :: forall A. (dlist[A]) => number                      */
 /*@ measure keys :: (dlist[number]) => set[number]                      */
 
-/*@ measure dlenp :: forall A B C. (<l>+null, dlist[A,B,C]) => number   */
-/*@ measure dlenp(p,x) = (if (p = null) then 0 else len(x))             */
-
-/*@ measure dkeysp :: forall B C. (<l>+null, dlist[number,B,C]) => set[number]  */
-/*@ measure dkeysp(p,x) = (if (p = null) then
-                            Set_cap(Set_sng(1),Set_sng(0))
-                         else
-                            keys(x))                                    */
-
 /*@
   type dlist[A,S,P] exists! l |-> tl:dlist[A, <l>, S]
-                                . me:{ data: A, next:<l>+null, prev:P }
-    with len(x) = (1 + dlenp(field_Ref(me, "next"), tl))
-    and keys(x) = Set_cup(Set_sng(field_int(me, "data")), dkeysp(field_Ref(me, "next"), tl))
-
+                                . me:{ data: A, next:{v:<l>+null | (Prop(nil(v)) => Prop(nil(tl)))}, prev:P }
+    with len(x) = (1 + len(tl))
+    and keys(x) = Set_cup(Set_sng(field_int(me, "data")), keys(tl))
 */
+
+/*@ invariant {v:dlist[number,<l>,<m>] | ((len(v) >= 0) && ((Prop(nil(v)) => (len(v) = 0)))
+                                               && ((Prop(nil(v)) => (keys(v) = Set_cap(Set_sng(0),Set_sng(1))))))} */

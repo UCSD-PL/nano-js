@@ -30,13 +30,17 @@ function rotate_right(p) {
   return pl;
 }
 
-/*@ qualif IsRed(v:a): (((Prop v) <=> (colorp(x,in) != 0))
+/* qualif IsRed(v:a): (((Prop v) <=> (colorp(x,in) != 0))
                       && (colorp(x,out) = colorp(x,in))
                       && (bheightp(x,out) = bheightp(x,in))) */
 
+/*@ qualif Eq(v:T,x:T): bheight(v) = bheight(x) */
+/*@ qualif Eq(v:T,x:T): col(v) = col(x) */
+/*@ qualif Red(v:boolean, x:T): ((Prop v) <=> (col(x) != 0)) */
+
 /*@ is_red :: forall A.
-                (x:<t>+null)/t |-> in:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-                  => boolean/t |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
+                (x:<t>+null)/t |-> iri:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+                  => boolean/t |-> iro:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
 function is_red(x) {
   if (x == null) {
     return false;
@@ -49,19 +53,19 @@ function is_red(x) {
  /*@
    insert :: forall A.
      (p:<t>+null, k:A)/t |-> in:rbtree[A]<{\h v -> v < h},{\h v -> v > h}>
-          => {v:<u>+null | v != null}
-             / a |-> lft:rbtree[{v:A | v < field_int(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+          => <u>
+             / a |-> lft:{v:rbtree[{v:A | v < field_int(out,"key")}]<{\h v -> v < h},{\h v -> v > h}> | bheight(v) = bheight(rgt)}
              * b |-> rgt:rbtree[{v:A | v > field_int(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
-             * u |-> out:{ color : { v:number | (((v != 0) => (bheightp(p,in) =     bheightp(field_Ref(out,"left"),lft))) &&
-                                                 ((v != 0) => (bheightp(p,in) =     bheightp(field_Ref(out,"right"),rgt))) &&
-                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field_Ref(out,"left"),lft))) &&
-                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field_Ref(out,"right"),rgt))) &&
-                                                 ((v = 0) || (((colorp(field_Ref(out,"left"),lft) = 0) || (colorp(field_Ref(out,"right"),rgt) = 0)) 
-                                                           && ((colorp(p,in) != 0) || ((colorp(field_Ref(out,"left"),lft) = 0) && (colorp(field_Ref(out,"right"),rgt) = 0))))))
+             * u |-> out:{ color : { v:number | (((v != 0) => (bheight(in) =     bheight(lft))) &&
+                                                 ((v != 0) => (bheight(in) =     bheight(rgt))) &&
+                                                 ((v = 0)  => (bheight(in) = 1 + bheight(lft))) &&
+                                                 ((v = 0)  => (bheight(in) = 1 + bheight(rgt))) &&
+                                                 ((v = 0) || (((col(lft) = 0) || (col(rgt) = 0)) 
+                                                           && ((col(in) != 0) || ((col(lft) = 0) && (col(rgt) = 0))))))
                                                 }
                          , key:   A
-                         , left:  {v:<a>+null  | (bheightp(v,lft) = bheightp(field_Ref(out,"right"),rgt)) }
-                         , right: {v:<b>+null  | (bheightp(v,rgt) = bheightp(field_Ref(out,"left"),lft))  }
+                         , left: {v:<a>+null | (Prop(nil(v)) => Prop(nil(lft)))}
+                         , right: {v:<b>+null | (Prop(nil(v)) => Prop(nil(rgt)))}
                          }
 
 */
@@ -74,7 +78,6 @@ function insert (p,k) {
     y.right = null;
     return y;
   } 
-
   var pk = p.key;
   if (pk == k) {
     var pl = p.left;

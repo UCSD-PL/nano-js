@@ -159,7 +159,7 @@ consFun g (FunctionStmt l f xs body)
        γ              <- getTDefs
        ft             <- freshTyFun g l f ftDef
        g'             <- envAdds [(f, go γ ft)] g
-       g''            <- envAddFun l g' f xs (go γ ft) >>= envAddNil l
+       g''            <- envAddFun l g' f xs (go γ ft)
        -- when (not $ isTrivialRefType ftDef) $ 
        --      subTypeFun l g'' ft ftDef
        withFun (F.symbol f) $
@@ -203,11 +203,6 @@ applyPreds πs t
     where
       mkSub p         = (fmap (const ()) p, pVartoRConc p)
       replacePred t p = replacePredsWithRefs (mkSub p) <$>  t
-
-envAddNil l g = return g
-    where
-      nilHeap = heapAdd "envAddNil" nilLoc (strNil nilBind) heapEmpty
-      strNil (B x t) = B x $ t `strengthen` (ureft . F.predReft $ isNil (F.vv Nothing))
 
 envAddHeap l g σ
   = do let xs           = b_sym <$> bs
@@ -673,10 +668,13 @@ consWind l g (m, wls, ty, θ)
        let xts               = toIdTyPair <$> heapTypes σenv
            g'                = g { rheap =  heapDiff (rheap g) (m:wls) }
            r                 = instMeasures [F.vv Nothing] ms
+           nnil              = ureft $ F.predReft $ F.PImp ll rr
+           ll                = isNil (heapReadSym "consWindRd" m (rheap g))
+           rr                = isNil (F.vv Nothing)
        g_st                 <- envAdds xts g
        (g_st, su)           <- envAddFieldBinders l x tw g_st
        (z, g'')             <- envFreshHeapBind l m g'
-       g'''                 <- envAdds [(z, strengthen t r)]  g''
+       g'''                 <- envAdds [(z, strengthen t (r `F.meet` nnil) `eSingleton` z)]  g''
        subTypeWind l g_st ((F.subst su <$>) <$> σenv) (hpRead g_st m (rheap g_st)) (F.subst su tw)
        -- subTypeWind l (tracePP "g_st" g_st) σenv (hpRead g_st m (rheap g_st)) tw
        applyLocMeasEnv m g'''

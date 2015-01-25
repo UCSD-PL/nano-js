@@ -60,7 +60,7 @@ addMeasure γm γt σ b@(B x t) m@(_,[a],_)
 
 addMeasure γm γt σ b@(B x t) m@(_,[a1,a2],_)
     | length ls == 1 && l `elem` heapLocs σ = try hb m
-    | toType t == tNull                     = try nil m
+    -- | toType t == tNull                     = try nil m
     | otherwise                             = b
       where
         ls    = if isFalseR t then [] else refLocs t
