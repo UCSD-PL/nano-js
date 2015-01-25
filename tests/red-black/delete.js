@@ -1,4 +1,3 @@
-
 /*@ include red-black.js */
 
 /*@ lemma_nonMem :: forall A B.
@@ -17,34 +16,30 @@ function lemma_nonMem(k,x) {
   }
 }
 
-/*@ qualif Nomem(v:T,k:a): (~(Set_mem(k,keys(v)))) */ 
+/* qualif Nomem(v:T,k:a): (~(Set_mem(k,keys(v)))) */ 
 /*@ qualif IsRed(v:boolean, x:T): ((Prop v) <=> (col(x) != 0)) */
 /*@ qualif IsB(v:boolean, x:T): ((Prop v) <=> (col(x) = 0 && (~(Prop(nil(x)))))) */
 
-/*@ qualif Presv(v:T,x:T): (keys(v) = keys(x)) */
-/*@ qualif Presv(v:T,x:T): (col(v) = col(x)) */
-/*@ qualif Presv(v:T,x:T): (bheight(v) = bheight(x)) */
+/* qualif Presv(v:T,x:T): (keys(v) = keys(x)) */
+/* qualif Presv(v:T,x:T): (col(v) = col(x)) */
+/* qualif Presv(v:T,x:T): (bheight(v) = bheight(x)) */
 
-/*@ qualif Delete(v:T,x:T,y:Rec): ((Prop(field_int(y, "b")) && (col(x) = 0)) => (col(v) = 0))                           */ 
-/*@ qualif Delete(v:T,x:T,y:Rec): (Prop(field_int(y, "b")) => (bheight(x) = bheight(v)))                                    */
-/*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) != 0) => ((bheight(x) = bheight(v)))))  */
-/*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) = 0) => (bheight(x) = 1 + bheight(v)))) */
-/* qualif AppendTree(v:T,rpair:Rec,l:T):(bheight(v) = bheight(l) + (if (~(Prop(field_int(rpair,"grew")))) then 0 else 1)) */
-/* qualif AppendTree(v:Ref, l:Ref, r:Ref): ((Prop(nil(v))) <=> (Prop(nil(l)) && Prop(nil(r)))) */
-/* qualif AppendHeight(v:T, x:T): bheight(v) = bheight(x) */
-/* qualif AppendGrew(v:boolean,x:T,l:T,r:T):((((col(x) != 0)
+/*@ qualif AppendTree(v:T,rpair:Rec,l:T):(bheight(v) = bheight(l) + (if (~(Prop(field_int(rpair,"grew")))) then 0 else 1)) */
+/*@ qualif AppendTree(v:Ref, l:Ref, r:Ref): ((Prop(nil(v))) <=> (Prop(nil(l)) && Prop(nil(r)))) */
+/*@ qualif AppendHeight(v:T, x:T): bheight(v) = bheight(x) */
+/*@ qualif AppendGrew(v:boolean,x:T,l:T,r:T):((((col(x) != 0)
                                                || (col(l) = 0 && col(r) = 0)) => (~(Prop(v)))) 
                                                && ((~Prop(nil(l)) && (~(Prop(nil(r)))) && ((col(l) != 0) || (col(r) != 0))) => (Prop(v)))) */
 
 // CAN WE AUTOGEN THESE??????
-/*@ qualif Foo(v:a, x:Rec): (v > field_int(x,"key")) */
-/*@ qualif Foo(v:a, x:Rec): (v < field_int(x,"key")) */
-/*@ qualif Left(v:Ref, r:Rec): v = field_Ref(r, "left") */
-/*@ qualif Right(v:Ref, r:Rec): v = field_Ref(r, "right") */
-/*@ qualif RBalRet(v:Rec) : (~(Prop(nil(field_Ref(v,"left"))))) */
-/*@ qualif RBalRet(v:Rec) : (~(Prop(nil(field_Ref(v,"right"))))) */
-/*@ qualif RBalCol(v:Rec) : field_Ref(v,"color") != 0 */
-/*@ qualif RBalCol(v:Rec) : field_Ref(v,"color") = 0 */
+/* qualif Foo(v:a, x:Rec): (v > field_int(x,"key")) */
+/* qualif Foo(v:a, x:Rec): (v < field_int(x,"key")) */
+/* qualif Left(v:Ref, r:Rec): v = field_Ref(r, "left") */
+/* qualif Right(v:Ref, r:Rec): v = field_Ref(r, "right") */
+/* qualif RBalRet(v:Rec) : (~(Prop(nil(field_Ref(v,"left"))))) */
+/* qualif RBalRet(v:Rec) : (~(Prop(nil(field_Ref(v,"right"))))) */
+/* qualif RBalCol(v:Rec) : field_Ref(v,"color") != 0 */
+/* qualif RBalCol(v:Rec) : field_Ref(v,"color") = 0 */
 
 /* qualif HeightEqT(v:Ref, br:T, bl:T): bheight(br) = 
     (if (Prop(nil(br))) then 1 else (bheight(bll) 
@@ -68,7 +63,7 @@ function lemma_nonMem(k,x) {
 //25
 
 
-/*@ qualif Thing(v:T, bll:T, blr:T, br:T): (((keys(v) = 
+/* qualif Thing(v:T, bll:T, blr:T, br:T): (((keys(v) = 
                            (keys(blr) ∪ keys(bll) ∪ keys(br) ∪1 field_int(bt,"key") ∪1 field_int(bl,"key"))
                       && ((col(blr) != 0 || col(bll) != 0))) <=> 
                         (col(v) != 0)) && (bheight(v) = 1 + bheight(br))) */
@@ -79,20 +74,20 @@ function lemma_nonMem(k,x) {
                       && ((col(brl) != 0 || col(brr) != 0))) <=> 
                         (col(v) != 0)) && (bheight(v) = 1 + bheight(bl))) */
 //60
-/*@ qualif RbalS(v:T,rbr:T): (bheight(v) = bheight(rbr) + 1) */
+/* qualif RbalS(v:T,rbr:T): (bheight(v) = bheight(rbr) + 1) */
 //10
 /* qualif LbalS(v:T): (bheight(v) = bheight(lbl) + 1) */
 
-/*@ qualif BalS1(v:T,rbl:T) :  (bheight(v) = bheight(rbl) + (if (col(rbl) != 0) then 1 else 0))      */
+/* qualif BalS1(v:T,rbl:T) :  (bheight(v) = bheight(rbl) + (if (col(rbl) != 0) then 1 else 0))      */
 
-/*@ qualif BalS2(v:T,x:T) :  ((col(v) != 0) => (col(x) = 0)) */
-/*@ qualif BalS4(v:T,x:T) :  ((col(v) = 0) => (col(x) != 0)) */
+/* qualif BalS2(v:T,x:T) :  ((col(v) != 0) => (col(x) = 0)) */
+/* qualif BalS4(v:T,x:T) :  ((col(v) = 0) => (col(x) != 0)) */
 
-/*@ qualif BalS(v:T, x:T): (bheight(v) + 1 = bheight(x))       */
+/* qualif BalS(v:T, x:T): (bheight(v) + 1 = bheight(x))       */
 /* qualif HGt1(v:T): bheight(v) > 1 */
 
-/*@ qualif Singl(v:Ref,x:T) : (Prop(nil(v)) => Prop(nil(x))) */
-/*@ qualif Singl(v:Ref,x:Ref) : (Prop(nil(v)) <=> Prop(nil(x))) */
+/* qualif Singl(v:Ref,x:T) : (Prop(nil(v)) => Prop(nil(x))) */
+/* qualif Singl(v:Ref,x:Ref) : (Prop(nil(v)) <=> Prop(nil(x))) */
 
 
 /*@ is_black :: forall A.
@@ -300,45 +295,45 @@ function lemma_nonMem(k,x) {
           * l  |-> lbl:rbtree[{v:A | v < field_int(lbt,"key")}]<{\x y -> x > y},{\x y -> x < y}> 
           * t  |-> lbt:{ color:number, key:A, left:{v:<l>+null | (Prop(nil(v)) <=> Prop(nil(lbl)))}, right:<r> }
           => <x>/x |-> out:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> | (if (col(lbl) != 0) then (if (col(lbr) != 0) then ((bheight(v) = bheight(lbr) + 1) && (col(v) = 0)) else ((col(v) != 0) && (bheight(v) = bheight(lbr)))) else (if (col(lbr) != 0) then ((bheight(v) = bheight(lbr) + 1) && (col(v) = 0)) else ((bheight(v) = bheight(lbr)))))}              */
-function lbalS(t) 
-{
-  var l = t.left;
-  var r = t.right;
-  if (is_red(l)) {
-    if (is_red(r)) {
-      l.color = 0;
-      t.color = 0;
-      return t;
-    } else {
-      t.color = 1;
-      l.color = 0;
-      return t;
-    }
-  } else {
-    if (is_red(r)) {
-      var rc = r.color;
-      var rl = r.left;
-      var rr = r.right;
-      t.color = 0;
-      t.right = rl.left;
-      r.left  = rl.right;
-      rl.left = t;
-      rl.right = r;
-      rr.color = 1;
-      rl.right = rbal(r);
-      return rl;
-    } else {
-      r.color = 1;
-      t = rbal(t);
-      return t;
-    }
-  }
-}
+// function lbalS(t) 
+// {
+//   var l = t.left;
+//   var r = t.right;
+//   if (is_red(l)) {
+//     if (is_red(r)) {
+//       l.color = 0;
+//       t.color = 0;
+//       return t;
+//     } else {
+//       t.color = 1;
+//       l.color = 0;
+//       return t;
+//     }
+//   } else {
+//     if (is_red(r)) {
+//       var rc = r.color;
+//       var rl = r.left;
+//       var rr = r.right;
+//       t.color = 0;
+//       t.right = rl.left;
+//       r.left  = rl.right;
+//       rl.left = t;
+//       rl.right = r;
+//       rr.color = 1;
+//       rl.right = rbal(r);
+//       return rl;
+//     } else {
+//       r.color = 1;
+//       t = rbal(t);
+//       return t;
+//     }
+//   }
+// }
 
-/*@ append :: forall A.
+/*@ append :: forall A <p :: (A) =>prop>.
    (l:<l>+null, k:A, r:<r>+null)/l |-> inl:{v:rbtree[{v:A<p> | v < k}]<{\h v -> h > v },{\h v -> h < v }> | bheight(v) = bheight(inr)}
-                               * r |-> inr:rbtree[{v:A<p> | v > k}]<{\h v -> h > v },{\h v -> h < v }>
-     => <p>/t |-> outt:{v:rbtree[A<p>]<{\h v -> h > v},{\h v -> h < v }> | ((Prop(nil(v)) <=> (Prop(nil(l)) && Prop(nil(r)))))}
+                               * r |-> inr:{v:rbtree[{v:A<p> | v > k}]<{\h v -> h > v },{\h v -> h < v }> | bheight(v) = bheight(inl)}
+     => <p>/t |-> outt:{v:rbtree[A<p>]<{\h v -> h > v},{\h v -> h < v }> | ((bheight(v) > 0) && ((Prop(nil(v)) <=> (Prop(nil(l)) && Prop(nil(r))))))}
           * p |-> rpair:{ grew:{v:boolean | ((((col(outt) != 0) || (col(inl) = 0 && col(inr) = 0)) => (~(Prop(v)))) 
                                             && (((~Prop(nil(l))) && (~Prop(nil(r))) && ((col(inl) != 0) || (col(inr) != 0))) => (Prop(v)))
                                             && ((Prop(v)) => (~Prop(nil(outt))))
@@ -431,25 +426,24 @@ function lbalS(t)
 //   }
 // }
 
-/* qualif Delete(v:T,k:a): (~(Set_mem(k,keys(v))))                                                                            */
-/*@ qualif Delete(v:T): bheight(v) > 0                                                                                     */
-/*@ qualif Delete(v:boolean,x:T,y:T): ((Prop(v) => (col(x) = 0)) => (col(y) = 0))                           */ 
-/*@ qualif Delete(v:boolean,x:T,y:T): ((Prop(v) => (bheight(x) = bheight(y)))) */
-/*@ qualif Delete(v:boolean,x:T,y:T): ((~(Prop(v))) => ((col(x) != 0) => ((bheight(x) = bheight(y)))))  */
-/*@ qualif Delete(v:boolean,x:T,y:T): ((~(Prop(v))) => ((col(x) = 0) => ((bheight(x) = 1 + bheight(y)))))  */
-/*@ qualif NN(v:Ref, x:T): ((Prop(nil(v))) => Prop(nil(x))) */
+/*@ qualif Delete(v:T,x:T,y:Rec): ((Prop(field_int(y, "b")) && (col(x) = 0)) => (col(v) = 0))                           */ 
+/*@ qualif Delete(v:T,x:T,y:Rec): (Prop(field_int(y, "b")) => (bheight(x) = bheight(v)))                                    */
+/*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) = 0) => (bheight(x) = 1 + bheight(v)))) */
 
-
-/*@
+/*
 rb_delete :: forall A.
-  (x:<t>+null, done:<d>, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+  (x:{v:<t>+null | (Prop(nil(v)) => Prop(nil(delin)))}, done:{v:<d> | true}, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
                             * d |-> doneIn:{ b:boolean }
-     => <r>+null/r |-> delout:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-               * d |-> doneOut:{ b:{v:boolean | (((Prop(v) && (col(delin) = 0)) => (col(delout) = 0))
+     => {v:<r>+null | (Prop(nil(v)) => Prop(nil(delout)))}/r |-> delout:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+               * d |-> doneOut:{ b:{v:boolean | (((Prop(v)) => ((col(delin) = 0) => (col(delout) = 0)))
                                                 && (Prop(v) => (bheight(delin) = bheight(delout)))
                                                 && ((~Prop(v)) => ((col(delin) != 0) => ((bheight(delin) = bheight(delout)))))
                                                 && ((~Prop(v)) => ((col(delin) = 0) => ((bheight(delin) = 1+ bheight(delout))))))}}
 */
+
+/*@ rb_delete :: forall A.
+      (x:<t>+null, done:<d>, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> * d |-> doneIn:{ b:boolean } =>
+                         <r>+null/r |-> delout:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> * d |-> doneOut:{ b:boolean }             */
 function rb_delete(x,done,k)
 {
   if (x == null) {
@@ -491,7 +485,6 @@ function rb_delete(x,done,k)
         return x;
       }
     } else {
-      assume(false);
       if (is_black(tr)) {
         x.right = rb_delete(tr,done,k);
         var b = done.b;
@@ -505,10 +498,12 @@ function rb_delete(x,done,k)
           return x;
         }
       } else {
-        x.right = rb_delete(tr,done,k);
-        // lemma_nonMem(k,x);
-        done.b = true;
-        return x;
+        var xr = rb_delete(tr,done,k);
+        var b = done.b;
+          x.right = xr;
+          // lemma_nonMem(k,x);
+          done.b = true;
+          return x;
       }
     }
   }
@@ -516,8 +511,8 @@ function rb_delete(x,done,k)
 
 /*@ 
   remove :: forall A.
-    (k:A, t:<t>+null)/t |-> y:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-      => <u>+null/u |-> z:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> | true }    
+    (k:A, t:{v:<t>+null | ((Prop(nil(v))) => Prop(nil(y)))})/t |-> y:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+      => {v:<u>+null | true}/u |-> z:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
 */
 function remove(k,t) {
   done = { b:false };

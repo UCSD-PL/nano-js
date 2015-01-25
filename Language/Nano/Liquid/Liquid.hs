@@ -563,7 +563,7 @@ consCall :: (PP a)
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 consCall g l fn es ft 
-  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
+  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> (\t -> tracePP "FOO: " (toType t) `seq` t) <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
        let (argSu, ts')      = renameBinds its xes
        (g', heapSu, hi'')   <- renameHeapBinds l g' (rheap g') (refHeap hi')
