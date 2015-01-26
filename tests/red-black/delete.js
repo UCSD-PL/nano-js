@@ -24,10 +24,10 @@ function lemma_nonMem(k,x) {
 /* qualif Presv(v:T,x:T): (col(v) = col(x)) */
 /* qualif Presv(v:T,x:T): (bheight(v) = bheight(x)) */
 
-/*@ qualif AppendTree(v:T,rpair:Rec,l:T):(bheight(v) = bheight(l) + (if (~(Prop(field_int(rpair,"grew")))) then 0 else 1)) */
-/*@ qualif AppendTree(v:Ref, l:Ref, r:Ref): ((Prop(nil(v))) <=> (Prop(nil(l)) && Prop(nil(r)))) */
-/*@ qualif AppendHeight(v:T, x:T): bheight(v) = bheight(x) */
-/*@ qualif AppendGrew(v:boolean,x:T,l:T,r:T):((((col(x) != 0)
+/* qualif AppendTree(v:T,rpair:Rec,l:T):(bheight(v) = bheight(l) + (if (~(Prop(field_int(rpair,"grew")))) then 0 else 1)) */
+/* qualif AppendTree(v:Ref, l:Ref, r:Ref): ((Prop(nil(v))) <=> (Prop(nil(l)) && Prop(nil(r)))) */
+/* qualif AppendHeight(v:T, x:T): bheight(v) = bheight(x) */
+/* qualif AppendGrew(v:boolean,x:T,l:T,r:T):((((col(x) != 0)
                                                || (col(l) = 0 && col(r) = 0)) => (~(Prop(v)))) 
                                                && ((~Prop(nil(l)) && (~(Prop(nil(r)))) && ((col(l) != 0) || (col(r) != 0))) => (Prop(v)))) */
 
@@ -338,108 +338,97 @@ function lemma_nonMem(k,x) {
                                             && (((~Prop(nil(l))) && (~Prop(nil(r))) && ((col(inl) != 0) || (col(inr) != 0))) => (Prop(v)))
                                             && ((Prop(v)) => (~Prop(nil(outt))))
                                             && (if (~(Prop(v))) then (bheight(outt) = bheight(inl)) else (bheight(outt) = 1 + bheight(inr)))) } , tree:{v:<t>+null | ((Prop(nil(v)) <=> (Prop(nil(l)) && Prop(nil(r)))) && (Prop(nil(v)) <=> Prop(nil(outt))))} }           */
-// function append(l,k,r)
-// {
-//   if (l == null)
-//     return {grew:false, tree:r};
+function append(l,k,r)
+{
+  if (l == null)
+    return {grew:false, tree:r};
 
-//   if (r == null)
-//     return {grew:false, tree:l};
+  if (r == null)
+    return {grew:false, tree:l};
 
-//   if (is_red(r)) {
-//     if (is_red(l)) {
-//       var lk = l.key;
-//       var rk = r.key;
-//       var lr = l.right;
-//       var rl = r.left;
-//       var p = append(lr, k, rl);
-//       g = p.grew;
-//       t = p.tree;
-//       if (is_red(t)) {
-//         l.right = t.left;
-//         r.left  = t.right;
-//         t.left  = l;
-//         t.right = r;
-//         t.color = 0;
-//         return {grew:true, tree:t};
-//       } else {
-//         r.left = t;
-//         l.right = r;
-//         l.color = 0;
-//         return {grew:true, tree:l};
-//       }
-//     } else {
-//       var rk  = r.key;
-//       var rl  = r.left;
-//       var p   = append(l, k, rl);
-//       g = p.grew;
-//       t = p.tree;
-//       r.left  = t;
-//       r.color = 0;
-//       var ret = { grew:true, tree:r };
-//       return ret;
-//     }
-//   } else {
-//     if (is_red(l)) {
-//       var lk = l.key
-//       var lr = l.right;
-//       var p  = append(lr, k, r);
-//       var t = p.tree;
-//       var g = p.grew;
-//       l.right = t;
-//       l.color = 0;
-//       return {grew:true, tree:l};
-//     } else {
-//       var lk = l.key
-//       var rk = r.key
-//       var lr = l.right;
-//       var rl = r.left;
-//       var p  = append(lr, k, rl);
-//       var t  = p.tree;
-//       var g  = p.grew;
-//       if (is_red(t)) {
-//         l.right = t.left;
-//         r.left  = t.right;
-//         t.left  = l;
-//         t.right = r;
-//         t.color = 1;
-//         var ret = {grew:false, tree:t};
-//         return ret;
-//       } else {
-//         if (g) {
-//           l.right = t.left;
-//           r.left = t.right;
-//           t.left = l;
-//           t.right = r;
-//           t.color = 1;
-//           ret = {grew:false, tree:t};
-//           return ret;
-//         } else {
-//           l.right = r;
-//           r.left  = t;
-//           r.color = 0;
-//           var ret = lbalS(l);
-//           return {grew:false, tree:ret};
-//         }
-//       }
-//     }
-//   }
-// }
+  if (is_red(r)) {
+    if (is_red(l)) {
+      var lk = l.key;
+      var rk = r.key;
+      var lr = l.right;
+      var rl = r.left;
+      var p = append(lr, k, rl);
+      g = p.grew;
+      t = p.tree;
+      if (is_red(t)) {
+        l.right = t.left;
+        r.left  = t.right;
+        t.left  = l;
+        t.right = r;
+        t.color = 0;
+        return {grew:true, tree:t};
+      } else {
+        r.left = t;
+        l.right = r;
+        l.color = 0;
+        return {grew:true, tree:l};
+      }
+    } else {
+      var rk  = r.key;
+      var rl  = r.left;
+      var p   = append(l, k, rl);
+      g = p.grew;
+      t = p.tree;
+      r.left  = t;
+      r.color = 0;
+      var ret = { grew:true, tree:r };
+      return ret;
+    }
+  } else {
+    if (is_red(l)) {
+      var lk = l.key
+      var lr = l.right;
+      var p  = append(lr, k, r);
+      var t = p.tree;
+      var g = p.grew;
+      l.right = t;
+      l.color = 0;
+      return {grew:true, tree:l};
+    } else {
+      var lk = l.key
+      var rk = r.key
+      var lr = l.right;
+      var rl = r.left;
+      var p  = append(lr, k, rl);
+      var t  = p.tree;
+      var g  = p.grew;
+      if (is_red(t)) {
+        l.right = t.left;
+        r.left  = t.right;
+        t.left  = l;
+        t.right = r;
+        t.color = 1;
+        var ret = {grew:false, tree:t};
+        return ret;
+      } else {
+        if (g) {
+          l.right = t.left;
+          r.left = t.right;
+          t.left = l;
+          t.right = r;
+          t.color = 1;
+          ret = {grew:false, tree:t};
+          return ret;
+        } else {
+          l.right = r;
+          r.left  = t;
+          r.color = 0;
+          var ret = lbalS(l);
+          return {grew:false, tree:ret};
+        }
+      }
+    }
+  }
+}
 
 /*@ qualif Delete(v:T,x:T,y:Rec): ((Prop(field_int(y, "b")) && (col(x) = 0)) => (col(v) = 0))                           */ 
 /*@ qualif Delete(v:T,x:T,y:Rec): (Prop(field_int(y, "b")) => (bheight(x) = bheight(v)))                                    */
 /*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) = 0) => (bheight(x) = 1 + bheight(v)))) */
-
-/*
-rb_delete :: forall A.
-  (x:{v:<t>+null | (Prop(nil(v)) => Prop(nil(delin)))}, done:{v:<d> | true}, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-                            * d |-> doneIn:{ b:boolean }
-     => {v:<r>+null | (Prop(nil(v)) => Prop(nil(delout)))}/r |-> delout:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-               * d |-> doneOut:{ b:{v:boolean | (((Prop(v)) => ((col(delin) = 0) => (col(delout) = 0)))
-                                                && (Prop(v) => (bheight(delin) = bheight(delout)))
-                                                && ((~Prop(v)) => ((col(delin) != 0) => ((bheight(delin) = bheight(delout)))))
-                                                && ((~Prop(v)) => ((col(delin) = 0) => ((bheight(delin) = 1+ bheight(delout))))))}}
-*/
 
 /*@ rb_delete :: forall A.
       (x:<t>+null, done:<d>, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> * d |-> doneIn:{ b:boolean } =>
