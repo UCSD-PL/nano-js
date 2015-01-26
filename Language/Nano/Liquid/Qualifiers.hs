@@ -17,7 +17,7 @@ import            Data.List
   
 inferQualsFromSpec :: Nano AnnTypeR RefType -> Nano AnnTypeR RefType
 inferQualsFromSpec pgm@(Nano { defs = d }) = pgm { quals = quals pgm ++ qs }
-  where qs = qualifiers d
+  where qs = [ F.Q n as p | F.Q n as p <- qualifiers d, length as < 4 ]
              
 inferQualsFromTypes :: F.SEnv (F.SortedReft) -> Nano AnnTypeR RefType -> Nano AnnTypeR RefType
 inferQualsFromTypes g pgm@(Nano { tRMeas = tm, tMeas = m, tDefs = td, consts = c }) =
