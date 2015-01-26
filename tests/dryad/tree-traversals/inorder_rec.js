@@ -2,11 +2,13 @@
 
 /*@ inorder :: 
       (x:<l>+null, n:number)/l |-> in:tree[number]
-        => {v:number | ((v = (sizep(x,out) + n)
-                     && sizep(x,out) = sizep(x,in) 
-                     && ((x = null) => order(in) = order(out)))
-                     && ((x != null) =>((inorderTree(out) = 1)&& ((order(out) = (n + lsize(out))) && (size(out) = 1 + lsize(out) + rsize(out))))))}
-           /l |-> out:tree[number]*/
+        => {v:number | ((v = (size(out) + n)
+                     && size(out) = size(in) 
+                     && lsize(out) = lsize(in) 
+                     && rsize(out) = rsize(in) 
+                     && ((~(Prop(nil(out)))) => ((inorderTree(out) = 1) && (order(out) = n + lsize(in))))
+                     && ((x = null) => order(in) = order(out))))}
+           /l |-> out:{v:tree[number] | (Prop(nil(v)) <=> Prop(nil(x)))} */
 function inorder(x, n) {
   if (x == null)
     return n;

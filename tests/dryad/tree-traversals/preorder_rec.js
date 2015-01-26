@@ -1,11 +1,12 @@
 /*@ include tree-traversals.js */
 
 /*@ preorder :: 
-      (x:<l>+null, n:number)/l |-> in:tree[number]
-        => {v:number |  (v = (n + sizep(x,in))
-                     && ((x != null) => ((preorderTree(out) = 1)
-                                     && (order(out) = n)) && sizep(x,out) = sizep(x,in))) }
-           /l |-> out:tree[number] */
+      (x:<l>+null, n:number)/l |-> xs:tree[number]
+        => {v:number |  ((v = (n + size(xs)))
+                     && ((preorderTree(ys) = 1))
+                     && ((x != null) => (order(ys) = n)) 
+                     && (size(ys) = size(xs))) }
+           /l |-> ys:{v:tree[number] | (Prop(nil(v)) <=> Prop(nil(xs)))} */
 function preorder(x, n) {
   if (x == null) {
     return n;

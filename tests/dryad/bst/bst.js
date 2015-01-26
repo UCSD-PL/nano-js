@@ -4,8 +4,8 @@
 
 /* type bst[A] = tree[A]<\h v -> h < v><\h v -> h > v>
 /*@ type tree[A] < p :: (A, A) => prop, q :: (A, A) => prop >
-      exists!   l |-> sls:tree[A<p data>]<p,q>
-              * r |-> srs:tree[A<q data>]<p,q>
+      exists!   l |-> sls:tree[A<p (field_int me "data")>]<p,q>
+              * r |-> srs:tree[A<q (field_int me "data")>]<p,q>
               . me:{ data: A, left:{v:<l>+null | (Prop(nil(v)) => Prop(nil(sls)))}, right:{v:<r>+null | (Prop(nil(v)) => Prop(nil(srs)))} } 
 
        with keys(x) =   Set_sng(field_int(me, "data")) ∪ keys(sls) ∪ keys(srs)          */

@@ -2,10 +2,10 @@
 
 /*@ postorder :: 
       (x:<l>+null, n:number)/l |-> in:tree[number]
-        => {v:number | ((v = (n + sizep(x,in)))
+        => {v:number | ((v = (n + size(in)))
                      && ((x != null) => ((postorderTree(out) = 1))
-                                     && ((order(out) = n + size(in) - 1)) && sizep(x,out) = sizep(x,in)))}
-           /l |-> out:tree[number] */
+                                     && ((order(out) = n + size(in) - 1)) && size(out) = size(in)))}
+           /l |-> out:{v:tree[number] | ((Prop(nil(v)) <=> Prop(nil(x))))} */
 function postorder(x, n) {
   if (x == null)
     return n;
