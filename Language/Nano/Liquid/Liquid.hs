@@ -210,7 +210,7 @@ envAddHeap l g σ
            ts           = map (uncurry strengthenObjBinds) (zip xs ts_pre)
            σ'           = refHeapFromTyBinds "envAddHeap" (zip ls $ mkHeapBinds xs ts)
        -- (ts',g')        <- foldM foldFresh ([],g) ts
-       let g'           = g { rheap = heapCombine "envAddHeap" [σ', rheap g] }
+       let g'           = g { rheap = tracePP "ENVADDHEAP"$ heapCombine "envAddHeap" [σ', rheap g] }
        -- g''            <- envAdds (varBinds xs ({- reverse $ -} (fmap F.top) <$> ts)) g'
        g''              <- foldM (\g j -> concretizeLoc l "consAccess" j g) g' (heapLocs σ)
        return (su, g'')
@@ -218,11 +218,11 @@ envAddHeap l g σ
     (ls,bs)            = unzip $ heapBinds σ
     varBinds           = safeZipWith "envAddHeap" (\x t -> (x, t `eSingleton` x))
     mkHeapBinds        = safeZipWith "envAddHeap" (\x t -> B x $ t `eSingleton` x)
-    foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
+    -- foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
 
 renameBinds yts xs   = (su, [F.subst su ty | B _ ty <- yts])
   where 
-    su               = F.mkSubst $ safeZipWith "renameBinds" fSub yts xs 
+    su               = F.mkSubst $ reverse $ safeZipWith "renameBinds" fSub yts xs 
     fSub yt x        = (b_sym yt, F.eVar x)
 -- checkFormal x t 
 --   | xsym == tsym = (x, t)
@@ -357,12 +357,13 @@ consReturnHeap :: CGEnv
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
-       (g,su,σ')     <- renameHeapBinds l g (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
-       let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
+       (g,su,σ')     <- renameHeapBinds l g (rheap g) (tracePP "RETURN HEAP" $ fmap (F.subst rsu) <$> refHeap σ)
+       -- let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
+       let g'        = g
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
-       subTypeHeaps l g' (rheap g') (fmap (F.subst su) <$> σ')
+       subTypeHeaps l g' (rheap g') (tracePP "SRS RETURN HEAP" $ fmap (F.subst su) <$> σ')
        return (g', rsu `F.catSubst` su, θi)
     where
       θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
@@ -486,7 +487,7 @@ dotAccessM l g f u@(TApp TUn _ _ _)
 dotAccessM _ g f t@(TApp (TRef l) _ _ _)
   = do γ <- getTDefs
        let (x,t',σ) = refHeapMakeConc "dotAccessM" l (rheap g)
-           results = fromJust $ dotAccessRef (γ, locTy g <$> rheap g) f t
+           results = fromJust $ dotAccessRef (γ, locTy "dotAccessM" g <$> rheap g) f t
        return $ [(l, foldl1 ((fst4.) . compareTs γ) (map ac_result results))]
 
 
@@ -565,22 +566,23 @@ consCall :: (PP a)
 consCall g l fn es ft 
   = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> (\t -> tracePP "FOO: " (toType t) `seq` tracePP "FOOBERT" t) <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
-       let (argSu, ts')      = renameBinds its xes
+       let (argSu, ts')      = renameBinds its $ tracePP "XES" xes
        (g', heapSu, hi'')   <- renameHeapBinds l g' (rheap g') (refHeap hi')
-       let su                = heapSu `F.catSubst` argSu
+       let su                = tracePP "CAT SUB" (heapSu `F.catSubst` argSu)
            σin               = rheap g'
        -- Substitute binders in spec with binders in actual heap
-       zipWithM_ (withAlignedM $ subTypeContainers l g') [envFindTy x g' | x <- xes] (F.subst su ts')
-       subTypeHeaps l g' σin (F.subst su <$> hi'')
+       zipWithM_ (withAlignedM $ subTypeContainers l g') [envFindTy x g' | x <- xes] (tracePP "THINGS" $ F.subst heapSu ts')
+       subTypeHeaps l g' σin (tracePP "FOOBERT2" $ F.subst argSu <$> hi'')
        let hu                = foldl (flip heapDel) (rheap g') $ heapLocs hi''
-       (_,g'')              <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
+       (_,g'')              <- envAddHeap l (g' { rheap = hu }) (tracePP "OUT HEAP" $ fmap (F.subst su) <$> ho')
        let lost  = deletedLocs σin $ rheap g''
            B rs rt = fmap (F.subst su) ot
            σ     = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
            g'''  = g'' { renv  = renv g''
                        , rheap = σ
                        }
-       g_out                <- topMissingBinds g''' (rheap g') hi' >>= envAdds [(rs, rt)]
+       g_out                <- {-- topMissingBinds g''' (rheap g') hi' >>= --} 
+                               envAdds [(rs, tracePP "OUT" rt)] g'''
        g_outconc            <- concretizeHeapSet l g_out
        g_outms              <- foldM (flip applyLocMeasEnv) g_outconc $ nub $ (heapLocs hi' ++ heapLocs σ)
        g_outmshp            <- applyMeasHeap g_outms
@@ -649,8 +651,8 @@ consObj l g pe =
     (x, g2)     <- envFreshHeapBind l loc g1
     let tob_pre  = TObj pxs mempty
     -- This creates binders in the envt for each field
-    (tob, g3)   <- freshObjBinds l g2 (x `strengthenObjBinds` tob_pre)
-    g4          <- envAdds [(x,tob)] g3
+    g3          <- envAdds [(x,tob_pre)] g2
+    g4          <- freshObjBinds l g3 x tob_pre
     (i, g5)     <- envAddFresh l tptr g4
     return (i,g5)
   where          
@@ -680,7 +682,7 @@ consWind l g (m, wls, ty, θ)
        where
          hpRead g      = heapReadType g "consWind"
          s             = srcPos l
-         toIdTyPair b  = (Id s (F.symbolString $ locSym b), locTy emptyCGEnv b)
+         toIdTyPair b  = (Id s (F.symbolString $ locSym b), locTy "consWind" g b)
          heapDiff σ ls = foldl (flip heapDel) σ ls
                          
 freshConsWind g l θ ty m

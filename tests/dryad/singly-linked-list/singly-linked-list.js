@@ -18,4 +18,5 @@ type list[A] exists! l |-> tl:list[A] .
 
 /*@ invariant {v:list[number] | ((len(v) >= 0) && ((Prop(nil(v)) => (len(v) = 0)))
                                                && ((Prop(nil(v)) => (keys(v) = Set_cap(Set_sng(0),Set_sng(1))))))} */
-
+/*@ qualif Q1(v:T,x:T,y:T): (len(v) = len(x) + len(y)) */
+/*@ qualif Q2(v:T,x:T,y:T): (keys(v) = Set_cup(keys(x),keys(y))) */

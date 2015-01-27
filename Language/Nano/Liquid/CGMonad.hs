@@ -150,7 +150,7 @@ getCGInfo :: Config -> Nano AnnTypeR RefType -> CGM a -> CGInfo
 getCGInfo cfg pgm = clear . cgStateCInfo pgm . execute cfg pgm . (>> fixCWs)
   where 
     fixCWs          = (,) <$> fixCs <*> fixWs
-    fixCs           = get >>= concatMapM splitC . cs
+    fixCs           = get >>= concatMapM splitC . map flattenRecords . cs
     fixWs           = get >>= concatMapM splitW . ws
 
 execute :: Config -> Nano AnnTypeR RefType -> CGM a -> (a, CGState)
@@ -215,8 +215,7 @@ addMeasuresM g b
          return $ addMeasures γm γt ms σ b
        where
          σ      = bind <$> rheap g
-         bind x = B (locSym x) (locTy g x)
-
+         bind x = B (locSym x) (locTy "addMeasuresM" g x) 
 ---------------------------------------------------------------------------------------
 getFun :: CGM F.Symbol
 ---------------------------------------------------------------------------------------
@@ -344,7 +343,7 @@ envFreshHeapBind l j g
 addFixpointBind :: (F.Symbolic x) => (x, RefType) -> CGM F.BindId
 addFixpointBind (x, t) 
   = do let s     = F.symbol x
-       let r     = rTypeSortedReft t
+       let r     = rTypeSortedReft $ flattenRecord t
        (i, bs') <- F.insertBindEnv s r . binds <$> get 
        modify    $ \st -> st { binds = bs' }
        return    $ i
@@ -489,7 +488,7 @@ joinHeaps l γ g g1 g2
        xs                  <- mapM (const (freshId (srcPos l))) ts
        g'                  <- envAdds (zipWith str xs ts) g
        _                   <- mapM (wellFormed l g') ts
-       (ts',g')            <- foldM foldFresh ([],g') (map (flip envFindTy g') xs)
+       g'                  <- foldM foldFresh g' (zip xs ts)
        let σj               = refHeapFromTyBinds "joinHeaps σj" $ zip both xts
            xts              = zipWith B (F.symbol <$> xs) ts
            su1              = F.mkSubst $ zip (xsyms xs) (evars σ1 both)
@@ -503,19 +502,21 @@ joinHeaps l γ g g1 g2
        -- zipWithM_ (subTypeContainers l g1) (map snd4 t4) (map (F.subst su1 <$>) ts)
        -- zipWithM_ (subTypeContainers l g2) (map thd4 t4) (map (F.subst su2 <$>) ts)
        xs'                 <- mapM (const (freshId (srcPos l))) xs
-       g'                  <- envAdds (zip xs' (reverse ts')) g'
+       -- g'                  <- envAdds (zip xs' (reverse ts')) g'
        return $ g' { rheap = rheap g'' }
            
     where
       xsyms xs           = F.symbol <$> xs
       evars σ ls         = map (F.eVar . flip (heapReadSym "joinHeaps") σ) ls
-      foldFresh (ts,g) t = freshObjBinds l g t >>= \(t',g') -> return (t':ts, g')
+      foldFresh g (x,t)  = freshObjBinds l g x t
       str x t            = (x, strengthenObjBinds x t)
       rdHeap             = heapRead "joinHeaps"
           
 concretizeLoc l msg loc g = do
-  (xt', g') <- freshObjBinds l g $ strengthenObjBinds x xt
-  envAdds [(x, xt' `eSingleton` x)] $ g' { rheap = σ' }
+  g <- freshObjBinds l g x $ strengthenObjBinds x xt
+  envAdds [(x, xt)] $ g { rheap = σ' }
+  -- (xt', g') <- freshObjBinds l x g $ strengthenObjBinds x xt
+  -- envAdds [(x, xt' `eSingleton` x)] $ g' { rheap = σ' }
   where
     (x, xt, σ') = refHeapMakeConc msg loc (rheap g)
 
@@ -555,16 +556,16 @@ freshTyInst l g αs τs tbody
        xr                  <- freshId l
        let retsu            = F.mkSubst [(rs, F.eVar xr)]
            B rs rt          = ro
-       (hisu, hi')         <- freshHeapEnv l hi
-       (hosu, ho')         <- freshHeapEnv l ((F.subst hisu <$>) <$> ho)
-       let su               = retsu `F.catSubst` hisu `F.catSubst` hosu
+       -- (hisu, hi')         <- freshHeapEnv l hi
+       (hosu, ho')         <- freshHeapEnv l ({- (F.subst hisu <$>) <$> -} ho)
+       let su               = retsu `F.catSubst` {- hisu `F.catSubst` -} hosu
        ts                  <- mapM (freshTy "freshTyInst") (F.subst su <$> τs)
        _                   <- mapM (wellFormed l g . fmap stripSubsHack) ts
        let θ                = fromLists (zip αs ts) []
            rs'              = F.symbol xr
            rt'              = F.subst su rt
            heapSu           = (fmap (F.subst su) <$>)
-           tbody' = TFun (suBind su <$> bs) (B rs' rt') (hi') ((F.subst retsu <$>)<$> ho') mempty
+           tbody' = TFun (suBind su <$> bs) (B rs' rt') (hi) ((F.subst retsu <$>)<$> ho') mempty
        return $ {- tracePP msg $ -} apply θ tbody'
     where
        suBind su b = F.subst su <$> b
@@ -637,20 +638,23 @@ freshTyPhis l g xs τs
 -- and: 1. creates a new binding xf:T in g,
 --      2. returns a new object { ...f:T'...} with
 --         T' = {v = xf}
+
+-- NEW: freshObjBinds creates  binder with reft (v = x.f) for each (f:T in { ...f:T ... })
 ---------------------------------------------------------------------------------------
-freshObjBinds :: (PP l, IsLocated l) => l -> CGEnv -> RefType -> CGM (RefType, CGEnv)
+freshObjBinds :: (PP l, IsLocated l, F.Symbolic a) => l -> CGEnv -> a -> RefType -> CGM CGEnv
 ---------------------------------------------------------------------------------------
-freshObjBinds l g (TObj bs r)
-  = do let xs  = b_sym <$> bs
-       xs'     <- tracePP "freshObjBinds" <$> mapM (refreshId l) xs
-       g'      <- envAdds (safeZip "freshObjBinds" xs' (b_type <$> bs)) g
+freshObjBinds l g x t@(TObj _ _)
+  = do let TObj bs _ = strengthenObjBinds x . rType $ t
+       let xs        = b_sym <$> bs
+       xs'     <- mapM (refreshId l) xs
+       envAdds (safeZip "freshObjBinds" xs' (b_type <$> bs)) g
        -- let bs' = safeZip "freshOBjBinds'" xs $ map (\x -> flip envFindTy g') xs'
        -- return (TObj [ B (F.symbol x) t | (x,t) <- bs' ] r, g')
-       let bs' = tracePP "bs'" [ B (b_sym b) ((`eSingleton` x) $ rType $ b_type b) |  (x,b) <- (zip xs' $ tracePP " BS" bs)]
-       return (TObj bs' r, g')
+       -- let bs' = tracePP "bs'" [ B (b_sym b) ((`eSingleton` x) $ rType $ b_type b) |  (x,b) <- (zip xs' $ tracePP " BS" bs)]
+       -- return g'
 
-freshObjBinds _ g t
-  = return (t, g)
+freshObjBinds _ g _ _
+  = return g
 
 ---------------------------------------------------------------------------------------
 freshHeapEnv :: (PP l, IsLocated l) => l -> RHeapEnv RReft -> CGM (F.Subst, RHeapEnv RReft)
@@ -679,21 +683,47 @@ updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
   l -> Location -> CGEnv -> f -> Id l -> CGM CGEnv
 ---------------------------------------------------------------------------------------
 updateFieldM l m g f y
-  = do let t_obj        = envFindTy x g
+  = do let t_obj        = tracePP "ORIGINAL OBJECT" $ envFindTy x g
            t_fld        = envFindTy y g
            x            = heapReadSym "updateField" m $ rheap g
-       (y', g')        <- envAddFresh l t_fld g
-       let t_obj'       = updateField (envFindTy y' g') s t_obj
-       t_objm          <- addMeasObjBinds g' t_obj'
-       (x', g'')       <- envFreshHeapBind l m g'
-       (t_objm', g''') <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
-       envAdds [(x',  t_objm')] g'''
+       -- (y', g')        <- envAddFresh l t_fld g
+       let t_obj'       = updateField (envFindTy y g) s t_obj
+       t_objm          <- addMeasObjBinds g t_obj'
+       (x', g')        <- envFreshHeapBind l m g
+       -- (t_objm', g''') <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
+       g'' <- envAdds [(tracePP ("NEW BINDER " ++ ppshow (rheap g')) x',  tracePP "NEW OBJECT" $ t_objm)] g'
+       freshObjBinds l g'' x' t_objm
+       -- g''' <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
+       -- envAdds [(x',  t_objm')] g'''
     where   
       s           = F.symbol f
       deref x t b = t `eSingleton` (field x b t)
 
 addMeasObjBinds g (TObj bs r)                    
     = mapM (addMeasuresM g) bs >>= \bs' -> return (TObj bs' r)
+
+------------------------------------------------------------------------
+-- | Converting records (flattening for constraints)
+------------------------------------------------------------------------
+flattenRecords :: SubC -> SubC
+flattenRecords c@(Sub e si lhs rhs) = 
+  -- Sub (e { renv = g }) si (tracePP "FLATTENED" $ flattenRecord (tracePP "ORIGINAL" lhs)) (flattenRecord rhs)
+  Sub (e { renv = g }) si lhs rhs
+  where
+    g = E.envMap flattenRecord (renv e)
+      
+flattenRecord :: RefType -> RefType 
+flattenRecord (TObj bs r) = TObj bs (foldl F.meet r rs)
+  where
+    F.Reft (vv, _) = F.toReft r
+    rs = ureft . mkRecReft vv <$> bs
+         
+flattenRecord t = t
+                 
+mkRecReft v (B f t) = (F.Reft (v, F.subst sub p))
+  where 
+    F.RR so (F.Reft (vv, p)) = rTypeSortedReft t
+    sub = F.mkSubst [(vv, (field v f t :: F.Expr ))]
 
 -- HACK
 field x y t = F.EApp (fieldSym t) [F.expr $ F.symbol x, bind2sym y]
@@ -775,11 +805,13 @@ subTypeHeaps l g σ1 σ2
                                       --       (heapReadType g "subTypeHeaps(b)" loc σ2)
     
 subTypeField l g b (x1,t1) t2 = do 
-  (t1', g_st) <- freshObjBinds l g t1
-  withAlignedM (doSubType g_st) t1' t2
+  -- (t1', g_st) <- freshObjBinds l g t1
+  -- withAlignedM (doSubType g_st) t1' t2
+  g_st <- freshObjBinds l g (F.symbol x1) t1
+  withAlignedM (doSubType g_st) t1 t2
   where doSubType g_st t1 t2 = subTypeContainers l g_st (if b then (eSingleton t1 x1) else t1) t2 
 
-nullTypeOfType :: (IsLocated l) => Id l -> RefType -> CGM RefType
+-- nullTypeOfType :: (IsLocated l) => Id l -> RefType -> CGM RefType
 nullTypeOfType x t = predsNullType x t'
   where
     vNew = F.vv Nothing
@@ -791,7 +823,7 @@ predsNullType x (TApp c@(TDef _) ts rs r)
        let as = typeRefArgs γ c
        let rs = map go as 
            θ  = fromLists (safeZip "predNull" (typeVarArgs γ c) (fmap F.top <$> ts)) []
-       return (TApp c ts (apply θ rs) r) :: CGM RefType
+       return (TApp c (tNNull <$> ts) (apply θ rs) r) :: CGM RefType
   where
     go v = PPoly [] $ tNNull $ ofType $ pv_ty v
     go v = PPoly [(s, t) | (t, s, _) <- pv_as v] $ tNNull $ ofType $ pv_ty v
@@ -922,11 +954,11 @@ renameHeapBinds l g σ1 σ2
   = do -- reshYs <- mapM (refreshId l) nys
        let nilYTs = map (rType) nyts 
        (nxs, g') <- foldM go ([], g) (zip nil nilYTs)
-       let su     = F.mkSubst (zip ys xs ++ zip nys (F.eVar . F.symbol <$> tracePP " BLAME US " nxs))
+       let su     =tracePP "renamesub" $ F.mkSubst $ reverse $ (zip ys xs ++ zip nys (F.eVar . F.symbol <$> tracePP " BLAME US " nxs))
        -- g' <- envAdds (zip freshYs nilYTs) g 
        return (g', su, (F.subst su <$>) <$> σ2)
-  where l1s = heapLocs σ1
-        l2s = heapLocs σ2
+  where l1s = heapLocs $ tracePP "SIGMA ONE" σ1
+        l2s = heapLocs $ tracePP "SIGMA TWO" σ2
         ls  = filter (`elem` l2s) l1s
         nil = filter (`notElem` l1s) l2s
         xs  = F.eVar . lx σ1 <$> ls
@@ -1458,7 +1490,7 @@ clearProp (sy, F.RR so re)
   = (clear sy, clear $ F.RR so re)
 
 envAddFieldBinders l b tObj@(TObj _ _) g
-  = do TObj bs _ <- strengthenObjBinds b <$> true tObj
+  = do TObj bs _ <- strengthenObjBinds b <$> (true tObj)
        foldM go (g, mempty) bs
   where 
     newSub su x x'    = F.catSubst su $ F.mkSubst [(x, F.eVar x')]

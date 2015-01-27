@@ -63,6 +63,7 @@ module Language.Nano.Liquid.Types (
   , isConc
   , locTy
   , locSym
+  , refHeapBinds
   
   , AnnTypeR
   ) where
@@ -104,9 +105,9 @@ data Loc r       = LocB (Bind r)
                  | LocX F.Symbol
                     deriving (Ord, Eq, Show, Functor)
                              
-locTy _ (LocB (B _ t)) = t
-locTy g (LocX x)       = maybe err id $ envFindTy x (renv g)
-  where err = error ("locTy: " ++ ppshow x)
+locTy m _ (LocB (B _ t)) = t
+locTy m g (LocX x)       = maybe err id $ envFindTy x (renv g)
+  where err = error ("locTy: " ++ m ++ ">" ++ ppshow x)
               
 locSym (LocB (B x _)) = x
 locSym (LocX x)       = x
@@ -116,6 +117,13 @@ mapLocTy _ l              = l
 
 mapLocTyM m (LocB (B x t)) = LocB <$> m (B x t)
 mapLocTyM _ l              = return l
+                             
+instance F.Symbolic (Loc r) where
+  symbol (LocB (B x _)) = x
+  symbol (LocX s)       = s
+                          
+refHeapBinds :: RefHeap -> [F.Symbol]
+refHeapBinds h = F.symbol <$> heapTypes h
 
 instance (F.Reftable a) => PP (Loc a) where
   pp (LocB b) = pp b
@@ -212,6 +220,7 @@ instance IsLocated WfC where
 type FixSubC = F.SubC Cinfo
 type FixWfC  = F.WfC  Cinfo
 
+
 ------------------------------------------------------------------------
 -- | Embedding Values as RefTypes --------------------------------------
 ------------------------------------------------------------------------
@@ -305,7 +314,7 @@ toPoly (PMono ss r) t
   = PPoly ss $ (ofType $ pv_ty t) `strengthen` r
 
 heapReadType :: CGEnv -> String -> Location -> RefHeap -> RefType
-heapReadType g = heapReadWith (locTy g)
+heapReadType g m = heapReadWith (locTy m g) m
 
 heapReadSym :: String -> Location -> RefHeap -> F.Symbol
 heapReadSym    = heapReadWith locSym

@@ -2,7 +2,7 @@
 
 /*@ insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> h <= v}> =>
-             <k>/k |-> ys:{v:list[A]<{\h v -> h <= v}> | len(v) = len(xs) + 1}
+             {v:<k> | (Prop(nil(v)) => Prop(nil(ys)))}/k |-> ys:{v:list[A]<{\h v -> h <= v}> | len(v) = len(xs) + 1}
 */
 function insert(x, k){
   if (x == null){

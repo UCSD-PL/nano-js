@@ -1,16 +1,14 @@
 /*@ include singly-linked-list.js */
 
 /*@ reverseLoop :: 
-  (i:<i>+null, j:<j>+null)
-           /i |-> is:list[number] * j |-> js:list[number]
-    => <k>+null/k |-> ks:list[number]
+  (i:<i>+null, j:<j>+null)/i |-> is:list[number] * j |-> js:list[number] =>
+  <k>+null                /k |-> ks:list[number]
 */
 function reverseLoop(i, j){
   if (i != null) {
-    var temp = i.next;
-    i.next   = j;
-    var z = i; // hehehe bug otherwise :(
-    var r    = reverseLoop(temp, z);
+    var temp = i.next
+    i.next = j;
+    var r    = reverseLoop(temp, i);
     return r;
   } else {
     return j;
