@@ -117,8 +117,8 @@ function unwind(x) {
 /*@ builtin_OpGEq       :: ({x:number|true}, {y:number|true}) => {v:boolean | ((Prop v) <=> (x >= y)) }   */
 
 //PV: @==@ and @===@ could be handled more precisely
-/*@ builtin_OpEq        :: forall A. ({x:A|true}, {y:A|true}) => {e:boolean | ((Prop e) <=> (x = y)) }    */
-/*@ builtin_OpSEq       :: forall A. ({x:A|true}, {y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
+/*@ builtin_OpEq        :: forall A. (x:{v:A|true}, y:{v:A|true}) => {e:boolean | ((Prop e) <=> (x = y)) }    */
+/*@ builtin_OpSEq       :: forall A. (v:{x:A|true}, v:{y:A|true}) => {v:boolean | ((Prop v) <=> (x = y)) }    */
 /*@ builtin_OpNEq       :: forall A B. (x:{v:A|true}, y:{v:B|true}) => {e:boolean | ((Prop e) <=> (x != y)) } */
 
 /*@ builtin_OpLAnd      :: ({x:top|true}, {y:top|true}) => {v:boolean | true}                             */

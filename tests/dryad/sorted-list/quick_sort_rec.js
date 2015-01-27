@@ -40,11 +40,10 @@ function partition(piv, x){
   var xd = x.data;
   var a = yz.x;
   var b = yz.y;
+
   if (xd < piv) {
     x.next = a
-    var ret = {};
-    ret.x = x;
-    ret.y = b;
+    var ret = {x:x, y:b};
     return ret;
   } else {
     x.next = b;

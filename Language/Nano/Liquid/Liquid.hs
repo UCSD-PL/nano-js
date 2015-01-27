@@ -357,7 +357,7 @@ consReturnHeap :: CGEnv
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
-       (g,su,σ')    <- renameHeapBinds l g (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
+       (g,su,σ')     <- renameHeapBinds l g (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
        let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
@@ -563,7 +563,7 @@ consCall :: (PP a)
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 consCall g l fn es ft 
-  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> (\t -> tracePP "FOO: " (toType t) `seq` t) <$> instantiate l g ft
+  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> (\t -> tracePP "FOO: " (toType t) `seq` tracePP "FOOBERT" t) <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
        let (argSu, ts')      = renameBinds its xes
        (g', heapSu, hi'')   <- renameHeapBinds l g' (rheap g') (refHeap hi')
@@ -585,7 +585,6 @@ consCall g l fn es ft
        g_outms              <- foldM (flip applyLocMeasEnv) g_outconc $ nub $ (heapLocs hi' ++ heapLocs σ)
        g_outmshp            <- applyMeasHeap g_outms
        return (Id l $ F.symbolString rs, g_outmshp)
-              
               
 applyMeasHeap g 
   = do bs' <- mapM (\(l,b) -> (l,) <$> mapLocTyM (addMeasuresM g) b) bs
@@ -723,7 +722,6 @@ consUnwind l g (m, ty, θl) =
     g'''           <- envAdds [(s', mapTys (flip strengthen r) $ subst su $ strengthenObjBinds s' t')] g''
     gm             <- applyLocMeasEnv m g'''
     return gm
-    -- Add "witness" for each type variable??
     -- foldM (envAdd l) gm $ apply (unwindTyApp l g m αs) (tVar <$> αs)
   where
     envAdd l g t = snd <$> envAddFresh l t g
