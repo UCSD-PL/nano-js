@@ -65,55 +65,55 @@ function lemma_nonMem(k,x) {
             lr |-> blr:{v:rbtree[{v:A | ((v < field_int(bt,"key")) && (v > field_int(bl,"key")))}]<{\x y -> x > y},{\x y -> x < y}> | (bheight(v) = bheight(bll))}
           * ll |-> bll:{v:rbtree[{v:A | ((v < field_int(bt,"key")) && (v < field_int(bl,"key")))}]<{\x y -> x > y},{\x y -> x < y}> | (bheight(v) = bheight(blr))}
           * r  |-> br:rbtree[{v:A | ((v > field_int(bt,"key")))}]<{\x y -> x > y},{\x y -> x < y}> 
-          * l  |-> bl:{ color:number, key:{v:A | (v < field_int(bt,"key"))}, left:{v:<ll>+null | (Prop(nil(v)) <=> Prop(nil(bll)))}, right:{v:<lr>+null | (Prop(nil(v)) <=> Prop(nil(blr))) }}
+          * l  |-> bl:{ color:number, key:{v:A | ((~(Prop(nil(bl)))) => (v < field_int(bt,"key")))}, left:{v:<ll>+null | (Prop(nil(v)) <=> Prop(nil(bll)))}, right:{v:<lr>+null | (Prop(nil(v)) <=> Prop(nil(blr))) }}
           * t  |-> bt:{ color:number, key:A, left:{v:<l>+null | ((bheight(br) = (if (v = null) then 1 else ((if (field_int(bl,"color") = 0) then 1 else 0) + bheight(bll)))) && (Prop(nil(v)) <=> Prop(nil(bl))))}, right:{v:<r>+null | (Prop(nil(v)) <=> Prop(nil(br)))}}
          => <x>/x |-> lbalout:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> | ((((field_int(bl,"color") != 0) 
                       && (field_Ref(bt, "left") != null) 
                       && ((col(bll) != 0 || col(blr) != 0))) <=> 
                         (col(lbalout) != 0)) && (bheight(lbalout) = 1 + bheight(br)))}
 */
-// function lbal(t)  
-// {
-//   var tc = t.color;
-//   var l  = t.left;
-//   var r  = t.right;
-//   if (l != null) {
-//     var lc = l.color;
-//     if (lc != 0) {
-//       var ll = l.left;
-//       var lr = l.right;
-//       if (is_red(ll)) {
-//         t.left   = l.right;
-//         l.right  = t;
-//         t.color  = 0;
-//         ll.color = 0;
-//         l.color  = 1;
-//         return l;
-//       } else {
-//         if (is_red(lr)) {
-//           l.right = lr.left;
-//           lr.left = l;
-//           t.left = lr.right;
-//           lr.right = t;
-//           l.color  = 0;
-//           t.color  = 0;
-//           lr.color = 1;
-//           return lr;
-//         } else {
-//           t.color = 0;
-//           return t;
-//         }
-//       }
-//     } else {
-//       t.color = 0;
-//       return t;
-//     }
-//   } else {
-//     t.left = null;
-//     t.color = 0;
-//     return t;
-//   }
-// }
+function lbal(t)  
+{
+  var tc = t.color;
+  var l  = t.left;
+  var r  = t.right;
+  if (l != null) {
+    var lc = l.color;
+    if (lc != 0) {
+      var ll = l.left;
+      var lr = l.right;
+      if (is_red(ll)) {
+        t.left   = l.right;
+        l.right  = t;
+        t.color  = 0;
+        ll.color = 0;
+        l.color  = 1;
+        return l;
+      } else {
+        if (is_red(lr)) {
+          l.right = lr.left;
+          lr.left = l;
+          t.left = lr.right;
+          lr.right = t;
+          l.color  = 0;
+          t.color  = 0;
+          lr.color = 1;
+          return lr;
+        } else {
+          t.color = 0;
+          return t;
+        }
+      }
+    } else {
+      t.color = 0;
+      return t;
+    }
+  } else {
+    t.left = null;
+    t.color = 0;
+    return t;
+  }
+}
 
          // => <x>/x |-> lbalout:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> | ((((field_int(bl,"color") != 0) 
          //              && (field_Ref(bt, "left") != null) 

@@ -162,7 +162,9 @@ execute cfg pgm act
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
 initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (consts pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
-    invs            = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]  
+    invs      = foldl' (flip $ uncurry $ M.insertWith ins) M.empty is
+    is        = [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]
+    ins i@(Loc x t) (Loc _ t') = Loc x (t `strengthen` (ureft $ F.toReft t'))
 
 getDefType f 
   = do m <- cg_defs <$> get
@@ -181,7 +183,7 @@ cgStateCInfo pgm ((fcs, fws), cg) = CGI (patchSymLits fiQs) (cg_ann cg)
                 , F.gs    = consFPBinds (count cg) pgm 
                 , F.lits  = []
                 , F.kuts  = F.ksEmpty
-                , F.quals = quals . {- inferQualsFromTypes (F.fromListSEnv fieldFuns) .-} inferQualsFromSpec $ pgm 
+                , F.quals = quals . inferQualsFromTypes (F.fromListSEnv fieldFuns) . inferQualsFromSpec $ pgm 
                 }
 
 
@@ -608,7 +610,7 @@ freshTyWind g l θ ty
       -- traceType m t        = tracePP m (toType t) `seq` t
       exp γ θ su           = subPvs su . apply θ . expandTApp γ 
       expBi γ θ su (B x t) = B x $ exp γ θ su t
-      instMeas su (id, sym, e) = (id, sym, F.subst su e)
+      instMeas su (id, syms, e1,e2) = (id, syms, F.subst su e1,F.subst su e2)
       s                    = srcPos l
       toId                 = Id s . F.symbolString . b_sym                      
       toIdTyPair b         = (toId b, b_type b)
@@ -683,18 +685,14 @@ updateFieldM :: (PP l, IsLocated l, F.Symbolic f) =>
   l -> Location -> CGEnv -> f -> Id l -> CGM CGEnv
 ---------------------------------------------------------------------------------------
 updateFieldM l m g f y
-  = do let t_obj        = tracePP "ORIGINAL OBJECT" $ envFindTy x g
+  = do let t_obj        = envFindTy x g
            t_fld        = envFindTy y g
            x            = heapReadSym "updateField" m $ rheap g
-       -- (y', g')        <- envAddFresh l t_fld g
        let t_obj'       = updateField (envFindTy y g) s t_obj
        t_objm          <- addMeasObjBinds g t_obj'
        (x', g')        <- envFreshHeapBind l m g
-       -- (t_objm', g''') <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
-       g'' <- envAdds [(tracePP ("NEW BINDER " ++ ppshow (rheap g')) x',  tracePP "NEW OBJECT" $ t_objm)] g'
+       g'' <- envAdds [(x', t_objm)] g'
        freshObjBinds l g'' x' t_objm
-       -- g''' <- freshObjBinds l g'' $ strengthenObjBinds x' t_objm
-       -- envAdds [(x',  t_objm')] g'''
     where   
       s           = F.symbol f
       deref x t b = t `eSingleton` (field x b t)
@@ -777,16 +775,9 @@ subType' msg l g t1 t2 =
 subTypeHeaps :: AnnTypeR -> CGEnv -> RefHeap -> RefHeap -> CGM ()
 -------------------------------------------------------------------------------
 subTypeHeaps l g σ1 σ2
-  -- = mapM_ subTypeLoc . snd3 $ heapSplit σ1 σ2
   = mapM_ subTypeLoc (s ++ s2)
     where
-      -- Add locs from σ2 to σ1 but with reft (v = null)
-      -- ss             = heapCombine "subTypeHeaps" s $ fmap ((`eSingleton` (F.expr "null")) . rType) s2
       (s1, s, s2)    = heapSplit σ1 σ2
-      -- subTypeLoc loc = subTypeField l g 
-      --                    (heapReadSym "subTypeHeaps(a)" loc σ1, heapReadType g "subTypeHeaps(a)" loc σ1)
-      --                    (heapReadType g "subTypeHeaps(b)" loc σ2)
-      -- veq = mkProp $ F.EApp (F.Loc F.dummyPos $ F.symbol "nil") [F.eVar (F.vv Nothing)]
       subTypeLoc loc = if heapMem loc σ1 then
                          subTypeField l g False
                                 (heapReadSym "subTypeHeaps(a)" loc σ1, 
@@ -795,18 +786,12 @@ subTypeHeaps l g σ1 σ2
                        else do
                          let t = heapReadType g "subTypeHeaps(b)" loc σ2
                          x <- freshId (srcPos l)
-                         -- tnull <- addInvariant (rType t `strengthen` (ureft $ F.predReft veq))
                          tnull <- nullTypeOfType x t
                          g <- envAdds [(x,tnull)] g
                          subTypeField l g True
-                                (x, tracePP "LEFT" tnull) (tracePP "RIGHT" t)
-                                      -- ((`strengthen` (ureft $ F.predReft veq)) . rType) $ 
-                                      --        heapReadType g "subTypeHeaps(b)" loc σ2)
-                                      --       (heapReadType g "subTypeHeaps(b)" loc σ2)
+                                (x, tnull) t
     
 subTypeField l g b (x1,t1) t2 = do 
-  -- (t1', g_st) <- freshObjBinds l g t1
-  -- withAlignedM (doSubType g_st) t1' t2
   g_st <- freshObjBinds l g (F.symbol x1) t1
   withAlignedM (doSubType g_st) t1 t2
   where doSubType g_st t1 t2 = subTypeContainers l g_st (if b then (eSingleton t1 x1) else t1) t2 
@@ -934,16 +919,8 @@ subTypeContainers' msg l g t1 t2 =
 
 alignAndStrengthen msg l g u1@(TApp TUn _ _ _) u2@(TApp TUn _ _ _) =
   getTDefs >>= return . (\γ -> bkPaddedUnion msg γ u1' u2')
-  -- getTDefs >>= return . (\γ -> map fixup $ bkPaddedUnion msg γ u1 u2)
   where 
     (u1',u2') = mapPair strengthenUnion (u1,u2)
-  -- where
-  --   (r1, r2)       = mapPair rTypeR (u1, u2)
-  --   fix t b v 
-  --     | v == b     = rTypeValueVar t
-  --     | otherwise  = v
-  --   rr t r         = F.substa (fix t b) r where F.Reft (b,_) = r
-  --   fixup (t1, t2) = (t1 `strengthen` rr t1 r1, t2 `strengthen` rr t2 r2)
  
 alignAndStrengthen msg l g t1 t2 = return [(t1, t2)]
 
@@ -954,11 +931,11 @@ renameHeapBinds l g σ1 σ2
   = do -- reshYs <- mapM (refreshId l) nys
        let nilYTs = map (rType) nyts 
        (nxs, g') <- foldM go ([], g) (zip nil nilYTs)
-       let su     =tracePP "renamesub" $ F.mkSubst $ reverse $ (zip ys xs ++ zip nys (F.eVar . F.symbol <$> tracePP " BLAME US " nxs))
+       let su     =F.mkSubst $ reverse $ (zip ys xs ++ zip nys (F.eVar . F.symbol <$> nxs))
        -- g' <- envAdds (zip freshYs nilYTs) g 
        return (g', su, (F.subst su <$>) <$> σ2)
-  where l1s = heapLocs $ tracePP "SIGMA ONE" σ1
-        l2s = heapLocs $ tracePP "SIGMA TWO" σ2
+  where l1s = heapLocs σ1
+        l2s = heapLocs σ2
         ls  = filter (`elem` l2s) l1s
         nil = filter (`notElem` l1s) l2s
         xs  = F.eVar . lx σ1 <$> ls

@@ -19,7 +19,7 @@
 /*@
 type list[A]<p :: (A, A) => prop>
         exists! l |-> tl:list[A<p data>]<p>. 
-          r:{ data : A, next : {v:<l> + null | (Prop(nil(v)) => Prop(nil(tl)))} }
+          r:{ data : A, next : <l> + null }
 
     with len(x) = (if Prop(nil(x)) then 0 else 1 + len(tl))
     and keys(x) = (if Prop(nil(x)) then Set_cap(Set_sng(1),Set_sng(0)) 

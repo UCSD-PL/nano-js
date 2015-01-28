@@ -204,7 +204,7 @@ data TBody r
         , td_pos  :: !SourceSpan    -- Source position
         } deriving (Eq, Ord, Show, Functor, Data, Typeable)
 
-type Measure = (F.Symbol, [F.Symbol], F.Expr) -- (name, v in keys(v) = ..., e)
+type Measure = (F.Symbol, [F.Symbol], F.Expr, F.Expr) -- (name, v in keys(v) = ..., e)
 
 typeRefArgs γ t@(TDef i) =
   case envFindTy i γ of
@@ -902,12 +902,16 @@ instance PP t => PP (Nano a t) where
     $+$ text "********************** TYPE DEFS *****************"
     $+$ pp (tDefs  pgm)
     $+$ text "********************** MEASURES *************"
-    $+$ (vcat . (pp <$>) . M.toList $ tMeas  pgm)
+    $+$ (vcat . (ppMeas . snd <$>) . M.toList $ tMeas  pgm)
     $+$ text "********************** QUALS *********************"
     $+$ F.toFix (quals  pgm) 
     $+$ text "********************** INVARIANTS ****************"
     $+$ pp (invts pgm) 
     $+$ text "**************************************************"
+        
+ppMeas :: Measure -> Doc
+ppMeas (x,y,z,w) = pp x <+> text "(null) ="                 <+> text (show z)
+               <+> pp x <+>text "(" <+> pp y <+> text ") =" <+> text (show w)
     
 instance Monoid (Nano a t) where 
   mempty        = Nano (Src []) envEmpty envEmpty envEmpty envEmpty M.empty M.empty [] [] 
@@ -936,9 +940,6 @@ instance Monoid (Nano a t) where
 
 mapCode :: (a -> b) -> Nano a t -> Nano b t
 mapCode f n = n { code = fmap f (code n) }
-
-instance PP (F.Symbol, [F.Symbol], F.Expr) where
-    pp (m, xs, e) = pp m <+> ppArgs parens comma xs <+> text "=" <+> text (show e)
 
 ---------------------------------------------------------------------------
 -- | Pretty Printer Instances ---------------------------------------------

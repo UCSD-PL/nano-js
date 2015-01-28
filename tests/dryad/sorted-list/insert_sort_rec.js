@@ -23,7 +23,7 @@ function insert(x, k){
 }
 
 /*@ insertion_sort ::  forall A.
-  (x:<l>+null)/l |-> ls:list[A]<{\h v -> true}>
+  (x:{v:<l>+null | (Prop(nil(v)) => Prop(nil(ls)))})/l |-> ls:list[A]<{\h v -> true}>
     => {v:<k>+null | (Prop(nil(v)) => (Prop(nil(x))))}/k |-> ys:{v:list[A]<{\x y -> (x <= y)}> | ((keys(v) = keys(ls)) && (len(v) = len(ls)))} */
 function insertion_sort(x){
   if (x == null) 

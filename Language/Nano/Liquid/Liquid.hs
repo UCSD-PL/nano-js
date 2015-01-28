@@ -210,7 +210,7 @@ envAddHeap l g σ
            ts           = map (uncurry strengthenObjBinds) (zip xs ts_pre)
            σ'           = refHeapFromTyBinds "envAddHeap" (zip ls $ mkHeapBinds xs ts)
        -- (ts',g')        <- foldM foldFresh ([],g) ts
-       let g'           = g { rheap = tracePP "ENVADDHEAP"$ heapCombine "envAddHeap" [σ', rheap g] }
+       let g'           = g { rheap = heapCombine "envAddHeap" [σ', rheap g] }
        -- g''            <- envAdds (varBinds xs ({- reverse $ -} (fmap F.top) <$> ts)) g'
        g''              <- foldM (\g j -> concretizeLoc l "consAccess" j g) g' (heapLocs σ)
        return (su, g'')
@@ -357,13 +357,13 @@ consReturnHeap :: CGEnv
 consReturnHeap g xro (ReturnStmt l _)
   = do (_,σ)         <- (apply θi <$>) <$> getFunHeaps g l
        let rsu       = F.mkSubst $ maybe [] (\(b,x) -> [(b, F.eVar $ F.symbol x)]) xro
-       (g,su,σ')     <- renameHeapBinds l g (rheap g) (tracePP "RETURN HEAP" $ fmap (F.subst rsu) <$> refHeap σ)
+       (g,su,σ')     <- renameHeapBinds l g (rheap g) (fmap (F.subst rsu) <$> refHeap σ)
        -- let g'        = g { renv = envMap (F.subst su <$>) $ renv g }
        let g'        = g
        -- "Relax" subtyping checks on *new* locations in the output heap
        -- for all x with l \in locs(x), add x:<l> <: z:T, then do
        -- subtyping under G;x:T. (If all refs are _|_ then z:_|_)
-       subTypeHeaps l g' (rheap g') (tracePP "SRS RETURN HEAP" $ fmap (F.subst su) <$> σ')
+       subTypeHeaps l g' (rheap g') (fmap (F.subst su) <$> σ')
        return (g', rsu `F.catSubst` su, θi)
     where
       θi = head $ [ fromLists [] ls | WorldInst ls <- ann_fact l ] :: RSubst RReft
@@ -564,17 +564,17 @@ consCall :: (PP a)
 --   3. Use @subTypes@ to add constraints between the types from (step 2) and (step 1)
 --   4. Use the @F.subst@ returned in 3. to substitute formals with actuals in output type of callee.
 consCall g l fn es ft 
-  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> (\t -> tracePP "FOO: " (toType t) `seq` tracePP "FOOBERT" t) <$> instantiate l g ft
+  = do (_,_,its,hi',ho',ot) <- mfromJust "consCall" . bkFun <$> instantiate l g ft
        (xes, g')            <- consScan consExpr g es
-       let (argSu, ts')      = renameBinds its $ tracePP "XES" xes
+       let (argSu, ts')      = renameBinds its xes
        (g', heapSu, hi'')   <- renameHeapBinds l g' (rheap g') (refHeap hi')
-       let su                = tracePP "CAT SUB" (heapSu `F.catSubst` argSu)
+       let su                = heapSu `F.catSubst` argSu
            σin               = rheap g'
        -- Substitute binders in spec with binders in actual heap
-       zipWithM_ (withAlignedM $ subTypeContainers l g') [envFindTy x g' | x <- xes] (tracePP "THINGS" $ F.subst heapSu ts')
-       subTypeHeaps l g' σin (tracePP "FOOBERT2" $ F.subst argSu <$> hi'')
+       zipWithM_ (withAlignedM $ subTypeContainers l g') [envFindTy x g' | x <- xes] $ F.subst heapSu ts'
+       subTypeHeaps l g' σin (F.subst argSu <$> hi'')
        let hu                = foldl (flip heapDel) (rheap g') $ heapLocs hi''
-       (_,g'')              <- envAddHeap l (g' { rheap = hu }) (tracePP "OUT HEAP" $ fmap (F.subst su) <$> ho')
+       (_,g'')              <- envAddHeap l (g' { rheap = hu }) (fmap (F.subst su) <$> ho')
        let lost  = deletedLocs σin $ rheap g''
            B rs rt = fmap (F.subst su) ot
            σ     = heapFromBinds "consCall" . filter ((`notElem` lost) . fst) . heapBinds . rheap $ g''
@@ -582,7 +582,7 @@ consCall g l fn es ft
                        , rheap = σ
                        }
        g_out                <- {-- topMissingBinds g''' (rheap g') hi' >>= --} 
-                               envAdds [(rs, tracePP "OUT" rt)] g'''
+                               envAdds [(rs, rt)] g'''
        g_outconc            <- concretizeHeapSet l g_out
        g_outms              <- foldM (flip applyLocMeasEnv) g_outconc $ nub $ (heapLocs hi' ++ heapLocs σ)
        g_outmshp            <- applyMeasHeap g_outms
@@ -697,7 +697,7 @@ freshConsWind g l θ ty m
          return (g, σenv'', (x', tw'), t', ms')
     where
       x'                  = hpRead m (rheap g)
-      subMeas su (f,as,e) = (f, as, F.subst su e)
+      subMeas su (f,as,e1, e2) = (f, as, F.subst su e1, F.subst su e2)
       hpRead              = heapReadSym "freshConsWind"
 
 ---------------------------------------------------------------------------------
@@ -709,7 +709,7 @@ consUnwind l g (m, ty, θl) =
     g              <- if (isConc "consAccess" m $ rheap g) then
                          return g
                        else
-                         seq (tracePP "FIX ME" "sketchy") concretizeLoc l "consAccess" m g
+                         concretizeLoc l "consAccess" m g
     (σ',t',hsu)    <- unwindInst l (unwindTyApp l g m αs) θl πs (rs g) (σ, t)
     ms             <- getRMeasures ty
     (s',g')        <- envFreshHeapBind l m g

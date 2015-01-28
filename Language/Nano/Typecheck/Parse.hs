@@ -64,27 +64,31 @@ tBodyP = do  id  <- identifierP
              th  <- option heapEmpty extHeapP
              ts  <- option (stringSymbol "vt") (try (symbolP >>= \b -> colon >> return b ))
              tb  <- bareTypeP
-             ms  <- option [] (reserved "with" >> spaces >> typeMeasuresP)
+             ms  <- option [] typeMeasuresP
              return $ (id, TBd $ TD (TDef id) ts tv trs th tb (idLoc id), ms)
 --     foo (x) = e
 -- and bar (x) = e
 typeMeasuresP = do
   m  <- typeMeasureP
   spaces
-  ms <- option [] $ do
-                  reserved "and"
-                  spaces
-                  typeMeasuresP
+  ms <- option [] typeMeasuresP
   return $ m:ms
 
 -- keys(x) := e         
 typeMeasureP = do
+  spaces
   id <- symbolP
   spaces
-  v  <- parens $ sepBy symbolP comma
+  parens $ (reserved "null")
   spaces >> reserved "=" >> spaces
-  e  <- exprP
-  return (id, v, e)
+  nullE <- exprP
+  spaces
+  id' <- symbolP
+  when (id /= id') $ error $ "Measure " ++ (symbolString id) ++  "should be defined null then non-null"
+  v  <- parens symbolP
+  spaces >> reserved "=" >> spaces
+  nnullE  <- exprP
+  return (id, [v], nullE, nnullE) 
   
 -- [A,B,C...]
 tParP = brackets $ sepBy tvarP comma
@@ -455,7 +459,7 @@ filePathP
 measureP :: Parser (PSpec SourceSpan RefType)                     
 measureP 
   = (try (Meas <$> idBindP))
-    <|> (try (MBody <$> measureImpP))
+    -- <|> (try (MBody <$> measureImpP))
 
 measureImpP
   = do m    <- symbolP
@@ -481,8 +485,7 @@ strengthenSingletons (TFun xts rt hi ho r) = TFun xts' rt' hi ho r
     -- str :: RHeapEnv -> Bind RReft -> Location -> Bind RReft
     maybeStr h xt l = if isTauto . rTypeReft $ b_type xt then str h xt l else xt
     str h xt l = B (b_sym xt) (b_type xt `strengthen` p (b_sym $ heapRead "strSingletons" l h))
-    p :: Symbol -> RReft
-    p x     = ureft $ predReft (PImp (isNil (vv Nothing)) (isNil (symbol x)))
+    p x        = ureft $ predReft (PImp (isNil (vv Nothing)) (isNil (symbol x)))
 strengthenSingletons t = t
 
 buildMap :: [Bind RReft] -> [(Symbol, Location)] 
@@ -509,17 +512,25 @@ parseSpecFromFile f = do pspecs <- parseFromFile (specWraps specP) f
 --          return (mkSpec xs `mappend` (mconcat specs))
 --     where
 
-mkSpec    ::  (PP t, IsLocated l) => [PSpec l t] -> Nano a t
+mkSpec    ::  (IsLocated l) => [PSpec l RefType] -> Nano a RefType
 mkSpec xs = Nano { code   = Src [] 
                  , specs  = envFromList [b | Bind b <- xs] 
                  , defs   = envEmpty
                  , consts = envFromList [(switchProp i, t) | Meas (i, t) <- xs]
-                 , tMeas  = M.fromList  [(i,(i,as,e))     | MBody (i, as, e) <- xs]
+                 , tMeas  = M.fromList  [(i,(i,as,e1,e2)) | MBody (i, as, e1, e2) <- xs]
                  , tRMeas = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
                  , tDefs  = envFromList [(i,t)        | Type (i,t,_) <- xs]
                  , quals  =             [q            | Qual q <- xs]
-                 , invts  =             [Loc l' t     | Invt l t <- xs, let l' = srcPos l]
+                 , invts  = [Loc l' t | Invt l t <- xs, let l' = srcPos l] 
+                                                                 -- ++ invsOfMeas xs
                  }
+
+invsOfMeas xs = []
+  where
+    tes = [ str i m e | (Type (i,_,ms)) <- xs, (m,_,e,_) <- ms ] -- [ Type (_,_,m)]
+    str t m e  = Loc dummySpan $ TApp (TDef t) [] [] $ r m e
+    r m e = ureft $ predReft $ app m e
+    app m e = PImp (isNil (vv Nothing)) $ PAtom Eq (EApp (dummyLoc m) [expr (vv Nothing)]) e
 
 -- YUCK. Worst hack of all time.
 switchProp i@(Id l x) 

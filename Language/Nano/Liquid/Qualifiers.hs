@@ -26,24 +26,32 @@ inferQualsFromTypes g pgm@(Nano { tRMeas = tm, tMeas = m, tDefs = td, consts = c
 qualsOfTyMeasures g td m c = concatMap (qualsOfMeasures g td c) $ M.toList m 
 
 -- qualsOfMeasures :: F.SEnv (F.SortedReft) -> Env RefType -> (F.Symbol, [Measure]) -> [F.Qualifier]       
-qualsOfMeasures g td cenv (f, ms) = map (qualOfMeasure g' cenv) ms 
+qualsOfMeasures g td cenv (f, ms) = concatMap (qualOfMeasure g' cenv) ms 
   where g' = foldl' (flip $ uncurry F.insertSEnv) g [ (x, rTypeSortedReft t) | (B x t) <- heapTypes h ]
         (TBd (TD {td_heap = h})) = fromMaybe (error "qualsOfMeasures") $ envFindTy f td
                                
-qualOfMeasure :: F.SEnv (F.SortedReft) -> Env RefType -> Measure -> F.Qualifier
-qualOfMeasure g cenv (k, [x], e) = F.Q "AutoMeasure" ((vv,vvso):qargs) (F.subst sub p)
+qualOfMeasure :: F.SEnv (F.SortedReft) -> Env RefType -> Measure -> [F.Qualifier]
+qualOfMeasure g cenv (k, [x], e1, e2) = 
+  [F.Q "AutoMeasure" ((vv,vvso):qargs1) (F.subst sub1 p1)
+  ,F.Q "AutoMeasure" ((vv,vvso):qargs2) (F.subst sub2 p2)]
   where
-    p = F.PAtom F.Eq lhs rhs
+    p1 = F.PAtom F.Eq lhs rhs1
+    p2 = F.PAtom F.Eq lhs rhs2
     -- Wow...
-    lhs = F.EApp (F.Loc F.dummyPos (F.suffixSymbol k "p")) [F.eVar vv, F.eVar x]
+    lhs = F.EApp (F.Loc F.dummyPos k) [F.eVar vv]
     vv  = F.symbol "v"
-    vvso = refSort
+    vvso = tdefSort
+    (qargs1, sub1, rhs1) = bodyOfExpr g x e1
+    (qargs2, sub2, rhs2) = bodyOfExpr g x e2
+           
+bodyOfExpr g x e = (qargs, sub, rhs)
+  where
     (fs, rhs) = removeApps e
     varsorts  = catMaybes $ map (maybeSort g) $ F.syms rhs
-    vsorts  = [(v, t) | (v, t) <- map (\(f, newv) -> (newv, goSort f g)) fs ]
-    ivsorts = zipWith (\(v,t) i -> ("~A"++show i, v, t)) (nub $ (x,tdefSort):vsorts ++ varsorts) [0..]
-    qargs    = [ (F.symbol i, t) | (i, _, t) <- ivsorts ]
-    sub     = F.mkSubst ([ (v, F.eVar i) | (i, v, _) <- ivsorts])
+    vsorts    = [(v, t) | (v, t) <- map (\(f, newv) -> (newv, goSort f g)) fs ]
+    ivsorts   = zipWith (\(v,t) i -> ("~A"++show i, v, t)) (nub $ vsorts ++ varsorts) [0..]
+    qargs     = [ (F.symbol i, t) | (i, _, t) <- ivsorts ]
+    sub       = F.mkSubst ([ (v, F.eVar i) | (i, v, _) <- ivsorts])
               
 maybeSort g l = F.lookupSEnv l g >>= \r -> return (l, F.sr_sort r)
             

@@ -35,16 +35,19 @@ instMeasures args ms = foldl joinRefts (ureft $ predReft PTrue) ms
     where
       joinRefts r m = r `meet` instMeasure args m
 
+  -- return (id, [v], EIte (isNil v) nullE nnullE)
 --------------------------------------------------------------------------------
 instMeasure :: Symbolic s => [s] -> Measure -> RReft
 --------------------------------------------------------------------------------
-instMeasure args (foo, fargs, expr) = ureft . predReft $ PAtom Eq lhs rhs
+instMeasure [a] (foo, [f], expr1, expr2) = ureft . predReft $ PAtom Eq lhs rhs
   where
-    eargs = eVar <$> args
-    su    = mkSubst $ zip fargs eargs
-    lhs   = EApp (Loc dummyPos foo) eargs
+    su    = mkSubst $ [(f, eVar a)]
+    lhs   = EApp (Loc dummyPos foo) [eVar a]
     rhs   = subst su expr
+    expr  = EIte (isNil a) expr1 expr2
             
+instMeasure _ _ = ureft $ predReft PTrue
+
 --------------------------------------------------------------------------------
 addMeasures :: REnv -> REnv -> [Measure] -> RHeapEnv RReft -> Bind RReft
             -> Bind RReft
@@ -54,22 +57,22 @@ addMeasures γm γt mdefs σ t = foldl (addMeasure γm γt σ) t mdefs
 --------------------------------------------------------------------------------
 addMeasure :: REnv -> REnv -> RHeapEnv RReft -> Bind RReft -> Measure -> Bind RReft
 --------------------------------------------------------------------------------
-addMeasure γm γt σ b@(B x t) m@(_,[a],_)
+addMeasure γm γt σ b@(B x t) m@(_,[a],_,_)
     = maybe b (B x . strengthen t)
       $ addMeasure' γm γt [B (vv Nothing) t] m
 
-addMeasure γm γt σ b@(B x t) m@(_,[a1,a2],_)
-    | length ls == 1 && l `elem` heapLocs σ = try hb m
-    -- | toType t == tNull                     = try nil m
-    | otherwise                             = b
-      where
-        ls    = if isFalseR t then [] else refLocs t
-        l     = head ls
-        hb    = heapRead "addMeasure" l σ
-        bv    = B (vv Nothing) t
-        app p = B x (t `strengthen` p)
-        try h = maybe b app . addMeasure' γm γt [bv,h]
-        nil   = nilBind :: Bind RReft
+-- addMeasure γm γt σ b@(B x t) m@(_,[a1,a2],_)
+--     | length ls == 1 && l `elem` heapLocs σ = try hb m
+--     -- | toType t == tNull                     = try nil m
+--     | otherwise                             = b
+--       where
+--         ls    = if isFalseR t then [] else refLocs t
+--         l     = head ls
+--         hb    = heapRead "addMeasure" l σ
+--         bv    = B (vv Nothing) t
+--         app p = B x (t `strengthen` p)
+--         try h = maybe b app . addMeasure' γm γt [bv,h]
+--         nil   = nilBind :: Bind RReft
 
 addMeasure γm γt σ t _ = t
 
@@ -77,7 +80,7 @@ refLocs (TApp TUn ts _ _)     = concatMap refLocs ts
 refLocs (TApp (TRef l) _ _ _) = [l]                         
 refLocs _                     = []                         
 
-addMeasure' γm γt ts m@(foo, fargs, expr)
+addMeasure' γm γt ts m@(foo, fargs, expr1, expr2)
     | tcMeasure γt (b_type <$> ts) (envFindTy foo γm) = Just p
     | otherwise                                       = Nothing
     where
