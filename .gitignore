@@ -32,6 +32,7 @@ _build
 *.swo
 *.smt2
 /Paths_nano_js.hs
+*#
 
 TAGS
 a.out

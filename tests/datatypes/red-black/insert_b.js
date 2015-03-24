@@ -1,0 +1,168 @@
+/*@ include red-black.js */
+
+/* rotate_right :: forall K K2 L R R2.
+     (p:<t>)/t |-> it:{ color:number, key:K, left:<l>, right:R  } 
+           * l |-> il:{ color:number, key:K2, left:L, right:R2 } 
+        => <l>/l |-> ol:{ color:{v:number | v = 0}, key:{v:K2 | v < field(ot,"key")}, left:L, right:<t>} 
+             * t |-> ot:{ color:{v:number | v != 0}, key:{v:K | v > field(ol,"key")}, left:R2, right:R }*/
+/*@ rotate_right :: forall K K2 L R R2.
+     (p:<t>)/t |-> it:{ color:number, key:K, left:<l>, right:R  } 
+           * l |-> il:{ color:number, key:K2, left:L, right:R2 } 
+        => <l>/l |-> ol:{ color:number, key:K2, left:L, right:<t>} 
+             * t |-> ot:{ color:number, key:K, left:R2, right:R }*/
+function rotate_right(p) {
+  var pl  = p.left;
+  var plr = pl.right;
+  p.left = plr;
+  pl.right = p;
+  pl.color = 0;
+  p.color  = 1;
+  return pl;
+}
+
+/*@ qualif DooHickey(v:a,x:b): v < field(x,"key") */
+/*@ qualif DooHickey(v:a,x:b): v > field(x,"key") */
+/*@ qualif DooHickey(v:a,x:b): v = field(x,"key") */
+/*@ qualif DooHickey(v:a,x:b): v = field(x,"left") */
+/*@ qualif DooHickey(v:a,x:b): v = field(x,"right") */
+/*@ qualif DooHickey(v:a,x:b): v = field(x,"color") */
+/*@ qualif DooHickey(v:a,x:b): field(v,"color") = field(x,"color") */
+/*@ qualif DooHickey(v:a,x:b): field(v,"key")   = field(x,"key") */
+/*@ qualif DooHickey(v:a,x:b): field(v,"left")  = field(x,"left") */
+/*@ qualif DooHickey(v:a,x:b): field(v,"right") = field(x,"right") */
+/*@ qualif DooHickey(v:a,x:b): field(v,"left")  = field(x,"right") */
+                                      
+// /* qualif PApp(v:a, v2:b): (Upapp2 f v2 v) */
+// /* qualif PApp(v:a, v2:b): (papp2 g v2 v) */
+// /* qualif PApp(v:a): (papp1 h v) */
+
+/*@ qualif IsRed(v:a): (((Prop v) <=> (colorp(x,in) != 0))
+                      && (colorp(x,out) = colorp(x,in))
+                      && (bheightp(x,out) = bheightp(x,in))) */
+
+/*@ is_red :: forall A.
+                (x:<t>+null)/t |-> in:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+                  => ret:{b:boolean | (((Prop b) <=> (colorp(x,in) != 0))
+                      && (colorp(x,out) = colorp(x,in))
+                      && (bheightp(x,out) = bheightp(x,in)))}/t |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
+/* is_red :: forall A.
+                (x:<t>+null)/t |-> in:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
+                  => boolean/t |-> out:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  */
+function is_red(x) {
+  if (x == null) {
+    return false;
+  } else {
+    var xc = x.color; 
+    return (xc != 0);
+  }
+}
+
+// /*@ qualif QApp(v:a): (papp1 q v) */
+// /* qualif GTField(v:a,x:a): (v > field(x, "key")) */
+
+ /*@
+   insert :: forall A.
+     (p:<t>+null, k:A)/t |-> in:rbtree[A]<{\h v -> v < h},{\h v -> v > h}>
+          => {v:<u>+null | v != null}
+             / a |-> lft:rbtree[{v:A | v < field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+             * b |-> rgt:rbtree[{v:A | v > field(out,"key")}]<{\h v -> v < h},{\h v -> v > h}>
+             * u |-> out:{ color : { v:number | (((v != 0) => (bheightp(p,in) =     bheightp(field(out,"left"),lft))) &&
+                                                 ((v != 0) => (bheightp(p,in) =     bheightp(field(out,"right"),rgt))) &&
+                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field(out,"left"),lft))) &&
+                                                 ((v = 0)  => (bheightp(p,in) = 1 + bheightp(field(out,"right"),rgt))) &&
+                                                 ((v = 0) || (((colorp(field(out,"left"),lft) = 0) || (colorp(field(out,"right"),rgt) = 0)) 
+                                                           && ((colorp(p,in) != 0) || ((colorp(field(out,"left"),lft) = 0) && (colorp(field(out,"right"),rgt) = 0))))))
+                                                }
+                         , key:   A
+                         , left:  {v:<a>+null  | (bheightp(v,lft) = bheightp(field(out,"right"),rgt)) }
+                         , right: {v:<b>+null  | (bheightp(v,rgt) = bheightp(field(out,"left"),lft))  }
+                         }
+
+*/
+function insert (p,k) {
+  assume(p != null);
+
+  var pk = p.key;
+  if (pk == k) {
+    var pl = p.left;
+    return p;
+  } else {
+    if (k < pk) {
+      p.left = insert(p.left, k);
+      var pl  = p.left;
+      var plc = pl.color;
+      if (plc != 0) { // RED
+        var pr = p.right;
+        if (is_red(pr)) {
+          pl.color = 0; 
+          pr.color = 0; 
+          p.color  = 1;
+          return p;
+        } else {
+          var pll = pl.left;
+          if (is_red(pll)) {
+            var p = rotate_right(p);
+            // var xxx = p.right;
+            // var zzz = xxx.left;
+            // assert(false);
+  // var pl  = p.left;
+  // var plr = pl.right;
+  // p.left = plr;
+  // pl.right = p;
+  // pl.color = 0;
+  // p.color  = 1;
+  // return pl;
+            return p;
+          } else {
+            assume(false);
+            var plr = pl.right;
+            if (is_red(plr)) {
+              plr.color = 0;
+              p.left = rotate_left(pl);
+              var p = rotate_right(p);
+              return p; 
+            }  else {
+              assume(false);
+              return p;
+            }
+          }
+        }
+      } else {
+        return p;
+      }
+    } else {
+      assume(false);
+      return p;
+    //   p.right = insert(p.right, k);
+    //   var pr  = p.right;
+    //   var prc = pr.color;
+    //   if (prc != 0) { // RED
+    //     var pl = p.left;
+    //     if (is_red(pl)) {
+    //       pr.color = 0; 
+    //       pl.color = 0; 
+    //       p.color  = 1;
+    //       return p;
+    //     } else {
+    //       var prr = pr.right;
+    //       if (is_red(prr)) {
+    //         var p = rotate_left(p);
+    //         return p;
+    //       } else {
+    //         var prl = pr.left;
+    //         if (is_red(prl)) {
+    //           prl.color = 0;
+    //           p.right = rotate_right(pr);
+    //           var p = rotate_left(p);
+    //           return p; 
+    //         }  else {
+    //           return p;
+    //         }
+    //       }
+    //     }
+    //   } else {
+    //     return p;
+    //   }
+    }
+  }
+}
