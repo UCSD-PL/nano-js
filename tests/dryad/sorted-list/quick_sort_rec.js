@@ -1,5 +1,8 @@
 /*@ include sorted-list.js */
 
+/*@ qualif Keys1(v:T,x:T,y:T): (keys(v) = Set_cup(keys(x),keys(y))) */
+/*@ qualif Keys2(v:T,x:T,y:T): (keys(x) = Set_cup(keys(v),keys(y))) */
+
 /*@ append :: forall A.
   (xk:A, ls:<l>+null, gs:<g>+null)/l |-> ll:list[A]<{\h e -> true }>* g |-> gg:list[A]<{\h e -> true }>
     => <k>+null/k |-> kk:list[A]<{\h e -> true }>                                             */
@@ -52,9 +55,13 @@ function partition(piv, x){
   }
 }
 
+/* quickSort :: forall A.
+      (x:<x>+null)/x |-> in:list[A]<{\h e -> true}>
+        => <o>+null/
+           o |-> out:{v:list[A]<{\h e -> h <= e }> | (keys(v) = keys(in))}*/ 
 /*@ quickSort :: forall A.
       (x:<x>+null)/x |-> in:list[A]<{\h e -> true}>
-        => r:{e:<o>+null | (Prop(nil(e)) => Prop(nil(x)))}/
+        => <o>+null/
            o |-> out:{v:list[A]<{\h e -> h <= e }> | ((len(v) = len(in)) && (keys(v) = keys(in)))}*/ 
 function quickSort(x) {
   if (x == null){

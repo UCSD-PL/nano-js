@@ -24,19 +24,19 @@ function lemma_nonMem(k,x) {
 /*@ qualif Presv(v:T,x:T): (bheight(v) = bheight(x)) */
 /*@ is_black :: forall A.
                 (x:{v:<t>+null | ((Prop(nil(v))) <=> (Prop(nil(isin))))})/t |-> isin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
-                  => {v:boolean | (((Prop v) <=> ((~Prop(nil(isin))))) && (col(isin) = 0))}/t |-> isout:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  | ((Prop(nil(v)) <=> Prop(nil(isin))) && (bheight(v) = bheight(isin)) && (col(v) = col(isin)) && (keys(v) = keys(isin)))} */
-// function is_black(x) 
-// {
-//   if (x == null) 
-//   {
-//     return false;
-//   } 
-//   else 
-//   {
-//     var xc = x.color; 
-//     return (xc == 0);
-//   }
-// }
+                  => {v:boolean | ((Prop v) <=> ((~Prop(nil(isin))) && (col(isin) = 0)))}/t |-> isout:{v:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>  | ((Prop(nil(v)) <=> Prop(nil(isin))) && (bheight(v) = bheight(isin)) && (col(v) = col(isin)) && (keys(v) = keys(isin)))} */
+function is_black(x) 
+{
+  if (x == null) 
+  {
+    return false;
+  } 
+  else 
+  {
+    var xc = x.color; 
+    return (xc == 0);
+  }
+}
 
 /*@ is_red :: forall A.
                 (x:{v:<t>+null | ((Prop(nil(v))) <=> (Prop(nil(inr))))})/t |-> inr:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
@@ -44,18 +44,18 @@ function lemma_nonMem(k,x) {
 /* is_red :: forall A.
                 (x:<t>+null)/t |-> inr:rbtree[A]<{\x y -> x > y},{\x y -> x < y}>
                   => boolean/t |-> outr:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> */
-// function is_red(x) 
-// {
-//   if (x == null) 
-//   {
-//     return false;
-//   } 
-//   else 
-//   {
-//     var xc = x.color; 
-//     return (xc != 0);
-//   }
-// }
+function is_red(x) 
+{
+  if (x == null) 
+  {
+    return false;
+  } 
+  else 
+  {
+    var xc = x.color; 
+    return (xc != 0);
+  }
+}
 
 // DONT KNOW THING IS NULL AFTER FOLDING??????
 
@@ -361,6 +361,8 @@ function lbal(t)
 /*@ qualif Delete(v:T,x:T,y:Rec): ((Prop(field_int(y, "b")) && (col(x) = 0)) => (col(v) = 0))                           */ 
 /*@ qualif Delete(v:T,x:T,y:Rec): (Prop(field_int(y, "b")) => (bheight(x) = bheight(v)))                                    */
 /*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) = 0) => (bheight(x) = 1 + bheight(v)))) */
+/*@ qualif Delete(v:T,x:T,y:Rec): ((~(Prop(field_int(y,"b")))) => ((col(x) != 0) => (bheight(x) = bheight(v)))) */
+
 
 /*@ rb_delete :: forall A.
       (x:<t>+null, done:<d>, k:A)/t |-> delin:rbtree[A]<{\x y -> x > y},{\x y -> x < y}> * d |-> doneIn:{ b:boolean } =>

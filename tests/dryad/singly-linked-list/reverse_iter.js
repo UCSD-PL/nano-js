@@ -16,7 +16,7 @@ function reverseLoop(i, j){
 }
 
 /*@ reverse ::
-  (x:<x>)/x |-> xs:list[number] => <y>/y |-> ys:{v:list[number] | ((len(v) = len(xs)) && keys(v) = keys(xs))} */
+  (x:<x>)/x |-> xs:list[number] => <y>/y |-> ys:{v:list[number] |((len(v) = len(xs)) &&  (keys(v) = keys(xs)))} */
 function reverse(x){
   var r = reverseLoop(x,null);
   return r;

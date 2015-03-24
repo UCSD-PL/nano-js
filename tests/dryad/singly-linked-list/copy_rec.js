@@ -3,7 +3,7 @@
 /*@
   copy ::
     (x:<l>+null)/l |-> xs:list[number]
-      => {v:<m>+null | (((Prop(nil(v)) <=> (Prop(nil(x))))))}/l |-> xss:{v:list[number] | ((Prop(nil(v)) <=> Prop(nil(xs))) && (len(v) = len(xs)))} * m |-> ms:{v:list[number] | len(v) = len(xs)}
+      => {v:<m>+null | (((Prop(nil(v)) <=> (Prop(nil(x))))))}/l |-> xss:{v:list[number] | ((Prop(nil(v)) <=> Prop(nil(xs))) && (len(v) = len(xs)) && (keys(v) = keys(xs)))} * m |-> ms:{v:list[number] | ((len(v) = len(xs)) && (keys(v) = keys(xs)))}
 */
 function copy(x){
   if (x == null){

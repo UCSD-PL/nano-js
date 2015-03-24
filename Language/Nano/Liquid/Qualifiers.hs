@@ -33,13 +33,16 @@ qualsOfMeasures g td cenv (f, ms) = concatMap (qualOfMeasure g' cenv) ms
 qualOfMeasure :: F.SEnv (F.SortedReft) -> Env RefType -> Measure -> [F.Qualifier]
 qualOfMeasure g cenv (k, [x], e1, e2) = 
   [F.Q "AutoMeasure" ((vv,vvso):qargs1) (F.subst sub1 p1)
-  ,F.Q "AutoMeasure" ((vv,vvso):qargs2) (F.subst sub2 p2)]
+  ,F.Q "AutoMeasure" ((vv,vvso):qargs2) (F.subst sub2 p2)
+  ,F.Q "AutoMeasure" [(vv,vvso),(x',vvso)] (F.PAtom F.Eq lhs (F.subst1 lhs (vv, F.eVar x')))
+  ]
   where
     p1 = F.PAtom F.Eq lhs rhs1
     p2 = F.PAtom F.Eq lhs rhs2
     -- Wow...
     lhs = F.EApp (F.Loc F.dummyPos k) [F.eVar vv]
     vv  = F.symbol "v"
+    x'  = F.symbol "~A"
     vvso = tdefSort
     (qargs1, sub1, rhs1) = bodyOfExpr g x e1
     (qargs2, sub2, rhs2) = bodyOfExpr g x e2

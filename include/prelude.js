@@ -80,32 +80,6 @@ function unwind(x) {
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
-/* type inflist[A]  exists! l |-> xs:inflist[A]. r:{  data : A, next : <l> }*/
-
-/* cons  :: forall A. (A, <m> + null)/m |-> list[A] => <l>/l |-> list [A]                        */
-/* head  :: forall A. (xs:<l>)/l |-> list [A] => A/same                                          */
-/* tail  :: forall A. (xs:<l>)/l |-> list [A] => <m>+null/l |-> { data : A, next :<m>+null} * m |-> list[A] */ 
-/* nth   :: forall A. (xs:list [A], {i:number| ((0 <= i) && i < (len xs))}) => A                 */
-/* empty :: forall A. (xango:<l> + null)/l |-> list[A] => 
-                        {v: boolean | ((Prop v) <=> (ttag(xango) = "null"))}/same                 */
-/* emptyPoly :: forall A. (x:A) => {v: boolean | ((Prop v) <=> ((ttag x) = "null"))}             */
-
-
-/* length   :: forall A. (xs:list [A]) => {v:number | ((v >= 0) && v = (len xs))}                */
-/* safehead :: forall A. ({xs:list [A] | (len xs) > 0}) => A                                     */
-/* safetail :: forall A. ({xs:list [A] | (len xs) > 0}) => {v:list [A] | (len v) = (len xs) - 1} */
-
-
-
-
-/*************************************************************************/
-/************************* Type Conversions ******************************/
-/*************************************************************************/
-/*@ sstring  :: forall A. (x: A) => string                                                         */
-
-
-
-
 
 /*************************************************************************/
 /************** Types for Builtin Operators ******************************/

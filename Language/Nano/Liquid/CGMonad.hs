@@ -162,9 +162,7 @@ execute cfg pgm act
 initState       :: Config -> Nano AnnTypeR RefType -> CGState
 initState c pgm = CGS F.emptyBindEnv Nothing (defs pgm) (consts pgm) (tDefs pgm) (tMeas pgm) (tRMeas pgm) [] [] 0 mempty invs c 
   where 
-    invs      = foldl' (flip $ uncurry $ M.insertWith ins) M.empty is
-    is        = [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]
-    ins i@(Loc x t) (Loc _ t') = Loc x (t `strengthen` (ureft $ F.toReft t'))
+    invs = M.fromList [(tc, t) | t@(Loc _ (TApp tc _ _ _)) <- invts pgm]
 
 getDefType f 
   = do m <- cg_defs <$> get

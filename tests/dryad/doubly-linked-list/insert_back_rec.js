@@ -2,10 +2,9 @@
 
 /*@
   insert :: forall P.
-    (x:<l>+null, k:number)/l |-> xs:dlist[number,<l>,P]
-       => r:{v:<k> | ((dlenp(v,ks) = 1+dlenp(x,xs))
-                   && (dkeysp(v,ks) = dkeysp(x,xs) ∪1 k)) }
-         /k |-> ks:dlist[number,<k>,null]
+    (x:<x>+null, k:number)/x |-> xs:dlist[number,<x>,P]
+       => r:<j>/j |-> js:{v:dlist[number,<j>,null] | (((len v) = 1 + (len xs))
+                                                  && ((keys v) = (Set_cup (Set_sng k) (keys xs))))}
 */
 function insert(x, k){
   if (x != null){

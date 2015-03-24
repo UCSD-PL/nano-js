@@ -1,6 +1,7 @@
 /*@ include sorted-list.js */
 
-/*@ insert :: forall A.
+/*@ 
+insert :: forall A.
   (x:<l>+null, k:A)/l |-> xs:list[A]<{\h v -> h <= v}> =>
              {v:<k> | (Prop(nil(v)) => Prop(nil(ys)))}/k |-> ys:{v:list[A]<{\h v -> h <= v}> | len(v) = len(xs) + 1}
 */

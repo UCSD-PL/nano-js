@@ -30,6 +30,7 @@ import           Language.Fixpoint.Parse
 import           Language.Nano.Errors
 import           Language.Nano.Files
 import           Language.Nano.Types
+import           Language.Nano.Misc (fst4)
 import           Language.Nano.Typecheck.Types
 import           Language.Nano.Typecheck.Heaps
 import           Language.Nano.Liquid.Types
@@ -63,11 +64,17 @@ tBodyP = do  id  <- identifierP
              trs <- option [] predVarDefsP
              th  <- option heapEmpty extHeapP
              ts  <- option (stringSymbol "vt") (try (symbolP >>= \b -> colon >> return b ))
-             tb  <- bareTypeP
+             tb  <- strengthenTyDef th <$> bareTypeP
              ms  <- option [] typeMeasuresP
              return $ (id, TBd $ TD (TDef id) ts tv trs th tb (idLoc id), ms)
---     foo (x) = e
--- and bar (x) = e
+
+strengthenTyDef h (TObj bs r) = TObj (go <$> bs) r
+  where 
+    sings = buildMap bs
+    go    = strSingleFromMap False sings h
+
+strengthenTyDef _ t = t
+
 typeMeasuresP = do
   m  <- typeMeasureP
   spaces
@@ -470,7 +477,6 @@ measureImpP
        e  <- exprP
        return (m, args, e)
              
- 
 strengthenSingletons :: RefType -> RefType
 strengthenSingletons (TAll as t) = TAll as $ strengthenSingletons t
 strengthenSingletons (TAllP ps t) = TAllP ps $ strengthenSingletons t
@@ -478,15 +484,19 @@ strengthenSingletons t | isTrivialRefType t = t
 strengthenSingletons (TFun xts rt hi ho r) = TFun xts' rt' hi ho r
   where                  
     sings = buildMap (rt:xts)
-    xts'  = map (go hi) xts
-    rt'   = maybe rt (str ho rt) (lookup (b_sym rt) sings)
-    -- go :: RHeapEnv RReft -> Bind RReft -> Bind RReft
-    go h xt    = maybe xt (maybeStr h xt) (lookup (b_sym xt) sings)
-    -- str :: RHeapEnv -> Bind RReft -> Location -> Bind RReft
-    maybeStr h xt l = if isTauto . rTypeReft $ b_type xt then str h xt l else xt
-    str h xt l = B (b_sym xt) (b_type xt `strengthen` p (b_sym $ heapRead "strSingletons" l h))
-    p x        = ureft $ predReft (PImp (isNil (vv Nothing)) (isNil (symbol x)))
+    xts'  = map (go False hi) xts
+    rt'   = go True ho rt
+    go b   = strSingleFromMap b sings
 strengthenSingletons t = t
+                         
+strSingleFromMap b sings h xt = go xt
+  where 
+    go xt = maybe xt (maybeStr h xt) (lookup (b_sym xt) sings)
+    doStr xt = b || (isTauto . rTypeReft $ b_type xt)
+    maybeStr h xt l = if doStr xt then str h xt l else xt
+    str h xt l = B (b_sym xt) $ b_type xt `strengthen` 
+                                p (b_sym $ heapRead "strSingleFromMap" l h)
+    p x = ureft $ predReft (PImp (isNil (vv Nothing)) (isNil (symbol x)))
 
 buildMap :: [Bind RReft] -> [(Symbol, Location)] 
 buildMap xts = ss
@@ -521,16 +531,27 @@ mkSpec xs = Nano { code   = Src []
                  , tRMeas = M.fromList  [(symbol i,m) | Type (i,_,m) <- xs]
                  , tDefs  = envFromList [(i,t)        | Type (i,t,_) <- xs]
                  , quals  =             [q            | Qual q <- xs]
-                 , invts  = [Loc l' t | Invt l t <- xs, let l' = srcPos l] 
-                                                                 -- ++ invsOfMeas xs
+                 , invts  = strInvsOfMeas xs [Loc l' t | Invt l t <- xs, let l' = srcPos l] 
                  }
 
-invsOfMeas xs = []
+strInvsOfMeas xs is = [Loc l (strOfMeas xs t) | Loc l t <- is'] 
   where
-    tes = [ str i m e | (Type (i,_,ms)) <- xs, (m,_,e,_) <- ms ] -- [ Type (_,_,m)]
-    str t m e  = Loc dummySpan $ TApp (TDef t) [] [] $ r m e
-    r m e = ureft $ predReft $ app m e
-    app m e = PImp (isNil (vv Nothing)) $ PAtom Eq (EApp (dummyLoc m) [expr (vv Nothing)]) e
+    is' = [ Loc dummySpan $ TApp (TDef i) [] [] mempty | Type (i,_,_) <- xs ] 
+          ++ is
+
+strOfMeas xs t@(TApp (TDef i) _ _ _) = t `strengthen` r
+  where                                        
+    es = [ (m, e) | (Type (i',_,ms)) <- xs, symbol i' == symbol i, (m,_,e,_) <- ms ]
+    r = foldl meet (ureft $ trueReft) (app <$> es)
+    app (m, e) = ureft $ predReft $ PImp (isNil (vv Nothing)) $
+                                         PAtom Eq (EApp (dummyLoc m) [expr (vv Nothing)]) e
+strOfMeas _ t = t
+-- invsOfMeas xs = []
+--   where
+--     tes = [ str i m e | (Type (i,_,ms)) <- xs, (m,_,e,_) <- ms ] -- [ Type (_,_,m)]
+--     str t m e  = Loc dummySpan $ TApp (TDef t) [] [] $ r m e
+--     r m e = ureft $ predReft $ app m e
+--     app m e = PImp (isNil (vv Nothing)) $ PAtom Eq (EApp (dummyLoc m) [expr (vv Nothing)]) e
 
 -- YUCK. Worst hack of all time.
 switchProp i@(Id l x) 

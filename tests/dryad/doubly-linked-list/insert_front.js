@@ -5,8 +5,8 @@
 /*@
   insert ::
     (x:<x>+null, k:number)/x |-> xs:dlist[number,<x>,null]
-       => r:<j>/j |-> js:{v:dlist[number,<j>,null] | ((len(v) = 1 + len(xs)
-&& (keys(v) = Set_cup(Set_sng(k),keys(xs)))))}
+       => r:<j>/j |-> js:{v:dlist[number,<j>,null] | (((len v) = 1 + (len xs))
+                                                  && ((keys v) = (Set_cup (Set_sng k) (keys xs))))}
 */
 function insert(x, k){
   var y  = {data:k, next:x, prev:null};

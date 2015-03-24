@@ -7,16 +7,18 @@
             * r |-> rt:{v:rbtree[A<q key>]<p,q> | bheight(v) = bheight(lt)}.
         root: { color : { v:number | ((v != 0) => ((col(rt)  = 0) && ((col(lt)  = 0)))) }
               , key   : A
-              , left  : {v:<l>+null | (Prop(nil(v)) <=> Prop(nil(lt))) }
-              , right : {v:<r>+null | (Prop(nil(v)) <=> Prop(nil(rt))) }
+              , left  : <l>+null
+              , right : <r>+null
               }
 
-              
-      with col(x)   = (if (Prop(nil(x))) then 0 else field_int(root, "color"))
+      col(null) = 0        
+      col(x)    =  field_int(root, "color")
       
-      and  keys(x)    = (if (Prop(nil(x))) then (Set_cap(Set_sng(0),Set_sng(1))) else (keys(lt) ∪ keys(rt) ∪1 field_int(root, "key")))
+      keys(null) = (Set_cap(Set_sng(0),Set_sng(1)))
+      keys(x)    = (keys(lt) ∪ keys(rt) ∪1 field_int(root, "key"))
 
-      and  bheight(x) = (if (Prop(nil(x))) then 1 else (if (field_int(root,"color") = 0) then 1 else 0) + bheight(lt))
+      bheight(null) = 1
+      bheight(x)    = ((if (field_int(root,"color") = 0) then 1 else 0) + bheight(lt))
 */
  
 

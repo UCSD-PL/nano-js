@@ -14,16 +14,3 @@ function append(x1, x2){
     return x2;
   } 
 }
-
-/* qualif EqNil(v:a, x:b): ((x != null) => (v = 0)) */
-/* to_zeroes :: (<l>)/l |-> xs:list[{v:number|v = 1}] => void/l |-> ys:list[{v:number | v = 0 }] */
-//function to_zeroes(x) {
-//   var n = x.next;
-//   x.data = 0;
-//
-//   if (n != null) {
-//     to_zeroes(n);
-//   } 
-//
-//   return;
-//}

@@ -1,13 +1,9 @@
 /*@ include doubly-linked-list.js */
 
-/* qualif LLen(v:T):
-      (keys(v) = (Set_cup(Set_sng(field(y, "data")),
-                          dkeysp(field(y, "next"), ys)))) */
-
 /*@ remove :: forall P.
   (x:<l>+null,k:number)/l |-> ls:dlist[number,<l>,P]
-    => r:{v:<v>+null | dkeysp(v,vs) = Set_dif(dkeysp(x,ls),Set_sng(k))}
-       /v |-> vs:dlist[number,<v>,null] */
+    => <v>+null
+       /v |-> vs:{v:dlist[number,<v>,null] | (keys v) = (Set_dif (keys ls) (Set_sng k))} */
 function remove(x, k){
   if (x == null){
     return null;

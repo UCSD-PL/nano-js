@@ -1,9 +1,7 @@
 /*@ include sorted-list.js */
-/* qualif UnionKeys(v:Ref): ((keysp(v,ms) = (Set_cup(keysp(x1,x1s), keysp(x2,x2s))))) */
-/* qualif SplitKeys(v:Rec): ((keysp(x,ls) = (Set_cup(keysp(field_Ref(r,"x"),xs), keysp(field_Ref(r,"y"),ys))))) */
 
-/* qualif LenSum(v:Ref): ((lenp(v,ms) = (lenp(x1,x1s) + lenp(x2,x2s)))) */
-/* qualif SplitLen(v:Rec): ((lenp(x,ls) = (lenp(field_Ref(r,"x"),xs) + lenp(field_Ref(r,"y"),ys)))) */
+/*@ qualif Keys1(v:T,x:T,y:T): (keys(v) = Set_cup(keys(x),keys(y))) */
+/*@ qualif Keys2(v:T,x:T,y:T): (keys(x) = Set_cup(keys(v),keys(y))) */
 
 /*@ merge :: forall A.
   (x1:<a>+null, x2:<b>+null)/a |-> x1s:list[A]<{\h v -> true}> * b |-> x2s:list[A]<{\h v -> true}>
@@ -60,10 +58,13 @@ function split(x){
   }
 }
 
-/*@ sortList ::
+/* sortList ::
       (x:<l>+null)/l |-> xs:list[number]<{\h v -> true}>
          => {v:<k>+null | (Prop(nil(v)) => Prop(nil(x)))}/
             k |-> ks:{v:list[number]<{\h v -> h <= v}> | ((keys(v) = keys(xs)) && (len(v) = len(xs)))} */
+/*@ sortList ::
+      (x:<l>+null)/l |-> xs:list[number]<{\h v -> true}>
+         => v:<k>+null/k |-> ks:{v:list[number]<{\h v -> h <= v}> | (keys(v) = keys(xs))} */
 function sortList(x) {
   if (x == null){
     return null;

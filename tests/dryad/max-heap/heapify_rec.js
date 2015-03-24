@@ -1,13 +1,18 @@
 /*@ include max-heaps.js */
 
-/*@ qualif FldGt(v:a, y:Ref, x:Rec): ((y != null) =>  (v <= (field_int x "key")))    */
-/*@ qualif RApp(v:a): papp1(r,v)                                                     */
+/*@ qualif FldGt(v:Rec, y:number, x:Rec): ((~ (Prop (nil y))) =>  (y <= (field_int x "key")))  */
+/*@ qualif RApp(v:a): papp1(q,v)                                                     */
 
-/*@ heapify :: forall < r :: (number) => prop >.
- ({v:<x> | true})/x |-> bs:{left:<l>+null, key:number<r>, right:<r>+null}
-                             * l |-> ls:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
-                             * r |-> rs:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
-                       => void/x |-> hs:tree[number<r>]<{\p v -> v <= p},{\p v -> v <= p}>
+/*@ heapify :: forall < q :: (number) => prop >.
+ (x:{v:<x> | true})/x |-> bs:{ left:{v:<l>+null | ((Prop (nil v)) => (Prop (nil ls)))}
+                             , key:number<q>
+                             , right:{v:<r>+null | ((Prop (nil v)) => (Prop (nil rs)))}
+                             }
+                  * l |-> ls:tree[number<q>]<{\p v -> v <= p},{\p v -> v <= p}>
+                  * r |-> rs:tree[number<q>]<{\p v -> v <= p},{\p v -> v <= p}>
+            => void/x |-> hs:{v:tree[number<q>]<{\p v -> v <= p},{\p v -> v <= p}> | (keys(v) = (Set_cup (Set_cup (Set_sng (field_int bs "key"))
+                                                                                                                  (keys ls))
+                                                                                                         (keys rs)))}
                                     
 
 */                               
@@ -25,8 +30,8 @@ function heapify(x) {
         x.key = rk;
         heapify(r);
         return;
-      }
-    }
+      } else { return; }
+    } else { return; }
   } else {
     if (r == null) {
       if (l != null) {
@@ -37,8 +42,8 @@ function heapify(x) {
           x.key = lk;
           heapify(l);
           return;
-        }
-      }
+        } else { return; }
+      } else { return; }
     } else {
       var xk = x.key;
       var lk = l.key;

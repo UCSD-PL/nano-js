@@ -388,18 +388,18 @@ tcStmt' (γ,σ) (ReturnStmt l eo)
         (σ_in, σ_out) <- getFunHeaps γ
         (t,σ')        <- maybe (return (tVoid,σ)) (tcExpr (γ,σ)) eo
         let freeLocs = funExLocs σ_in σ_out
-        (rt, σ_out)   <- freshWorld l freeLocs (rt,σ_out)
-        θ             <- unifyTypeM l "Return" eo t rt
+        (rt, σ_out)   <- tracePP "freshWorld" <$> freshWorld l freeLocs (rt,σ_out)
+        θ             <- tracePP "THINGER!!!" <$> unifyTypeM l "Return" eo t rt
         let (rt', t')  = mapPair (apply θ) (rt,t)
         -- Wind locations back up, but ONLY those that appear in the output spec! might be deleting a loc
         (setUnwound . filter ((`elem` heapLocs σ_out) . fst3)) =<< getUnwound
         (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θ σ_out
         -- Now unify heap
-        θ             <- unifyHeapsM l "Return" σ' σ_out
+        θ             <- tracePP "THINGER2!!!" <$> unifyHeapsM l "Return" σ' σ_out
         (γ,σ')        <- windSpecLocations (γ, σ') l $ apply θ σ_out
-        unifyHeapsM l "Return" σ' σ_out
+        tracePP "THINGER3!!!" <$> unifyHeapsM l "Return" σ' σ_out
         maybeM_ (\e -> castM e t' rt') eo
-        castHeapM γ l σ' $ apply θ σ_out
+        castHeapM γ l (tracePP "theta'" σ') $ tracePP "theta out" $ apply θ σ_out
         return Nothing
 
 

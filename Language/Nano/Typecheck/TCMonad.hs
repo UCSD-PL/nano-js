@@ -787,10 +787,10 @@ subHeapM γ σ1 σ2
   where readTs ls σ = map (flip (heapRead "subHeapM") σ) ls
 
 normalizeHeaps γ l σ1 σ2
-  = if (intersect l2s envLocs /= []) then
-        errorstar $ errorHeapSubLocs σ1 σ2
-    else
-        return $ mapPair (buildHeap both) (σ1, σ2)
+  -- = if (intersect l2s envLocs /= []) then
+  --       errorstar $ errorHeapSubLocs σ1 σ2
+  --   else
+  =        return $ mapPair (buildHeap both) (σ1, σ2)
     where envLocs = concat [ locs t | (Id _ s, t) <- envToList γ
                                     , F.symbol s /= returnSymbol ]
           (l1s, both, l2s) = heapSplit σ1 σ2
