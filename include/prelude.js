@@ -51,32 +51,6 @@ function unwind(x) {
     return x;
 }
 
-/*************************************************************************/
-/*********************** Temporary tag maps ******************************/
-/*************************************************************************/
-// From:
-// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof
-//
-// Undefined                                                              "undefined"
-// Null                                                                   "object"
-// Boolean                                                                "boolean"
-// Number                                                                 "number"
-// String                                                                 "string"
-// Host object (provided by the JS environment)  Implementation-dependent
-// Function object (implements [[Call]] in ECMA-262 terms)                "function"
-// E4X XML object                                                         "xml"
-// E4X XMLList object                                                     "xml"
-// Any other object                                                       "object"
-//
-// For Null
-// typeof null === 'object'; // This stands since the beginning of JavaScript
-
-
-
-/*************************************************************************/
-/***************** Types for list Operators ******************************/
-/*************************************************************************/
-/* measure min :: forall A. (sList[A]) => A */
 /*@ cmp :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x <= y))} */
 /*@ cmpLT :: forall A. (x:A, y:A) => {v:boolean | (Prop(v) <=> (x < y))} */
 
@@ -114,16 +88,10 @@ function unwind(x) {
 /*@ builtin_PrefixMinus :: ({x:number | true}) => {v:number | v = (0 - x)}                                */
 /*@ builtin_PrefixLNot  :: (boolean) => boolean                                                           */
 
-//Changing temprorarily until strings are supported
-/* builtin_PrefixTypeof:: forall A. (A) => string                                                         */
 /*@ builtin_PrefixDelete:: forall A. (<l>)/l |-> A => void/emp                                             */
 
 
 /*@ measure prop        :: (boolean) => bool                              */
-/* measure field_Ref   :: forall A. (A, string) => <l>                */
-/* measure field_int   :: forall A. (A, string) => number             */
-/* measure field_A     :: forall A. (A, string) => number             */
-
 /*************************************************************************/
 /************** Run-Time Tags ********************************************/
 /*************************************************************************/
@@ -135,17 +103,9 @@ function unwind(x) {
 /*@ measure null :: null */
 /*@ measure nil :: forall A. (A) => number */
 
-/* invariant {v:undefined | ttag(v) = "undefined"} */
-/*@ invariant {e:null      | (Prop(nil(e)) && e = null) } */  //TODO: this is not very precise
-/* invariant {v:boolean   | ttag(v) = "boolean"  } */ 
-/* invariant {v:number    | ttag(v) = "number"   } */
-/* invariant {v:string    | ttag(v) = "string"   } */
 /*@ invariant {v:object    | ttag(v) = "object"   } */
 /*@ invariant {e:<l>       | ((~Prop(nil(e))) && (e != null))  } */ 
 /*@ invariant {e:<l>+null       | ((Prop(nil(e)) <=> (e = null)))  } */ 
-/* invariant {v:<u>       | ttag(v) = "ref(u)"} */
-/* invariant {v:<v>       | ttag(v) = "ref(v)"} */
-/* invariant {v:<r>       | ttag(v) = "ref(r)"} */
 
 
 /*************************************************************************/
@@ -182,45 +142,4 @@ function unwind(x) {
 /*@ qualif True1(v:Bool)  : (Prop v)                            */
 /*@ qualif False1(v:Bool) : not (Prop v)                        */
 
-
-
-// Somewhat more controversial qualifiers (i.e. "expensive"...)
-
-/* qualif Add(v:number,x:number,y:number): v = x + y           */
-/* qualif Sub(v:number,x:number,y:number): v = x - y           */
-
-
 /*@ top_level :: () => void */
-
-/*
-  type mlist[A] exists! l |-> xs:{mlist[A]} . { data:A, next:<l>+null }
-
-    with keys(v) = Set_cup ((Set_sng A)
-                            (if (ttag next) = "null" then
-                               Set_emp
-                             else
-                               keys(xs))
-
-         length(v) = 1 + (if (ttag next) = "null" then
-                            0
-                          else
-                            length(xs))
-*/
-
-/*
-
-G |- H = H0 * H * l |-> x:T
-G |- C[A] = ∃! H' . T'
-T = { ... fⱼ:Tⱼ ... } 
-T' = { ... fⱼ':Tⱼ' ... }
-//... subtyping ...
-G |- Tf = {v:C[T] | ∧ θM_c }
-θ = [x/v;fⱼ/fⱼ'...]
-z fresh
-H' = H0 * l |-> {v | v = z}
-G' = G;z:Tf
--------------------
-G,H |- fold l : G'/H'
-
-*/
-
