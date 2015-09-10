@@ -1,1 +1,1 @@
-../dryad/bst/delete_rec.js
+../datatypes/bst/delete_rec.js
